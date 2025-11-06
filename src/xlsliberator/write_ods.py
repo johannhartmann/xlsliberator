@@ -4,7 +4,6 @@ from typing import Any
 
 from loguru import logger
 
-from xlsliberator.formula_mapper import map_formula
 from xlsliberator.ir_models import CellType, WorkbookIR
 from xlsliberator.uno_conn import UnoCtx, new_calc, recalc
 
@@ -78,9 +77,9 @@ def build_calc_from_ir(
 
                     # Write value based on cell type
                     if cell_ir.cell_type == CellType.FORMULA and cell_ir.formula:
-                        # Map and write formula
-                        mapped_formula = map_formula(cell_ir.formula, locale)
-                        uno_cell.setFormula(mapped_formula)
+                        # Don't translate formulas - use English/international format
+                        # LibreOffice will handle locale internally
+                        uno_cell.setFormula(cell_ir.formula)
                         formulas_written += 1
                     elif cell_ir.cell_type == CellType.NUMBER and cell_ir.value is not None:
                         uno_cell.setValue(float(cell_ir.value))

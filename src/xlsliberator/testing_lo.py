@@ -115,6 +115,11 @@ def compare_excel_calc(
     logger.debug(f"Opening ODS file in LibreOffice: {ods_path}")
     with UnoCtx() as uno_ctx:
         doc = open_calc(uno_ctx, str(ods_path))
+
+        # Force recalculation to ensure all formulas have current values
+        logger.debug("Recalculating formulas in opened document...")
+        doc.calculateAll()  # type: ignore
+
         sheets = doc.getSheets()  # type: ignore
 
         # Compare each sheet
