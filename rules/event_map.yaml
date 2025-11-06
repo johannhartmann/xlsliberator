@@ -1,0 +1,7 @@
+# VBA event to Python-UNO event mapping
+# Placeholder - to be implemented in Phase F8
+
+events:
+  # Example structure:
+  # Workbook_Open: on_open
+  # Worksheet_Change: on_sheet_change

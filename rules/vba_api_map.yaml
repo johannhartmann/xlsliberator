@@ -1,0 +1,7 @@
+# VBA API to Python-UNO mapping rules
+# Placeholder - to be implemented in Phase F8
+
+api_mappings:
+  # Example structure:
+  # Range: "doc.Sheets[sheet_idx].getCellRangeByName(address)"
+  # Cells: "sheet.getCellByPosition(col, row)"

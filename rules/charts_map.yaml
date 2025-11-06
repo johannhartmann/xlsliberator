@@ -1,0 +1,7 @@
+# Chart type mapping from Excel to LibreOffice
+# Placeholder - to be implemented in Phase F10
+
+chart_types:
+  # Example structure:
+  # xlLine: com.sun.star.chart.ChartType.LINE
+  # xlColumn: com.sun.star.chart.ChartType.COLUMN

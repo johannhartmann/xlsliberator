@@ -1,0 +1,18 @@
+# Formula function mapping from Excel to LibreOffice Calc
+# Format: excel_function: calc_function
+
+# Placeholder - to be implemented in Phase F5
+functions:
+  # Basic functions (examples)
+  # IF: WENN  # de-DE
+  # SUM: SUMME  # de-DE
+  
+  # English locale (en-US)
+  # IF: IF
+  # SUM: SUM
+  
+locale:
+  en-US:
+    separator: ","
+  de-DE:
+    separator: ";"
