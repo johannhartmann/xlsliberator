@@ -1,8 +1,0 @@
-{
-  "=SUM(A1:A10):en-US": "=SUM(A1:A10)",
-  "=IF(A1>0,SUM(B1:B10),0):en-US": "=IF(A1>0,SUM(B1:B10),0)",
-  "=IFERROR(MATCH($A2,D$2:D$19,0),\"\"):en-US": "=IFERROR(MATCH($A2,D$2:D$19,0),\"\")",
-  "=SUM(A1:A10):de-DE": "=SUMME(A1:A10)",
-  "=IF(A1>0,SUM(B1:B10),0):de-DE": "=WENN(A1>0;SUMME(B1:B10);0)",
-  "=IFERROR(MATCH($A2,D$2:D$19,0),\"\"):de-DE": "=WENNFEHLER(VERGLEICH($A2;D$2:D$19;0);\"\")"
-}

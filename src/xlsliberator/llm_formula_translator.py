@@ -39,12 +39,17 @@ class LLMFormulaTranslator:
         except Exception as e:
             logger.warning(f"Failed to save formula cache: {e}")
 
-    def translate_formula(self, excel_formula: str, locale: str = "en-US") -> str:
+    def translate_formula(
+        self, excel_formula: str, locale: str = "en-US", rule_based_result: str | None = None
+    ) -> str:
         """Translate an Excel formula to LibreOffice Calc format.
+
+        This is a fallback translator - only called when rule-based translation fails.
 
         Args:
             excel_formula: Excel formula (including leading =)
             locale: Target locale (en-US, de-DE, etc.)
+            rule_based_result: Result from rule-based translator (if available)
 
         Returns:
             Translated LibreOffice Calc formula
@@ -52,11 +57,11 @@ class LLMFormulaTranslator:
         # Check cache first
         cache_key = f"{excel_formula}:{locale}"
         if cache_key in self.cache:
-            logger.debug(f"Cache hit for formula: {excel_formula[:50]}...")
+            logger.debug(f"LLM cache hit for formula: {excel_formula[:50]}...")
             return self.cache[cache_key]
 
         # Call Claude API for translation
-        logger.debug(f"Translating formula with Claude: {excel_formula[:50]}...")
+        logger.info(f"LLM fallback for formula: {excel_formula[:50]}...")
 
         prompt = self._build_translation_prompt(excel_formula, locale)
 
@@ -78,13 +83,13 @@ class LLMFormulaTranslator:
             self.cache[cache_key] = translated
             self._save_cache()
 
-            logger.debug(f"Translation: {excel_formula[:50]}... → {translated[:50]}...")
+            logger.info(f"LLM translation: {excel_formula[:50]}... → {translated[:50]}...")
             return translated
 
         except Exception as e:
-            logger.error(f"Failed to translate formula: {e}")
-            # Fallback: return original formula
-            return excel_formula
+            logger.error(f"LLM translation failed: {e}")
+            # Fallback: use rule-based result or original formula
+            return rule_based_result if rule_based_result else excel_formula
 
     def _build_translation_prompt(self, excel_formula: str, locale: str) -> str:
         """Build prompt for Claude to translate formula.
