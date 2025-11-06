@@ -50,7 +50,7 @@ def build_calc_from_ir(
         sheets = doc.getSheets()
         first_sheet = sheets.getByIndex(0)
 
-        # Process sheets from IR
+        # Process sheets - use single pass for now (two-pass causes timeout)
         for sheet_idx, sheet_ir in enumerate(wb_ir.sheets):
             if sheet_idx == 0:
                 # Use the existing first sheet
@@ -77,8 +77,7 @@ def build_calc_from_ir(
 
                     # Write value based on cell type
                     if cell_ir.cell_type == CellType.FORMULA and cell_ir.formula:
-                        # Don't translate formulas - use English/international format
-                        # LibreOffice will handle locale internally
+                        # Use English/international format - LibreOffice handles locale
                         uno_cell.setFormula(cell_ir.formula)
                         formulas_written += 1
                     elif cell_ir.cell_type == CellType.NUMBER and cell_ir.value is not None:
