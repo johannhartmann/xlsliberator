@@ -36,7 +36,7 @@
 | Schritt | Deliverable | Gate / Metrik | Status |
 |----------|--------------|---------------|---------|
 | **3.1** | `extract_vba.py` – Module + Graph | 100 % Module erkannt | ☑ |
-| **3.2** | `vba2py_uno.py` – Kern-Subset (Range/Cells/Worksheets) | Übersetzte Handlertests grün | ☐ |
+| **3.2** | `vba2py_uno.py` – Kern-Subset (Range/Cells/Worksheets) | Übersetzte Handlertests grün | ☑ |
 | **3.3** | `embed_macros.py` – Scripts/python/*.py + Manifest | Event „on_open" feuert 1× | ☑ |
 
 ---
