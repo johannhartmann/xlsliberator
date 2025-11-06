@@ -16,6 +16,7 @@ def build_calc_from_ir(
     ctx: UnoCtx,
     wb_ir: WorkbookIR,
     locale: str = "en-US",
+    use_llm: bool = True,
 ) -> Any:
     """Build LibreOffice Calc document from WorkbookIR.
 
@@ -41,6 +42,14 @@ def build_calc_from_ir(
         f"Building Calc document from IR: {wb_ir.sheet_count} sheets, "
         f"{wb_ir.total_cells} cells, {wb_ir.total_formulas} formulas"
     )
+
+    # Initialize LLM translator if enabled
+    translator = None
+    if use_llm and os.environ.get("ANTHROPIC_API_KEY"):
+        logger.info("Using LLM-based formula translation (Claude)")
+        translator = LLMFormulaTranslator()
+    elif use_llm:
+        logger.warning("LLM translation requested but ANTHROPIC_API_KEY not set, using passthrough")
 
     try:
         # Create new Calc document
@@ -77,8 +86,15 @@ def build_calc_from_ir(
 
                     # Write value based on cell type
                     if cell_ir.cell_type == CellType.FORMULA and cell_ir.formula:
-                        # Use English/international format - LibreOffice handles locale
-                        uno_cell.setFormula(cell_ir.formula)
+                        # Translate formula using LLM if available, otherwise passthrough
+                        if translator:
+                            translated_formula = translator.translate_formula(
+                                cell_ir.formula, locale
+                            )
+                            uno_cell.setFormula(translated_formula)
+                        else:
+                            # Passthrough: use English/international format
+                            uno_cell.setFormula(cell_ir.formula)
                         formulas_written += 1
                     elif cell_ir.cell_type == CellType.NUMBER and cell_ir.value is not None:
                         uno_cell.setValue(float(cell_ir.value))
