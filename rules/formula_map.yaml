@@ -1,18 +1,181 @@
-# Formula function mapping from Excel to LibreOffice Calc
-# Format: excel_function: calc_function
+# Formula mapping rules for Excel → LibreOffice Calc translation
+# Phase F5: ~25 core functions with locale support
 
-# Placeholder - to be implemented in Phase F5
-functions:
-  # Basic functions (examples)
-  # IF: WENN  # de-DE
-  # SUM: SUMME  # de-DE
-  
-  # English locale (en-US)
-  # IF: IF
-  # SUM: SUM
-  
-locale:
+# Format:
+# excel_function:
+#   en-US: calc_function_name
+#   de-DE: calc_function_name_german
+#   category: function_category
+#   notes: optional notes about translation
+
+# Mathematical Functions
+SUM:
+  en-US: SUM
+  de-DE: SUMME
+  category: math
+  notes: Basic aggregation function
+
+AVERAGE:
+  en-US: AVERAGE
+  de-DE: MITTELWERT
+  category: math
+  notes: Arithmetic mean
+
+COUNT:
+  en-US: COUNT
+  de-DE: ANZAHL
+  category: math
+  notes: Count numeric values
+
+COUNTA:
+  en-US: COUNTA
+  de-DE: ANZAHL2
+  category: math
+  notes: Count non-empty cells
+
+MAX:
+  en-US: MAX
+  de-DE: MAX
+  category: math
+  notes: Maximum value
+
+MIN:
+  en-US: MIN
+  de-DE: MIN
+  category: math
+  notes: Minimum value
+
+ROUND:
+  en-US: ROUND
+  de-DE: RUNDEN
+  category: math
+  notes: Round to specified digits
+
+ABS:
+  en-US: ABS
+  de-DE: ABS
+  category: math
+  notes: Absolute value
+
+# Conditional Functions
+IF:
+  en-US: IF
+  de-DE: WENN
+  category: logical
+  notes: Conditional branching
+
+SUMIF:
+  en-US: SUMIF
+  de-DE: SUMMEWENN
+  category: math
+  notes: Conditional sum (single criterion)
+
+SUMIFS:
+  en-US: SUMIFS
+  de-DE: SUMMEWENNS
+  category: math
+  notes: Conditional sum (multiple criteria)
+
+COUNTIF:
+  en-US: COUNTIF
+  de-DE: ZÄHLENWENN
+  category: math
+  notes: Conditional count (single criterion)
+
+COUNTIFS:
+  en-US: COUNTIFS
+  de-DE: ZÄHLENWENNS
+  category: math
+  notes: Conditional count (multiple criteria)
+
+AVERAGEIF:
+  en-US: AVERAGEIF
+  de-DE: MITTELWERTWENN
+  category: math
+  notes: Conditional average (single criterion)
+
+AVERAGEIFS:
+  en-US: AVERAGEIFS
+  de-DE: MITTELWERTWENNS
+  category: math
+  notes: Conditional average (multiple criteria)
+
+# Lookup Functions
+VLOOKUP:
+  en-US: VLOOKUP
+  de-DE: SVERWEIS
+  category: lookup
+  notes: Vertical lookup
+
+HLOOKUP:
+  en-US: HLOOKUP
+  de-DE: HVERWEIS
+  category: lookup
+  notes: Horizontal lookup
+
+INDEX:
+  en-US: INDEX
+  de-DE: INDEX
+  category: lookup
+  notes: Return value at row/column index
+
+MATCH:
+  en-US: MATCH
+  de-DE: VERGLEICH
+  category: lookup
+  notes: Find position of value
+
+# Text Functions
+CONCATENATE:
+  en-US: CONCATENATE
+  de-DE: VERKETTEN
+  category: text
+  notes: Join text strings
+
+LEFT:
+  en-US: LEFT
+  de-DE: LINKS
+  category: text
+  notes: Extract leftmost characters
+
+RIGHT:
+  en-US: RIGHT
+  de-DE: RECHTS
+  category: text
+  notes: Extract rightmost characters
+
+MID:
+  en-US: MID
+  de-DE: TEIL
+  category: text
+  notes: Extract substring
+
+LEN:
+  en-US: LEN
+  de-DE: LÄNGE
+  category: text
+  notes: String length
+
+# Date Functions
+TODAY:
+  en-US: TODAY
+  de-DE: HEUTE
+  category: date
+  notes: Current date
+
+NOW:
+  en-US: NOW
+  de-DE: JETZT
+  category: date
+  notes: Current date and time
+
+# Locale Settings
+locales:
   en-US:
     separator: ","
+    decimal: "."
+    row_separator: ";"
   de-DE:
     separator: ";"
+    decimal: ","
+    row_separator: "|"
