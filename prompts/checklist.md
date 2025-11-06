@@ -27,7 +27,7 @@
 | Schritt | Deliverable | Gate / Metrik | Status |
 |----------|--------------|---------------|---------|
 | **2.1** | `formula_mapper.py` – 25 Kernfunktionen + Locale | ≥ 90 % syntaktisch korrekt | ☐ |
-| **2.2** | `write_ods.py` – Werte + Formeln + NamedRanges | Recalc erfolgreich | ☐ |
+| **2.2** | `write_ods.py` – Werte + Formeln + NamedRanges | Recalc erfolgreich | ☑ |
 | **2.3** | Formel-Vergleichstest (`testing_lo.py`) | ≥ 95 % Werte im Toleranzband (1e-9) | ☐ |
 
 ---
