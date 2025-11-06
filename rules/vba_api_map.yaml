@@ -1,7 +1,260 @@
 # VBA API to Python-UNO mapping rules
-# Placeholder - to be implemented in Phase F8
 
-api_mappings:
-  # Example structure:
-  # Range: "doc.Sheets[sheet_idx].getCellRangeByName(address)"
-  # Cells: "sheet.getCellByPosition(col, row)"
+# Object Model Mappings
+object_mappings:
+  # Application object
+  Application: "XSCRIPTCONTEXT.getComponentContext().ServiceManager"
+  ActiveWorkbook: "XSCRIPTCONTEXT.getDocument()"
+  ThisWorkbook: "XSCRIPTCONTEXT.getDocument()"
+  ActiveSheet: "XSCRIPTCONTEXT.getDocument().getCurrentController().getActiveSheet()"
+  ActiveCell: "XSCRIPTCONTEXT.getDocument().getCurrentController().getActiveSheet().getCellByPosition(0, 0)"
+
+  # Workbook/Worksheet access
+  Workbooks: "# Use desktop.loadComponentFromURL()"
+  Worksheets: "doc.getSheets()"
+  Sheets: "doc.getSheets()"
+
+# Method/Property Mappings
+method_mappings:
+  # Range operations
+  Range:
+    pattern: 'Range\("([A-Z0-9:]+)"\)'
+    replacement: 'sheet.getCellRangeByName("\1")'
+    description: "Range reference to getCellRangeByName"
+
+  # Cells operations
+  Cells:
+    pattern: 'Cells\((\d+),\s*(\d+)\)'
+    replacement: 'sheet.getCellByPosition({col}-1, {row}-1)'
+    description: "Cells(row, col) to getCellByPosition (0-indexed)"
+
+  # Worksheet access
+  Worksheets_GetByName:
+    pattern: 'Worksheets\("([^"]+)"\)'
+    replacement: 'doc.getSheets().getByName("\1")'
+    description: "Worksheet by name"
+
+  Worksheets_GetByIndex:
+    pattern: 'Worksheets\((\d+)\)'
+    replacement: 'doc.getSheets().getByIndex(\1 - 1)'
+    description: "Worksheet by index (0-indexed)"
+
+  # Cell value operations
+  Value_Get:
+    pattern: '\.Value(?!\s*=)'
+    replacement: '.getValue() if cell.getType().value == "VALUE" else cell.getString()'
+    description: "Get cell value"
+
+  Value_Set_String:
+    pattern: '\.Value\s*=\s*"([^"]*)"'
+    replacement: '.setString("\1")'
+    description: "Set string value"
+
+  Value_Set_Number:
+    pattern: '\.Value\s*=\s*(\d+(?:\.\d+)?)'
+    replacement: '.setValue(\1)'
+    description: "Set numeric value"
+
+  # Other cell properties
+  Formula:
+    pattern: '\.Formula\s*=\s*"([^"]*)"'
+    replacement: '.setFormula("\1")'
+    description: "Set cell formula"
+
+  Text:
+    pattern: '\.Text'
+    replacement: '.getString()'
+    description: "Get cell text"
+
+  # UI operations
+  MsgBox:
+    pattern: 'MsgBox\s+"([^"]*)"'
+    replacement: 'logger.info("\1")'
+    description: "Message box to logger"
+
+  MsgBox_Variable:
+    pattern: 'MsgBox\s+(\w+)'
+    replacement: 'logger.info(str(\1))'
+    description: "Message box with variable"
+
+  # Range operations
+  Select:
+    pattern: '\.Select\(\)'
+    replacement: '# Selection not needed in Python-UNO batch operations'
+    description: "Selection is typically unnecessary"
+
+  Activate:
+    pattern: '\.Activate\(\)'
+    replacement: '.setActive()'
+    description: "Activate sheet"
+
+  # Calculation
+  Calculate:
+    pattern: '\.Calculate\(\)'
+    replacement: 'doc.calculateAll()'
+    description: "Recalculate workbook"
+
+# Function Mappings
+function_mappings:
+  # Type conversions
+  CStr: "str"
+  CInt: "int"
+  CLng: "int"
+  CDbl: "float"
+  CBool: "bool"
+  CDate: "# datetime conversion needed"
+
+  # String functions
+  Len: "len"
+  Left: "lambda s, n: s[:n]"
+  Right: "lambda s, n: s[-n:]"
+  Mid: "lambda s, start, length: s[start-1:start-1+length]"
+  UCase: "lambda s: s.upper()"
+  LCase: "lambda s: s.lower()"
+  Trim: "lambda s: s.strip()"
+  InStr: "lambda haystack, needle: haystack.find(needle) + 1"
+
+  # Math functions
+  Abs: "abs"
+  Int: "int"
+  Round: "round"
+  Sqr: "math.sqrt"
+
+  # Logic
+  IIf: "lambda cond, true_val, false_val: true_val if cond else false_val"
+
+# Control Flow Mappings
+control_flow:
+  If_Then:
+    pattern: 'If\s+(.+)\s+Then'
+    replacement: 'if \1:'
+    description: "If-Then statement"
+
+  ElseIf:
+    pattern: 'ElseIf\s+(.+)\s+Then'
+    replacement: 'elif \1:'
+    description: "ElseIf statement"
+
+  Else:
+    pattern: 'Else'
+    replacement: 'else:'
+    description: "Else statement"
+
+  End_If:
+    pattern: 'End If'
+    replacement: '# end if'
+    description: "End If (implicit in Python indentation)"
+
+  For_Each:
+    pattern: 'For Each\s+(\w+)\s+In\s+(.+)'
+    replacement: 'for \1 in \2:'
+    description: "For Each loop"
+
+  For_To:
+    pattern: 'For\s+(\w+)\s*=\s*(\d+)\s+To\s+(\d+)'
+    replacement: 'for \1 in range(\2, \3 + 1):'
+    description: "For...To loop"
+
+  Next:
+    pattern: 'Next\s+\w+'
+    replacement: '# end for'
+    description: "Next (implicit in Python indentation)"
+
+  Do_While:
+    pattern: 'Do While\s+(.+)'
+    replacement: 'while \1:'
+    description: "Do While loop"
+
+  Loop:
+    pattern: 'Loop'
+    replacement: '# end while'
+    description: "Loop end (implicit in Python indentation)"
+
+# Declaration Mappings
+declarations:
+  Sub:
+    pattern: '(?:Public |Private )?Sub\s+(\w+)\s*\((.*?)\)'
+    replacement: 'def \1(\2):'
+    description: "Sub procedure declaration"
+
+  Function:
+    pattern: '(?:Public |Private )?Function\s+(\w+)\s*\((.*?)\)\s*(?:As\s+\w+)?'
+    replacement: 'def \1(\2):'
+    description: "Function declaration"
+
+  Dim:
+    pattern: 'Dim\s+(\w+)(?:\s+As\s+\w+)?'
+    replacement: '\1 = None'
+    description: "Variable declaration"
+
+  Const:
+    pattern: 'Const\s+(\w+)\s*=\s*(.+)'
+    replacement: '\1 = \2'
+    description: "Constant declaration"
+
+# Error Handling
+error_handling:
+  On_Error_Resume_Next:
+    pattern: 'On Error Resume Next'
+    replacement: '# try-except block recommended instead'
+    description: "Error suppression (use try-except in Python)"
+
+  On_Error_GoTo:
+    pattern: 'On Error GoTo\s+(\w+)'
+    replacement: '# try-except block recommended instead'
+    description: "Error handling (use try-except in Python)"
+
+# Comments
+comments:
+  Single_Quote:
+    pattern: "^'(.*)$"
+    replacement: '# \1'
+    description: "Single quote comment"
+
+  Rem:
+    pattern: '^Rem\s+(.*)$'
+    replacement: '# \1'
+    description: "Rem comment"
+
+# Special Cases
+special_cases:
+  DoEvents:
+    pattern: '\bDoEvents\b'
+    replacement: 'pass  # DoEvents not needed in Python'
+    description: "DoEvents (not needed)"
+
+  Exit_Sub:
+    pattern: 'Exit Sub'
+    replacement: 'return'
+    description: "Exit Sub"
+
+  Exit_Function:
+    pattern: 'Exit Function'
+    replacement: 'return'
+    description: "Exit Function"
+
+  Set_Object:
+    pattern: 'Set\s+(\w+)\s*=\s*(.+)'
+    replacement: '\1 = \2'
+    description: "Object assignment"
+
+  Nothing:
+    pattern: '\bNothing\b'
+    replacement: 'None'
+    description: "Nothing → None"
+
+# Required Imports
+required_imports:
+  - "import uno"
+  - "from loguru import logger"
+  - "import math"
+  - "from datetime import datetime"
+
+# Context Setup
+context_setup: |
+  # Get UNO context
+  ctx = XSCRIPTCONTEXT.getComponentContext() if 'XSCRIPTCONTEXT' in dir() else uno.getComponentContext()
+  smgr = ctx.ServiceManager
+  desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+  doc = XSCRIPTCONTEXT.getDocument() if 'XSCRIPTCONTEXT' in dir() else desktop.getCurrentComponent()
+  sheet = doc.getCurrentController().getActiveSheet()

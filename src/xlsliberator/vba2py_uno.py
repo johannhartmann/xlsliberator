@@ -1,7 +1,10 @@
 """VBA to Python-UNO translator (Phase F8 - Minimal Subset)."""
 
+import os  # noqa: F401
 import re
 from dataclasses import dataclass
+
+from loguru import logger  # noqa: F401
 
 
 class VBATranslationError(Exception):
@@ -17,17 +20,22 @@ class TranslationResult:
     unsupported_features: list[str]
 
 
-def translate_vba_to_python(vba_code: str) -> TranslationResult:
-    """Translate VBA code to Python-UNO code (minimal subset).
+def translate_vba_to_python(vba_code: str, use_llm: bool = True) -> TranslationResult:
+    """Translate VBA code to Python-UNO code (hybrid approach).
 
     Args:
         vba_code: VBA source code
+        use_llm: Use LLM-based translation as primary (True) or rule-based only (False)
 
     Returns:
         TranslationResult with Python code and warnings
 
     Note:
-        Phase F8 minimal implementation. Supports:
+        Hybrid approach:
+        - If use_llm=True and ANTHROPIC_API_KEY set: Use LLM translation with mapping injection
+        - Otherwise: Use rule-based translation (Phase F8 minimal)
+
+        Rule-based supports:
         - Sub/Function declarations
         - Dim statements
         - Range/Cells/Worksheets API calls
@@ -35,12 +43,27 @@ def translate_vba_to_python(vba_code: str) -> TranslationResult:
         - MsgBox → logger
         - Comments
 
-    Not supported (will warn):
+    Not supported in rule-based (will warn):
         - Complex control flow (For/If/Select beyond basic)
         - Error handling (On Error)
         - Arrays, UDTs
         - COM objects
     """
+    # Try LLM translation if enabled
+    if use_llm and os.environ.get("ANTHROPIC_API_KEY"):
+        logger.info("Using LLM-based VBA translation (Claude with mapping injection)")
+        try:
+            from xlsliberator.llm_vba_translator import LLMVBATranslator  # noqa: F401
+
+            translator = LLMVBATranslator()
+            python_code = translator.translate_vba(vba_code, is_event_handler=False)
+            return TranslationResult(python_code=python_code, warnings=[], unsupported_features=[])
+        except Exception as e:
+            logger.warning(f"LLM VBA translation failed, falling back to rule-based: {e}")
+            # Fall through to rule-based translation
+
+    # Rule-based translation (fallback or primary if use_llm=False)
+    logger.info("Using rule-based VBA translation")
     warnings: list[str] = []
     unsupported: list[str] = []
 
@@ -169,12 +192,13 @@ def _translate_excel_api(vba_line: str) -> str:
     return line
 
 
-def create_event_handler_stub(event_name: str, vba_code: str) -> str:
+def create_event_handler_stub(event_name: str, vba_code: str, use_llm: bool = True) -> str:
     """Create Python-UNO event handler from VBA code.
 
     Args:
         event_name: Event name (e.g., "Workbook_Open")
         vba_code: VBA event handler code
+        use_llm: Use LLM-based translation (hybrid approach)
 
     Returns:
         Python-UNO event handler code
@@ -182,7 +206,23 @@ def create_event_handler_stub(event_name: str, vba_code: str) -> str:
     Note:
         Phase F8 - creates minimal working event handlers.
         Maps Workbook_Open → on_open, etc.
+
+        Hybrid approach:
+        - If use_llm=True and ANTHROPIC_API_KEY set: Use LLM event handler translator
+        - Otherwise: Use rule-based translation
     """
+    # Try LLM event handler translation if enabled
+    if use_llm and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            from xlsliberator.llm_vba_translator import LLMVBATranslator  # noqa: F401
+
+            translator = LLMVBATranslator()
+            return translator.translate_event_handler(event_name, vba_code)
+        except Exception as e:
+            logger.warning(f"LLM event handler translation failed, falling back to rule-based: {e}")
+            # Fall through to rule-based translation
+
+    # Rule-based translation (fallback or primary if use_llm=False)
     # Map VBA event names to Python UNO conventions
     event_map = {
         "Workbook_Open": "on_open",
@@ -193,7 +233,7 @@ def create_event_handler_stub(event_name: str, vba_code: str) -> str:
     python_name = event_map.get(event_name, event_name.lower())
 
     # Translate the VBA code
-    result = translate_vba_to_python(vba_code)
+    result = translate_vba_to_python(vba_code, use_llm=False)
 
     # Wrap in proper event handler signature
     handler_code = f"""def {python_name}(event=None):

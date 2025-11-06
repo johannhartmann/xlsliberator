@@ -1,7 +1,93 @@
 # VBA event to Python-UNO event mapping
-# Placeholder - to be implemented in Phase F8
 
-events:
-  # Example structure:
-  # Workbook_Open: on_open
-  # Worksheet_Change: on_sheet_change
+# Workbook Events
+workbook_events:
+  Workbook_Open:
+    python_name: "on_open"
+    description: "Fired when workbook is opened"
+    uno_event: "OnLoad"
+
+  Workbook_BeforeClose:
+    python_name: "on_before_close"
+    description: "Fired before workbook closes"
+    uno_event: "OnPrepareUnload"
+
+  Workbook_BeforeSave:
+    python_name: "on_before_save"
+    description: "Fired before workbook is saved"
+    uno_event: "OnSave"
+
+  Workbook_AfterSave:
+    python_name: "on_after_save"
+    description: "Fired after workbook is saved"
+    uno_event: "OnSaveDone"
+
+  Workbook_Activate:
+    python_name: "on_activate"
+    description: "Fired when workbook becomes active"
+    uno_event: "OnFocus"
+
+  Workbook_Deactivate:
+    python_name: "on_deactivate"
+    description: "Fired when workbook loses focus"
+    uno_event: "OnUnfocus"
+
+# Worksheet Events
+worksheet_events:
+  Worksheet_Change:
+    python_name: "on_sheet_change"
+    description: "Fired when cells in worksheet change"
+    uno_event: "modified"
+
+  Worksheet_SelectionChange:
+    python_name: "on_selection_change"
+    description: "Fired when selection changes"
+    uno_event: "selectionChanged"
+
+  Worksheet_BeforeDoubleClick:
+    python_name: "on_before_double_click"
+    description: "Fired before double-click"
+    uno_event: "mousePressed"
+
+  Worksheet_Activate:
+    python_name: "on_sheet_activate"
+    description: "Fired when worksheet becomes active"
+    uno_event: "activeSpreadsheetChanged"
+
+  Worksheet_Calculate:
+    python_name: "on_calculate"
+    description: "Fired after worksheet calculates"
+    uno_event: "calculated"
+
+# Event Handler Templates
+handler_templates:
+  workbook:
+    signature: "def {python_name}(event=None):"
+    docstring: "'''Event handler for {vba_name}.'''"
+    context_setup: |
+      # Get document context
+      ctx = XSCRIPTCONTEXT.getComponentContext() if 'XSCRIPTCONTEXT' in dir() else uno.getComponentContext()
+      smgr = ctx.ServiceManager
+      desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+      doc = XSCRIPTCONTEXT.getDocument() if 'XSCRIPTCONTEXT' in dir() else desktop.getCurrentComponent()
+
+  worksheet:
+    signature: "def {python_name}(event=None):"
+    docstring: "'''Event handler for {vba_name}.'''"
+    context_setup: |
+      # Get worksheet context
+      ctx = XSCRIPTCONTEXT.getComponentContext() if 'XSCRIPTCONTEXT' in dir() else uno.getComponentContext()
+      smgr = ctx.ServiceManager
+      desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+      doc = XSCRIPTCONTEXT.getDocument() if 'XSCRIPTCONTEXT' in dir() else desktop.getCurrentComponent()
+      sheet = doc.getCurrentController().getActiveSheet()
+
+# Event Registration
+registration:
+  workbook_events:
+    method: "doc.addActionListener"
+    description: "Register workbook-level event listeners"
+
+  worksheet_events:
+    method: "sheet.addModifyListener"
+    description: "Register worksheet-level event listeners"
