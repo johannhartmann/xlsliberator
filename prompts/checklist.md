@@ -53,8 +53,8 @@
 ### Phase 5 – Integration, CLI & Reporting
 | Schritt | Deliverable | Gate / Metrik | Status |
 |----------|--------------|---------------|---------|
-| **5.1** | `api.py` + `cli.py` – End-to-End `convert()` | CLI-Smoke grün | ☐ |
-| **5.2** | `report.py` – JSON/MD ConversionReport | Report enthält Metriken & Warnungen | ☐ |
+| **5.1** | `api.py` + `cli.py` – End-to-End `convert()` | CLI-Smoke grün | ☑ |
+| **5.2** | `report.py` – JSON/MD ConversionReport | Report enthält Metriken & Warnungen | ☑ |
 | **5.3** | `tools/scorecard.py` – automatische Ampel | Scorecard generiert korrekt | ☐ |
 
 ---
