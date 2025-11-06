@@ -23,9 +23,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[project.scripts]
-xlsliberator = "xlsliberator.cli:cli"
-
 dependencies = [
     "openpyxl>=3.1.0",
     "odfpy>=1.4.1",
@@ -34,7 +31,11 @@ dependencies = [
     "pydantic>=2.0.0",
     "loguru>=0.7.0",
     "click>=8.1.0",
+    "pyyaml>=6.0.0",
 ]
+
+[project.scripts]
+xlsliberator = "xlsliberator.cli:cli"
 
 [project.optional-dependencies]
 dev = [
@@ -45,9 +46,6 @@ dev = [
     "ruff>=0.1.0",
     "types-openpyxl",
 ]
-
-[project.scripts]
-xlsliberator = "xlsliberator.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xlsliberator"]
