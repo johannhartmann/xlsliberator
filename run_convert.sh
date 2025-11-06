@@ -1,6 +1,9 @@
 #!/bin/bash
 # Wrapper to run xlsliberator with UNO support
 
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Ensure LibreOffice is running
 if ! nc -z 127.0.0.1 2002 2>/dev/null; then
     echo "Starting LibreOffice headless..."
@@ -8,10 +11,14 @@ if ! nc -z 127.0.0.1 2002 2>/dev/null; then
     sleep 3
 fi
 
-# Force system libstdc++ for LibreOffice UNO compatibility
-export LD_PRELOAD="/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
-export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/lib/libreoffice/program"
-export URE_BOOTSTRAP="file:///usr/lib/libreoffice/program/fundamentalrc"
+# Activate virtual environment
+source "$SCRIPT_DIR/.venv/bin/activate"
 
-# Run xlsliberator - run_xlsliberator.py handles UNO path internally
-exec python run_xlsliberator.py "$@"
+# CRITICAL: Set UNO environment BEFORE Python starts
+# These must be set in the shell, not in Python, because uno bootstrap happens at import time
+export URE_BOOTSTRAP="vnd.sun.star.pathname:/usr/lib/libreoffice/program/fundamentalrc"
+export UNO_PATH="/usr/lib/libreoffice/program"
+export LD_LIBRARY_PATH="/usr/lib/libreoffice/program:${LD_LIBRARY_PATH}"
+
+# Run xlsliberator - run_xlsliberator.py handles path setup
+exec python "$SCRIPT_DIR/run_xlsliberator.py" "$@"
