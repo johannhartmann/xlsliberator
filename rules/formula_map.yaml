@@ -64,6 +64,12 @@ IF:
   category: logical
   notes: Conditional branching
 
+IFERROR:
+  en-US: IFERROR
+  de-DE: WENNFEHLER
+  category: logical
+  notes: Return alternative value if error occurs
+
 SUMIF:
   en-US: SUMIF
   de-DE: SUMMEWENN

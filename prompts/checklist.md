@@ -62,9 +62,30 @@
 ### Phase 6 – Feasibility Validation (Real Data)
 | Schritt | Deliverable | Gate / Metrik | Status |
 |----------|--------------|---------------|---------|
-| **6.1** | Real-Dataset Test (z. B. Tippspiel-XLSM) | ≥ 1 Datei erfolgreich E2E | ☐ |
-| **6.2** | Formel-Vergleich Real Data | ≥ 90 % Toleranzband erreicht | ☐ |
-| **6.3** | Performance Real Data | < 2 GB RAM / < 5 min / Datei | ☐ |
+| **6.1** | Real-Dataset Test (z. B. Tippspiel-XLSM) | ≥ 1 Datei erfolgreich E2E | ☑ |
+| **6.2** | Formel-Vergleich Real Data | ≥ 90 % Toleranzband erreicht | ⚠️ |
+| **6.3** | Performance Real Data | < 2 GB RAM / < 5 min / Datei | ☑ |
+
+**⚠️ Phase 6.2 - STRATEGIC DECISION REQUIRED:**
+
+Current Status: Manual formula translation achieves ~64% match rate (below 90% threshold).
+
+**Two Approaches Under Evaluation:**
+1. **Native LibreOffice Conversion:** Use `soffice --convert-to ods` for base conversion
+   - Pros: Likely 100% formula equivalence, faster, simpler
+   - Cons: Need to verify VBA handling, less control
+   - Test Required: Measure formula equivalence rate
+
+2. **Fix Manual Translation:** Continue improving our formula mapper
+   - Pros: Full control, custom VBA embedding
+   - Cons: Complex, may not reach 100%, more maintenance
+   - Test Required: Fix IFERROR/MATCH issues, retest
+
+**Action Items:**
+- [ ] Test LibreOffice native conversion formula equivalence
+- [ ] Compare approaches with real dataset
+- [ ] Choose approach that guarantees 100% match rate
+- [ ] Document decision rationale
 
 ---
 
