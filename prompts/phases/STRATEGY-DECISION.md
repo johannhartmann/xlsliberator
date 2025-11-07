@@ -2,7 +2,9 @@
 
 **Date:** 2025-11-07
 **Phase:** 6.2 (Formula Equivalence Validation)
-**Status:** DECISION REQUIRED
+**Status:** ✅ DECISION MADE
+
+**DECISION:** Use LibreOffice Native Conversion + VBA Translation (Approach 1)
 
 ## Problem Statement
 
@@ -207,3 +209,141 @@ check_named_ranges('/tmp/converted.ods')
 - **Focus:** Our unique value is VBA→Python-UNO translation, not formula conversion
 - **Principle:** Use existing tools (LibreOffice native conversion) where they excel
 - **Goal:** 100% formula equivalence is non-negotiable for production use
+
+---
+
+## ✅ FINAL DECISION (2025-11-07)
+
+### Decision: Approach 1 - LibreOffice Native Conversion + VBA Translation
+
+**Rationale:**
+1. **Formula Equivalence:** LibreOffice native conversion expected to achieve 100% match rate (uses same calculation engine)
+2. **Simplicity:** Much simpler architecture, less code to maintain
+3. **Focus:** Allows us to focus on unique value proposition (VBA→Python-UNO translation)
+4. **Performance:** Native conversion is faster than cell-by-cell building
+5. **Reliability:** LibreOffice's own converter is battle-tested
+
+**Rejected:** Approach 2 (Fix Manual Translation)
+- Would require significant debugging effort
+- May never achieve 100% due to Excel/LibreOffice calculation differences
+- Reinventing functionality LibreOffice already provides
+
+### Implementation Plan
+
+#### Phase 1: Refactor Core Conversion (api.py)
+
+**Old Flow:**
+```
+Excel → openpyxl extract → formula translation → UNO cell-by-cell build → ODS
+```
+
+**New Flow:**
+```
+Excel → soffice --convert-to ods → ODS (with perfect formulas)
+      ↘ VBA extract → LLM translate → embed Python macros → Final ODS
+```
+
+**Code Changes:**
+```python
+def convert(input_path: Path, output_path: Path, locale: str = "en-US") -> ConversionReport:
+    """Hybrid conversion: Native ODS + VBA translation."""
+    
+    # Step 1: Native LibreOffice conversion (formulas, data, formatting)
+    temp_ods = convert_native(input_path, output_path)
+    
+    # Step 2: Extract VBA from original Excel
+    vba_modules = extract_vba_modules(input_path)
+    
+    # Step 3: Translate VBA to Python-UNO
+    python_macros = translate_vba_modules(vba_modules)
+    
+    # Step 4: Embed Python macros into native-converted ODS
+    embed_macros(temp_ods, python_macros, output_path)
+    
+    return report
+
+def convert_native(input_path: Path, output_path: Path) -> Path:
+    """Use LibreOffice native conversion."""
+    subprocess.run([
+        "soffice", "--headless", "--convert-to", "ods",
+        str(input_path), "--outdir", str(output_path.parent)
+    ], check=True)
+    return output_path
+```
+
+#### Phase 2: Validation & Testing
+
+**Test Suite:**
+1. **Formula Equivalence Test**
+   - Compare Excel values vs Native ODS values
+   - Expected: ≥ 99% match rate
+   
+2. **Named Ranges Test**
+   - Verify all named ranges preserved
+   - Test range references in formulas
+   
+3. **VBA Translation Test**
+   - Extract VBA from Excel
+   - Translate to Python-UNO
+   - Embed in ODS
+   - Verify macros execute
+   
+4. **End-to-End Test**
+   - Full pipeline on real dataset
+   - Validate all features work
+
+#### Phase 3: Cleanup
+
+**Files to Keep:**
+- `extract_vba.py` - VBA extraction
+- `vba2py_uno.py` - VBA→Python translation (rule-based)
+- `llm_vba_translator.py` - LLM-based VBA translation
+- `embed_macros.py` - Macro embedding
+- `uno_conn.py` - UNO connection utilities
+- `testing_lo.py` - Formula equivalence testing
+- `api.py` - Refactored for native conversion
+- `cli.py` - CLI interface
+- `report.py` - Conversion reporting
+
+**Files to Archive/Simplify:**
+- `formula_mapper.py` - No longer primary path (keep for reference)
+- `write_ods.py` - Simplified (only for macro embedding, not full ODS build)
+- `extract_excel.py` - Only used for validation, not conversion
+
+**Files to Update:**
+- `api.py` - Use subprocess for native conversion
+- `README.md` - Update architecture documentation
+- `docs/` - Update design docs
+
+### Success Criteria
+
+- [x] Decision documented
+- [ ] Formula equivalence ≥ 99% on native conversion
+- [ ] VBA translation works end-to-end
+- [ ] Performance ≤ 5 minutes for 27k cells
+- [ ] All tests pass
+- [ ] Documentation updated
+- [ ] Code committed
+
+### Timeline
+
+- **Day 1:** Refactor api.py, test native conversion
+- **Day 2:** Integrate VBA translation with native ODS
+- **Day 3:** End-to-end testing and validation
+- **Day 4:** Documentation and cleanup
+
+### Notes
+
+This decision represents a pivot from "build everything" to "use what exists and add unique value." Our unique value is VBA→Python-UNO translation with LLM assistance, not reimplementing LibreOffice's formula converter.
+
+---
+
+## Appendix: Decision Audit Trail
+
+1. **2025-11-07 Morning:** Discovered 64% formula match rate issue
+2. **2025-11-07 Afternoon:** Analyzed root cause (LibreOffice calc engine differences)
+3. **2025-11-07 Evening:** Identified LibreOffice native conversion as alternative
+4. **2025-11-07:** Decision made to use native conversion
+5. **2025-11-07:** Documentation updated, implementation planning complete
+
+**Key Insight:** Sometimes the best code is the code you don't write. Use existing, battle-tested tools where they excel.

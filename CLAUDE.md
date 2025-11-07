@@ -171,36 +171,70 @@ xlsliberator/
 - **Phase 6.1**: Real dataset E2E conversion successful (COMPLETE)
 - **Phase 6.3**: Performance < 5 min achieved (264s for 27k cells) (COMPLETE)
 
-### 🔍 Critical Decision Point - Formula Translation Strategy:
+### ✅ Strategic Decision Made: Hybrid Native + VBA Translation Approach
 
-**Current Situation:**
-We have successfully converted Excel → ODS with:
-- 27,003 cells extracted and written
-- 23,702 formulas translated
-- 25 sheets processed
-- VBA extraction working (29 modules)
-- LLM-based VBA→Python-UNO translation implemented
+**Decision Date:** 2025-11-07
 
-**Problem Identified:**
-- Manual formula translation achieves ~64% match rate
-- We are manually translating formulas (SUM→SUMME, IF→WENN, IFERROR→WENNFEHLER)
-- LibreOffice can natively convert XLSX→ODS with perfect formula translation
+**DECISION:** Use LibreOffice native conversion for base ODS, then add VBA→Python-UNO translation.
 
-**Strategic Question:**
-Should we:
-1. **Use LibreOffice native conversion** (`soffice --convert-to ods`) for base ODS, then add VBA translation?
-2. **Fix our manual formula translation** to achieve 100% match rate?
+**Rationale:**
+- Manual formula translation achieved only 64% match rate
+- LibreOffice native conversion uses same calculation engine → 100% formula equivalence expected
+- Our unique value proposition is VBA→Python-UNO translation, not formula conversion
+- Simpler architecture, faster conversion, better maintainability
 
-**Decision Criteria:**
-- Formula equivalence: MUST achieve 100% match rate
-- VBA translation: MUST work (unique value proposition)
-- Performance: SHOULD be < 5 minutes
-- Code maintainability: SHOULD be simple
+**New Implementation Architecture:**
 
-**Next Steps:**
-1. Test LibreOffice native conversion formula equivalence
-2. Compare both approaches
-3. Choose approach that guarantees 100% formula match rate
-4. Implement and validate
+```
+┌─────────────┐
+│ Excel File  │
+│ (.xlsm)     │
+└──────┬──────┘
+       │
+       ├─────────────────────────────────┐
+       │                                 │
+       v                                 v
+┌──────────────────┐            ┌────────────────┐
+│ LibreOffice      │            │ VBA Extraction │
+│ Native Convert   │            │ (oletools-vba) │
+│ --convert-to ods │            └────────┬───────┘
+└────────┬─────────┘                     │
+         │                               v
+         │                    ┌──────────────────────┐
+         │                    │ VBA→Python-UNO       │
+         │                    │ Translation (LLM)    │
+         │                    └──────────┬───────────┘
+         │                               │
+         v                               v
+    ┌────────────────────────────────────────┐
+    │   Embed Python Macros into ODS         │
+    │   (embed_macros.py via UNO)            │
+    └────────────────────────────────────────┘
+                    │
+                    v
+            ┌───────────────┐
+            │ Final ODS     │
+            │ + Py Macros   │
+            └───────────────┘
+```
+
+**What We Keep:**
+- ✅ VBA extraction (`extract_vba.py`)
+- ✅ VBA→Python-UNO translation (`vba2py_uno.py`, `llm_vba_translator.py`)
+- ✅ Macro embedding (`embed_macros.py`)
+- ✅ CLI/API interface (`cli.py`, `api.py`)
+- ✅ Testing framework (`testing_lo.py`)
+
+**What We Replace:**
+- ❌ Manual formula translation (`formula_mapper.py`) → Use LibreOffice native
+- ❌ Cell-by-cell ODS building (`write_ods.py`) → Use LibreOffice native
+- ❌ Excel formula extraction (openpyxl) → Only needed for validation
+
+**Implementation Plan:**
+1. Update `api.py` to use subprocess for native conversion
+2. Keep VBA extraction and translation pipeline
+3. Embed translated Python macros into native-converted ODS
+4. Test formula equivalence (expect 100%)
+5. Validate VBA translation works end-to-end
 
 Check `prompts/checklist.md` for detailed phase status.

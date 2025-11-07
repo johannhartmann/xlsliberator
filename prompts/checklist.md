@@ -63,29 +63,26 @@
 | Schritt | Deliverable | Gate / Metrik | Status |
 |----------|--------------|---------------|---------|
 | **6.1** | Real-Dataset Test (z. B. Tippspiel-XLSM) | ≥ 1 Datei erfolgreich E2E | ☑ |
-| **6.2** | Formel-Vergleich Real Data | ≥ 90 % Toleranzband erreicht | ⚠️ |
+| **6.2** | Formel-Vergleich Real Data | ≥ 90 % Toleranzband erreicht | 🔄 |
 | **6.3** | Performance Real Data | < 2 GB RAM / < 5 min / Datei | ☑ |
 
-**⚠️ Phase 6.2 - STRATEGIC DECISION REQUIRED:**
+**✅ STRATEGIC DECISION MADE (2025-11-07):**
 
-Current Status: Manual formula translation achieves ~64% match rate (below 90% threshold).
+**Decision:** Use LibreOffice native conversion + VBA translation (Hybrid Approach)
 
-**Two Approaches Under Evaluation:**
-1. **Native LibreOffice Conversion:** Use `soffice --convert-to ods` for base conversion
-   - Pros: Likely 100% formula equivalence, faster, simpler
-   - Cons: Need to verify VBA handling, less control
-   - Test Required: Measure formula equivalence rate
+**Rationale:**
+- Manual translation achieved only 64% match rate
+- LibreOffice native conversion expected to achieve 100% (same calc engine)
+- Focus on unique value: VBA→Python-UNO translation
 
-2. **Fix Manual Translation:** Continue improving our formula mapper
-   - Pros: Full control, custom VBA embedding
-   - Cons: Complex, may not reach 100%, more maintenance
-   - Test Required: Fix IFERROR/MATCH issues, retest
-
-**Action Items:**
-- [ ] Test LibreOffice native conversion formula equivalence
-- [ ] Compare approaches with real dataset
-- [ ] Choose approach that guarantees 100% match rate
-- [ ] Document decision rationale
+**Phase 6.2 - New Implementation Plan:**
+| Sub-Phase | Task | Status |
+|-----------|------|--------|
+| **6.2.1** | Refactor `api.py` to use native conversion | ☐ |
+| **6.2.2** | Test native conversion formula equivalence | ☐ |
+| **6.2.3** | Integrate VBA translation with native ODS | ☐ |
+| **6.2.4** | End-to-end validation | ☐ |
+| **6.2.5** | Achieve ≥ 95% formula match rate | ☐ |
 
 ---
 
