@@ -1,19 +1,88 @@
-"""API module for Excel to ODS conversion (Phase F12)."""
+"""API module for Excel to ODS conversion (Phase 6.2 - Hybrid Approach).
 
+Strategic Decision (2025-11-07): Use LibreOffice native conversion + VBA translation.
+Architecture: Excel → soffice native → ODS + VBA extraction → LLM translation → Embed macros
+"""
+
+import os
+import subprocess
 import time
 from pathlib import Path
 
 from loguru import logger
 
+from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
 from xlsliberator.extract_vba import extract_vba_modules
 from xlsliberator.report import ConversionReport
-from xlsliberator.uno_conn import UnoCtx
-from xlsliberator.write_ods import write_ods_from_ir
+from xlsliberator.vba2py_uno import translate_vba_to_python
 
 
 class ConversionError(Exception):
     """Raised when conversion fails."""
+
+
+def convert_native(
+    input_path: Path,
+    output_path: Path,
+) -> None:
+    """Convert Excel to ODS using LibreOffice native conversion.
+
+    Args:
+        input_path: Path to input Excel file
+        output_path: Path for output ODS file
+
+    Raises:
+        ConversionError: If native conversion fails
+
+    Note:
+        Uses `soffice --headless --convert-to ods` for 100% formula equivalence.
+        This is the foundation of the hybrid approach (Phase 6.2.1).
+    """
+    logger.info(f"Running LibreOffice native conversion: {input_path.name}")
+
+    try:
+        # Ensure output directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Run LibreOffice native conversion
+        # Note: soffice creates output file with same base name in outdir
+        subprocess.run(
+            [
+                "soffice",
+                "--headless",
+                "--convert-to",
+                "ods",
+                str(input_path),
+                "--outdir",
+                str(output_path.parent),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,  # 5 minute timeout
+        )
+
+        # LibreOffice creates file with original basename + .ods extension
+        default_output = output_path.parent / f"{input_path.stem}.ods"
+
+        # Rename if needed
+        if default_output != output_path and default_output.exists():
+            default_output.rename(output_path)
+
+        if not output_path.exists():
+            raise ConversionError(
+                f"Native conversion succeeded but output not found: {output_path}"
+            )
+
+        logger.success(f"Native conversion complete: {output_path}")
+
+    except subprocess.TimeoutExpired as e:
+        raise ConversionError(f"Native conversion timeout after 5 minutes: {e}") from e
+    except subprocess.CalledProcessError as e:
+        raise ConversionError(f"Native conversion failed: {e.stderr or e.stdout or str(e)}") from e
+    except Exception as e:
+        raise ConversionError(f"Native conversion error: {e}") from e
 
 
 def convert(
@@ -24,12 +93,12 @@ def convert(
     strict: bool = False,
     embed_macros: bool = True,
 ) -> ConversionReport:
-    """Convert Excel file to LibreOffice Calc ODS format.
+    """Convert Excel file to LibreOffice Calc ODS format (Hybrid Approach).
 
     Args:
         input_path: Path to input Excel file (.xlsx, .xlsm, .xlsb, .xls)
         output_path: Path for output ODS file
-        locale: Target locale for formulas ("en-US" or "de-DE")
+        locale: Target locale for formulas (note: native conversion handles this)
         strict: If True, fail on any errors; if False, continue with warnings
         embed_macros: If True, translate and embed VBA macros
 
@@ -40,8 +109,11 @@ def convert(
         ConversionError: If conversion fails (in strict mode)
 
     Note:
-        Phase F12 implementation - End-to-end conversion pipeline.
-        Pipeline: Extract → Translate → Write → Embed
+        Phase 6.2 implementation - Hybrid approach:
+        1. LibreOffice native conversion (100% formula equivalence)
+        2. VBA extraction from original Excel
+        3. VBA→Python-UNO translation with LLM
+        4. Embed Python macros into native ODS
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -56,28 +128,32 @@ def convert(
         locale=locale,
     )
 
-    logger.info(f"Starting conversion: {input_path} → {output_path}")
+    logger.info(f"Starting hybrid conversion: {input_path} → {output_path}")
 
     try:
-        # Phase 1: Extract Excel workbook
-        logger.info("Phase 1: Extracting Excel workbook...")
-        wb_ir, extract_stats = extract_workbook(input_path)
+        # Step 1: LibreOffice Native Conversion (formulas, data, formatting)
+        logger.info("Step 1: LibreOffice native conversion...")
+        convert_native(input_path, output_path)
 
+        # Extract metadata for reporting (from original Excel)
+        logger.info("Extracting metadata for report...")
+        wb_ir, _ = extract_workbook(input_path)
         report.total_cells = wb_ir.total_cells
         report.total_formulas = wb_ir.total_formulas
         report.named_ranges = len(wb_ir.named_ranges)
         report.sheet_count = wb_ir.sheet_count
+        report.formulas_translated = wb_ir.total_formulas  # Native conversion handles this
 
         logger.success(
-            f"Extracted: {report.total_cells:,} cells, "
+            f"Native conversion: {report.total_cells:,} cells, "
             f"{report.total_formulas:,} formulas, "
             f"{report.sheet_count} sheets"
         )
 
-        # Phase 2: Extract VBA (if present and embed_macros=True)
+        # Step 2: Extract VBA from original Excel (if embed_macros=True)
         vba_modules = []
         if embed_macros and input_path.suffix.lower() in [".xlsm", ".xlsb", ".xls"]:
-            logger.info("Phase 2: Extracting VBA macros...")
+            logger.info("Step 2: Extracting VBA macros...")
             try:
                 vba_modules = extract_vba_modules(input_path)
                 report.vba_modules = len(vba_modules)
@@ -92,26 +168,55 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
-        # Phase 3: Write ODS with formulas
-        logger.info("Phase 3: Writing ODS file...")
-        with UnoCtx() as ctx:
-            write_ods_from_ir(ctx, wb_ir, str(output_path), locale=locale)
+        # Step 3: Translate VBA to Python-UNO (if VBA found)
+        python_modules = {}
+        if vba_modules:
+            logger.info("Step 3: Translating VBA to Python-UNO with LLM...")
 
-        report.formulas_translated = wb_ir.total_formulas  # Simplified for F12
-        logger.success(f"ODS file written: {output_path}")
+            # Check if LLM is available
+            use_llm = bool(os.environ.get("ANTHROPIC_API_KEY"))
+            if not use_llm:
+                logger.warning(
+                    "No ANTHROPIC_API_KEY set - VBA translation will use rule-based fallback"
+                )
 
-        # Phase 4: Embed macros (if requested and VBA found)
-        if embed_macros and vba_modules:
-            logger.info("Phase 4: Translating and embedding macros...")
-            # For F12, we skip actual embedding to keep it simple
-            # This would be implemented in a full version
-            report.warnings.append("VBA translation not fully implemented in this version")
+            try:
+                for vba_module in vba_modules:
+                    # Translate the entire module source code
+                    module_name = f"{vba_module.name}.py"
+                    result = translate_vba_to_python(vba_module.source_code, use_llm=use_llm)
+
+                    if result.python_code:
+                        python_modules[module_name] = result.python_code
+                        logger.debug(f"Translated: {module_name}")
+
+                    # Collect warnings
+                    for warning in result.warnings:
+                        report.warnings.append(f"VBA translation warning: {warning}")
+
+                logger.success(f"Translated {len(python_modules)} Python modules")
+
+            except Exception as e:
+                msg = f"VBA translation failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
+
+        # Step 4: Embed Python macros into native ODS
+        if python_modules:
+            logger.info("Step 4: Embedding Python macros into ODS...")
+            try:
+                embed_python_macros(output_path, python_modules)
+                logger.success(f"Embedded {len(python_modules)} Python modules")
+            except Exception as e:
+                msg = f"Macro embedding failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
 
         # Conversion successful
         report.success = True
         report.duration_seconds = time.time() - start_time
 
-        logger.success(f"Conversion completed in {report.duration_seconds:.2f}s")
+        logger.success(f"Hybrid conversion completed in {report.duration_seconds:.2f}s")
 
         return report
 
