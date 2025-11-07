@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+import yaml
 from anthropic import Anthropic
 from loguru import logger
 
@@ -11,15 +12,24 @@ from loguru import logger
 class LLMFormulaTranslator:
     """Translates Excel formulas to LibreOffice Calc using Claude LLM."""
 
-    def __init__(self, cache_path: Path | None = None):
+    def __init__(
+        self,
+        cache_path: Path | None = None,
+        incompatibility_rules_path: Path | None = None,
+    ):
         """Initialize LLM translator.
 
         Args:
             cache_path: Optional path to cache translated formulas
+            incompatibility_rules_path: Path to formula incompatibility rules YAML
         """
         self.client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         self.cache_path = cache_path or Path(".formula_cache.json")
         self.cache: dict[str, str] = self._load_cache()
+
+        # Load incompatibility rules
+        self.rules_path = incompatibility_rules_path or Path("rules/formula_incompatibilities.yaml")
+        self.incompatibility_rules = self._load_incompatibility_rules()
 
     def _load_cache(self) -> dict[str, str]:
         """Load translation cache from disk."""
@@ -38,6 +48,20 @@ class LLMFormulaTranslator:
                 json.dump(self.cache, f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save formula cache: {e}")
+
+    def _load_incompatibility_rules(self) -> dict:
+        """Load formula incompatibility rules from YAML."""
+        if not self.rules_path.exists():
+            logger.warning(f"Incompatibility rules not found: {self.rules_path}")
+            return {}
+
+        try:
+            with open(self.rules_path) as f:
+                rules: dict = yaml.safe_load(f)
+                return rules
+        except Exception as e:
+            logger.warning(f"Failed to load incompatibility rules: {e}")
+            return {}
 
     def translate_formula(
         self, excel_formula: str, locale: str = "en-US", rule_based_result: str | None = None
@@ -90,6 +114,75 @@ class LLMFormulaTranslator:
             logger.error(f"LLM translation failed: {e}")
             # Fallback: use rule-based result or original formula
             return rule_based_result if rule_based_result else excel_formula
+
+    def translate_excel_to_calc(
+        self,
+        excel_formula: str,
+        issue_type: str = "indirect_address_cross_sheet",
+    ) -> str:
+        """Translate Excel formula with known incompatibility to Calc syntax.
+
+        This method specifically fixes known incompatibilities between Excel and Calc,
+        such as INDIRECT(ADDRESS(..., "SheetName")) patterns.
+
+        Args:
+            excel_formula: Excel formula with incompatibility
+            issue_type: Type of incompatibility (key from rules YAML)
+
+        Returns:
+            Calc-compatible formula
+
+        Note:
+            Uses specialized prompts based on incompatibility rules to ensure
+            accurate translation. Results are cached for performance.
+        """
+        # Check cache first
+        cache_key = f"repair:{issue_type}:{excel_formula}"
+        if cache_key in self.cache:
+            logger.debug(f"LLM cache hit for formula repair: {excel_formula[:50]}...")
+            return self.cache[cache_key]
+
+        # Get the rule for this issue type
+        rule = self.incompatibility_rules.get(issue_type)
+        if not rule:
+            logger.warning(f"No rule found for issue type: {issue_type}, falling back to original")
+            return excel_formula
+
+        # Build specialized prompt from rule template
+        prompt_template = rule.get("llm_prompt_template", "")
+        if not prompt_template:
+            logger.warning(f"No prompt template for issue type: {issue_type}")
+            return excel_formula
+
+        prompt = prompt_template.format(excel_formula=excel_formula)
+
+        # Call Claude API
+        logger.info(f"LLM formula repair ({issue_type}): {excel_formula[:60]}...")
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=20000,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            translated = response.content[0].text.strip()
+
+            # Ensure formula starts with =
+            if not translated.startswith("="):
+                translated = "=" + translated
+
+            # Cache the result
+            self.cache[cache_key] = translated
+            self._save_cache()
+
+            logger.info(f"LLM repair: {excel_formula[:60]}... → {translated[:60]}...")
+            return translated
+
+        except Exception as e:
+            logger.error(f"LLM formula repair failed: {e}")
+            return excel_formula  # Return original if repair fails
 
     def _build_translation_prompt(self, excel_formula: str, locale: str) -> str:
         """Build prompt for Claude to translate formula.

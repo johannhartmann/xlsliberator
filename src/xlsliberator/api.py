@@ -137,8 +137,9 @@ def convert(
         convert_native(input_path, output_path)
 
         # Step 1.5: Post-process native ODS to fix known bugs
-        logger.info("Step 1.5: Post-processing native ODS (fix named ranges)...")
-        post_process_native_ods(input_path, output_path)
+        logger.info("Step 1.5: Post-processing native ODS (fix formulas & ranges)...")
+        post_stats = post_process_native_ods(input_path, output_path)
+        report.formulas_fixed = post_stats.get("formulas_fixed", 0)
 
         # Extract metadata for reporting (from original Excel)
         logger.info("Extracting metadata for report...")

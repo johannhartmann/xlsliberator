@@ -18,6 +18,7 @@ class ConversionReport:
     total_formulas: int = 0
     formulas_translated: int = 0
     formulas_unsupported: int = 0
+    formulas_fixed: int = 0  # Formulas repaired post-conversion (INDIRECT/ADDRESS, etc.)
 
     # Named ranges
     named_ranges: int = 0
