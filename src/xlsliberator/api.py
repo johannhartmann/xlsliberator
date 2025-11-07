@@ -14,6 +14,7 @@ from loguru import logger
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
 from xlsliberator.extract_vba import extract_vba_modules
+from xlsliberator.fix_native_ods import post_process_native_ods
 from xlsliberator.report import ConversionReport
 from xlsliberator.vba2py_uno import translate_vba_to_python
 
@@ -134,6 +135,10 @@ def convert(
         # Step 1: LibreOffice Native Conversion (formulas, data, formatting)
         logger.info("Step 1: LibreOffice native conversion...")
         convert_native(input_path, output_path)
+
+        # Step 1.5: Post-process native ODS to fix known bugs
+        logger.info("Step 1.5: Post-processing native ODS (fix named ranges)...")
+        post_process_native_ods(input_path, output_path)
 
         # Extract metadata for reporting (from original Excel)
         logger.info("Extracting metadata for report...")

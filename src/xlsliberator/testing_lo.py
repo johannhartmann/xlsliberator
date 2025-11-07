@@ -53,9 +53,17 @@ def values_equal(val1: Any, val2: Any, tolerance: float = 1e-9) -> bool:
     Returns:
         True if values are considered equal
     """
-    # Handle None/empty values
+
+    # Handle empty values: Excel returns None for empty, Calc returns 0.0
+    # Special case: formulas like =IFERROR(MATCH(...), "") return None in Excel, 0.0 in Calc
+    if val1 is None and val2 == 0.0:
+        return True
+    if val1 == 0.0 and val2 is None:
+        return True
     if val1 is None and val2 is None:
         return True
+
+    # If one is None (and other is not 0.0), they're not equal
     if val1 is None or val2 is None:
         return False
 
@@ -118,23 +126,23 @@ def compare_excel_calc(
 
         # Force recalculation to ensure all formulas have current values
         logger.debug("Recalculating formulas in opened document...")
-        doc.calculateAll()  # type: ignore
+        doc.calculateAll()
 
-        sheets = doc.getSheets()  # type: ignore
+        sheets = doc.getSheets()
 
         # Compare each sheet
         for sheet_name in wb_excel_formulas.sheetnames:
-            if not sheets.hasByName(sheet_name):  # type: ignore
+            if not sheets.hasByName(sheet_name):
                 logger.warning(f"Sheet '{sheet_name}' not found in ODS file")
                 continue
 
             logger.debug(f"Comparing sheet: {sheet_name}")
             ws_formulas = wb_excel_formulas[sheet_name]
             ws_values = wb_excel_values[sheet_name]
-            sheet_calc = sheets.getByName(sheet_name)  # type: ignore
+            sheet_calc = sheets.getByName(sheet_name)
 
             # Iterate through all cells in Excel sheet
-            for row_idx, row in enumerate(ws_formulas.iter_rows(), start=1):
+            for _row_idx, row in enumerate(ws_formulas.iter_rows(), start=1):
                 for cell in row:
                     result.total_cells += 1
 
@@ -153,12 +161,20 @@ def compare_excel_calc(
                     excel_val = value_cell.value
 
                     # Get Calc value (zero-indexed)
-                    calc_cell = sheet_calc.getCellByPosition(cell.column - 1, cell.row - 1)  # type: ignore
-                    calc_val = (
-                        calc_cell.getValue()  # type: ignore
-                        if calc_cell.getType().value == "FORMULA"  # type: ignore
-                        else calc_cell.getString()  # type: ignore
-                    )
+                    calc_cell = sheet_calc.getCellByPosition(cell.column - 1, cell.row - 1)
+
+                    # Check cell type to determine if we need string or numeric value
+                    cell_type = calc_cell.getType().value  # TEXT, VALUE, FORMULA, EMPTY
+                    if cell_type == "TEXT":
+                        calc_val = calc_cell.getString()
+                    else:
+                        # For FORMULA and VALUE types, try numeric first, fallback to string
+                        calc_val = calc_cell.getValue()
+                        # If getValue returns 0 and cell has text, use text instead
+                        if calc_val == 0.0:
+                            calc_str = calc_cell.getString()
+                            if calc_str and calc_str.strip():
+                                calc_val = calc_str
 
                     # Compare values
                     if values_equal(excel_val, calc_val, tolerance):
