@@ -5,7 +5,6 @@ Architecture: Excel → soffice native → ODS + VBA extraction → LLM translat
 """
 
 import os
-import subprocess
 import time
 from pathlib import Path
 
@@ -27,7 +26,7 @@ def convert_native(
     input_path: Path,
     output_path: Path,
 ) -> None:
-    """Convert Excel to ODS using LibreOffice native conversion.
+    """Convert Excel to ODS using LibreOffice native conversion via UNO.
 
     Args:
         input_path: Path to input Excel file
@@ -37,39 +36,39 @@ def convert_native(
         ConversionError: If native conversion fails
 
     Note:
-        Uses `soffice --headless --convert-to ods` for 100% formula equivalence.
-        This is the foundation of the hybrid approach (Phase 6.2.1).
+        Uses UNO bridge for conversion to avoid conflicts with persistent UNO server.
+        This ensures the same LibreOffice instance can be used for formula repair.
     """
-    logger.info(f"Running LibreOffice native conversion: {input_path.name}")
+    from xlsliberator.uno_conn import UnoCtx
+
+    logger.info(f"Running LibreOffice native conversion via UNO: {input_path.name}")
 
     try:
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Run LibreOffice native conversion
-        # Note: soffice creates output file with same base name in outdir
-        subprocess.run(
-            [
-                "soffice",
-                "--headless",
-                "--convert-to",
-                "ods",
-                str(input_path),
-                "--outdir",
-                str(output_path.parent),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=300,  # 5 minute timeout
-        )
+        # Remove output file if it exists (UNO Overwrite flag doesn't always work)
+        if output_path.exists():
+            output_path.unlink()
 
-        # LibreOffice creates file with original basename + .ods extension
-        default_output = output_path.parent / f"{input_path.stem}.ods"
+        # Convert using UNO (avoids subprocess conflicts)
+        with UnoCtx() as ctx:
+            # Load Excel file
+            input_url = f"file://{input_path.absolute()}"
 
-        # Rename if needed
-        if default_output != output_path and default_output.exists():
-            default_output.rename(output_path)
+            # LoadComponentFromURL with import filter
+            doc = ctx.desktop.loadComponentFromURL(input_url, "_blank", 0, ())
+
+            # Store as ODS
+            output_url = f"file://{output_path.absolute()}"
+
+            # Store filter for ODS format
+            from com.sun.star.beans import PropertyValue
+
+            store_props = (PropertyValue(Name="FilterName", Value="calc8"),)  # ODS format
+
+            doc.storeToURL(output_url, store_props)
+            doc.close(True)
 
         if not output_path.exists():
             raise ConversionError(
@@ -78,10 +77,6 @@ def convert_native(
 
         logger.success(f"Native conversion complete: {output_path}")
 
-    except subprocess.TimeoutExpired as e:
-        raise ConversionError(f"Native conversion timeout after 5 minutes: {e}") from e
-    except subprocess.CalledProcessError as e:
-        raise ConversionError(f"Native conversion failed: {e.stderr or e.stdout or str(e)}") from e
     except Exception as e:
         raise ConversionError(f"Native conversion error: {e}") from e
 
@@ -217,6 +212,34 @@ def convert(
                 msg = f"Macro embedding failed: {e}"
                 logger.warning(msg)
                 report.warnings.append(msg)
+
+        # Step 5: Test formula equivalence
+        logger.info("Step 5: Testing formula equivalence...")
+        try:
+            from xlsliberator.testing_lo import compare_excel_calc
+
+            test_result = compare_excel_calc(input_path, output_path)
+            report.formulas_matching = test_result.matching
+            report.formulas_mismatching = test_result.mismatching
+            report.formula_match_rate = test_result.match_rate
+
+            logger.success(
+                f"Formula equivalence: {test_result.matching}/{test_result.formula_cells} "
+                f"({test_result.match_rate:.2f}%)"
+            )
+
+            # Log first few mismatches as warnings
+            for mismatch in test_result.mismatches[:5]:
+                msg = (
+                    f"Formula mismatch at {mismatch['sheet']}!{mismatch['cell']}: "
+                    f"Excel={mismatch['excel_value']} vs Calc={mismatch['calc_value']}"
+                )
+                report.warnings.append(msg)
+
+        except Exception as e:
+            msg = f"Formula equivalence testing failed: {e}"
+            logger.warning(msg)
+            report.warnings.append(msg)
 
         # Conversion successful
         report.success = True

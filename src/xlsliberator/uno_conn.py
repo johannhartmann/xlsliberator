@@ -1,6 +1,8 @@
 """LibreOffice UNO connection management and helper functions."""
 
 import socket
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ class UnoCtx:
         host: str = "127.0.0.1",
         port: int = 2002,
         timeout: int = 10,
+        manage_libreoffice: bool = True,
     ) -> None:
         """Initialize UNO connection context.
 
@@ -26,15 +29,18 @@ class UnoCtx:
             host: LibreOffice host address
             port: LibreOffice UNO port
             timeout: Connection timeout in seconds
+            manage_libreoffice: If True, start/stop LibreOffice process automatically
         """
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.manage_libreoffice = manage_libreoffice
         self.local_context: Any = None
         self.resolver: Any = None
         self.component_context: Any = None
         self.desktop: Any = None
         self._connected = False
+        self._libreoffice_process: subprocess.Popen | None = None
 
     def __enter__(self) -> "UnoCtx":
         """Enter context and establish connection."""
@@ -45,9 +51,73 @@ class UnoCtx:
         """Exit context and close connection."""
         self.disconnect()
 
+    def _start_libreoffice(self) -> None:
+        """Start LibreOffice headless process."""
+        logger.info(f"Starting LibreOffice headless on port {self.port}")
+
+        # Kill any existing LibreOffice processes
+        try:
+            subprocess.run(["pkill", "-9", "soffice"], check=False, capture_output=True)
+            time.sleep(1)
+        except Exception:
+            pass
+
+        # Start LibreOffice headless
+        cmd = [
+            "soffice",
+            "--headless",
+            f"--accept=socket,host={self.host},port={self.port};urp;",
+            "--norestore",
+            "--nofirststartwizard",
+        ]
+
+        try:
+            self._libreoffice_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.debug(f"LibreOffice process started (PID: {self._libreoffice_process.pid})")
+
+            # Wait for LibreOffice to start accepting connections
+            for attempt in range(30):  # Try for 30 seconds
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex((self.host, self.port))
+                sock.close()
+                if result == 0:
+                    logger.success("LibreOffice is ready")
+                    return
+                time.sleep(1)
+
+            raise UnoConnectionError("LibreOffice failed to start accepting connections")
+
+        except FileNotFoundError as e:
+            raise UnoConnectionError("soffice command not found. Is LibreOffice installed?") from e
+
+    def _stop_libreoffice(self) -> None:
+        """Stop LibreOffice headless process."""
+        if self._libreoffice_process:
+            logger.info("Stopping LibreOffice process")
+            try:
+                self._libreoffice_process.terminate()
+                self._libreoffice_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                logger.warning("LibreOffice did not terminate gracefully, killing")
+                self._libreoffice_process.kill()
+                self._libreoffice_process.wait()
+            except Exception as e:
+                logger.warning(f"Error stopping LibreOffice: {e}")
+            finally:
+                self._libreoffice_process = None
+
     def connect(self) -> None:
         """Establish connection to LibreOffice UNO."""
         try:
+            # Start LibreOffice if managing it
+            if self.manage_libreoffice:
+                self._start_libreoffice()
+
             # Import UNO modules (only when actually connecting)
             import uno
             from com.sun.star.connection import NoConnectException
@@ -63,19 +133,20 @@ class UnoCtx:
             )
 
             # Check if LibreOffice is running
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(self.timeout)
-                result = sock.connect_ex((self.host, self.port))
-                sock.close()
-                if result != 0:
-                    raise UnoConnectionError(
-                        f"LibreOffice not reachable at {self.host}:{self.port}. "
-                        f"Start with: soffice --headless --accept='socket,host={self.host},"
-                        f"port={self.port};urp;'"
-                    )
-            except OSError as e:
-                raise UnoConnectionError(f"Socket error: {e}") from e
+            if not self.manage_libreoffice:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(self.timeout)
+                    result = sock.connect_ex((self.host, self.port))
+                    sock.close()
+                    if result != 0:
+                        raise UnoConnectionError(
+                            f"LibreOffice not reachable at {self.host}:{self.port}. "
+                            f"Start with: soffice --headless --accept='socket,host={self.host},"
+                            f"port={self.port};urp;'"
+                        )
+                except OSError as e:
+                    raise UnoConnectionError(f"Socket error: {e}") from e
 
             # Connect to LibreOffice
             uno_url = (
@@ -98,10 +169,14 @@ class UnoCtx:
             logger.success("Connected to LibreOffice UNO")
 
         except ImportError as e:
+            if self.manage_libreoffice:
+                self._stop_libreoffice()
             raise UnoConnectionError(
                 "UNO Python bindings not available. Install LibreOffice SDK."
             ) from e
         except Exception as e:
+            if self.manage_libreoffice:
+                self._stop_libreoffice()
             raise UnoConnectionError(f"Failed to connect to UNO: {e}") from e
 
     def disconnect(self) -> None:
@@ -115,6 +190,10 @@ class UnoCtx:
             self.resolver = None
             self.local_context = None
             logger.success("Disconnected from LibreOffice UNO")
+
+        # Stop LibreOffice if we started it
+        if self.manage_libreoffice:
+            self._stop_libreoffice()
 
     @property
     def is_connected(self) -> bool:

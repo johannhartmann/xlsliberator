@@ -108,6 +108,8 @@ def fix_indirect_address_formulas(
 ) -> dict[str, int]:
     """Fix INDIRECT/ADDRESS cross-sheet formulas after native conversion.
 
+    Uses test-and-fix loop with LLM retry logic to repair formulas.
+
     Args:
         excel_path: Path to original Excel file
         ods_path: Path to native-converted ODS file
@@ -118,17 +120,17 @@ def fix_indirect_address_formulas(
         - formulas_needing_fix: Formulas with INDIRECT/ADDRESS issues
         - formulas_fixed: Successfully repaired formulas
         - formulas_failed: Failed repairs
+        - repair_attempts: Total repair attempts made
+        - avg_attempts_per_fix: Average attempts needed per successful fix
 
     Note:
         Excel's ADDRESS() accepts sheet name as 5th parameter:
         ADDRESS(row, col, abs, a1, "Sheet")
 
         LibreOffice Calc does NOT support this. Must convert to:
-        "$Sheet." & ADDRESS(row, col, abs, a1)
+        OFFSET(Sheet.A1, row-1, col-1)
     """
     logger.info(f"Fixing INDIRECT/ADDRESS formulas: {excel_path.name} → {ods_path.name}")
-
-    from xlsliberator.llm_formula_translator import LLMFormulaTranslator
 
     stats = {
         "formulas_scanned": 0,
@@ -137,30 +139,94 @@ def fix_indirect_address_formulas(
         "formulas_failed": 0,
     }
 
-    # Step 1: Scan Excel for formulas with INDIRECT/ADDRESS patterns
+    # Step 1: Build sheet name mapping (Excel → ODS with proper quoting)
     wb_excel = openpyxl.load_workbook(excel_path, data_only=False)
 
-    formulas_to_fix: list[tuple[str, str, str]] = []  # (sheet, cell_addr, formula)
+    # Extract sheet names from Excel
+    excel_sheet_names = wb_excel.sheetnames
 
-    for sheet_name in wb_excel.sheetnames:
-        sheet = wb_excel[sheet_name]
+    # Get sheet names from ODS via UNO
+    ods_sheet_names: list[str] = []
+    with UnoCtx() as ctx:
+        doc = ctx.desktop.loadComponentFromURL(f"file://{ods_path.absolute()}", "_blank", 0, ())
+        sheets = doc.getSheets()
+        for i in range(sheets.getCount()):
+            sheet = sheets.getByIndex(i)
+            ods_sheet_names.append(sheet.getName())
+        doc.close(True)
 
-        for row in sheet.iter_rows():
-            for cell in row:
-                stats["formulas_scanned"] += 1
+    # Build mapping: Excel name → ODS quoted name
+    # LibreOffice requires single quotes around sheet names with special chars
+    sheet_name_mapping = {}
+    for excel_name, ods_name in zip(excel_sheet_names, ods_sheet_names, strict=False):
+        # Check if sheet name needs quoting (contains spaces, numbers, special chars)
+        needs_quoting = (
+            " " in ods_name
+            or "-" in ods_name
+            or ods_name[0].isdigit()
+            or any(c in ods_name for c in "!@#$%^&*()+=[]{};:,.<>?/\\|`~")
+        )
 
-                if not cell.value or not isinstance(cell.value, str):
-                    continue
+        quoted_name = f"'{ods_name}'" if needs_quoting else ods_name
+        sheet_name_mapping[excel_name] = quoted_name
 
-                formula = cell.value
+    logger.debug(f"Sheet name mapping: {sheet_name_mapping}")
 
-                # Check if formula contains INDIRECT and ADDRESS
-                if "INDIRECT" in formula and "ADDRESS" in formula:
-                    formulas_to_fix.append((sheet_name, cell.coordinate, formula))
-                    stats["formulas_needing_fix"] += 1
+    # Step 2: Scan ODS for broken formulas with INDIRECT/ADDRESS patterns
+    # We scan the ODS (not Excel) because LibreOffice already converted syntax (commas→semicolons)
 
-                    if stats["formulas_needing_fix"] <= 5:
-                        logger.debug(f"Found formula needing fix: {sheet_name}!{cell.coordinate}")
+    formulas_to_fix: list[tuple[str, str, str]] = []  # (sheet, cell_addr, ods_formula)
+
+    with UnoCtx() as ctx:
+        doc = ctx.desktop.loadComponentFromURL(f"file://{ods_path.absolute()}", "_blank", 0, ())
+        doc.calculateAll()  # Ensure formulas are calculated
+
+        sheets = doc.getSheets()
+
+        for sheet_idx in range(sheets.getCount()):
+            sheet = sheets.getByIndex(sheet_idx)
+            sheet_name = sheet.getName()
+
+            # Get the corresponding Excel sheet to know which cells have formulas
+            if sheet_name not in wb_excel.sheetnames:
+                continue
+
+            excel_sheet = wb_excel[sheet_name]
+
+            for row in excel_sheet.iter_rows():
+                for excel_cell in row:
+                    stats["formulas_scanned"] += 1
+
+                    # Skip non-formula cells
+                    if not excel_cell.value or not isinstance(excel_cell.value, str):
+                        continue
+                    if not excel_cell.value.startswith("="):
+                        continue
+
+                    # Check if Excel formula has INDIRECT+ADDRESS (needs fixing)
+                    excel_formula = excel_cell.value
+                    if "INDIRECT" not in excel_formula or "ADDRESS" not in excel_formula:
+                        continue
+
+                    # Get the ODS cell
+                    ods_cell = sheet.getCellByPosition(
+                        excel_cell.column - 1,  # 0-indexed
+                        excel_cell.row - 1,
+                    )
+
+                    # Check if it has an error (#NAME? = 525)
+                    error = ods_cell.getError()
+                    if error == 525:  # #NAME? error
+                        ods_formula = ods_cell.getFormula()
+                        formulas_to_fix.append((sheet_name, excel_cell.coordinate, ods_formula))
+                        stats["formulas_needing_fix"] += 1
+
+                        if stats["formulas_needing_fix"] <= 5:
+                            logger.debug(
+                                f"Found broken formula: {sheet_name}!{excel_cell.coordinate} (Error {error})"
+                            )
+
+        doc.close(True)
 
     wb_excel.close()
 
@@ -170,73 +236,55 @@ def fix_indirect_address_formulas(
 
     logger.info(f"Found {len(formulas_to_fix)} formulas with INDIRECT/ADDRESS cross-sheet issues")
 
-    # Step 2: Translate formulas using LLM
-    translator = LLMFormulaTranslator()
-    translated_formulas: list[tuple[str, str, str]] = []  # (sheet, cell, new_formula)
+    # Step 3: Repair formulas using AST transformation (deterministic, no LLM)
+    logger.info("Applying AST-based INDIRECT/ADDRESS → OFFSET transformation...")
 
-    for sheet_name, cell_addr, excel_formula in formulas_to_fix:
-        try:
-            calc_formula = translator.translate_excel_to_calc(
-                excel_formula, issue_type="indirect_address_cross_sheet"
-            )
+    from xlsliberator.formula_ast_transformer import FormulaASTTransformer, FormulaTransformError
 
-            if calc_formula != excel_formula:
-                translated_formulas.append((sheet_name, cell_addr, calc_formula))
-                stats["formulas_fixed"] += 1
+    transformer = FormulaASTTransformer(sheet_mapping=sheet_name_mapping)
 
-                if stats["formulas_fixed"] <= 3:
-                    logger.debug(
-                        f"Translated {sheet_name}!{cell_addr}:\n"
-                        f"  FROM: {excel_formula[:80]}...\n"
-                        f"  TO:   {calc_formula[:80]}..."
-                    )
-            else:
-                stats["formulas_failed"] += 1
-                logger.warning(f"Translation failed for {sheet_name}!{cell_addr}")
-
-        except Exception as e:
-            stats["formulas_failed"] += 1
-            logger.warning(f"Error translating {sheet_name}!{cell_addr}: {e}")
-
-    if not translated_formulas:
-        logger.warning("No formulas were successfully translated")
-        return stats
-
-    logger.info(f"Successfully translated {len(translated_formulas)} formulas")
-
-    # Step 3: Update formulas in ODS via UNO
-    logger.info("Updating formulas in ODS...")
-
+    # Keep document open for applying fixes
     with UnoCtx() as ctx:
         doc = ctx.desktop.loadComponentFromURL(f"file://{ods_path.absolute()}", "_blank", 0, ())
-
         sheets = doc.getSheets()
-        updated_count = 0
 
-        for sheet_name, cell_addr, new_formula in translated_formulas:
+        for sheet_name, cell_addr, ods_formula in formulas_to_fix:
             try:
+                # Apply AST transformation
+                fixed_formula = transformer.transform_indirect_address_to_offset(ods_formula)
+
+                # Get UNO sheet and cell
                 sheet = sheets.getByName(sheet_name)
-                cell_range = sheet.getCellRangeByName(cell_addr)
-                cell_range.setFormula(new_formula)
-                updated_count += 1
+                cell = sheet.getCellRangeByName(cell_addr)
 
-                if updated_count <= 3:
-                    logger.debug(f"Updated {sheet_name}!{cell_addr}")
+                # Set the fixed formula
+                cell.setFormula(fixed_formula)
 
-            except Exception as e:
-                logger.warning(f"Failed to update {sheet_name}!{cell_addr}: {e}")
+                stats["formulas_fixed"] += 1
 
-        # Recalculate all formulas
+                if stats["formulas_fixed"] <= 5:
+                    logger.debug(
+                        f"Fixed {sheet_name}!{cell_addr}:\n"
+                        f"  FROM: {ods_formula[:80]}...\n"
+                        f"  TO:   {fixed_formula[:80]}..."
+                    )
+
+            except FormulaTransformError as e:
+                stats["formulas_failed"] += 1
+                logger.warning(f"Failed to transform {sheet_name}!{cell_addr}: {e}")
+                # Leave original formula unchanged
+
+        # Recalculate and save
         logger.info("Recalculating formulas...")
         doc.calculateAll()
 
-        # Save the document
+        logger.info("Saving repaired formulas...")
         doc.store()
         doc.close(True)
 
     logger.success(
-        f"Fixed {updated_count} formulas in {ods_path} (scanned: {stats['formulas_scanned']}, "
-        f"needed fix: {stats['formulas_needing_fix']}, failed: {stats['formulas_failed']})"
+        f"Formula repair complete: {stats['formulas_fixed']}/{stats['formulas_needing_fix']} fixed, "
+        f"{stats['formulas_failed']} failed"
     )
 
     return stats

@@ -20,6 +20,11 @@ class ConversionReport:
     formulas_unsupported: int = 0
     formulas_fixed: int = 0  # Formulas repaired post-conversion (INDIRECT/ADDRESS, etc.)
 
+    # Formula equivalence testing
+    formulas_matching: int = 0
+    formulas_mismatching: int = 0
+    formula_match_rate: float = 0.0  # Percentage
+
     # Named ranges
     named_ranges: int = 0
 
@@ -66,6 +71,12 @@ class ConversionReport:
 - Total formulas: {self.total_formulas:,}
 - Formulas translated: {self.formulas_translated:,} ({self._percentage(self.formulas_translated, self.total_formulas)})
 - Formulas unsupported: {self.formulas_unsupported:,}
+- Formulas fixed: {self.formulas_fixed:,}
+
+### Formula Equivalence
+- Matching formulas: {self.formulas_matching:,}
+- Mismatching formulas: {self.formulas_mismatching:,}
+- **Match rate: {self.formula_match_rate:.2f}%**
 
 ### Structure
 - Sheets: {self.sheet_count}

@@ -15,14 +15,14 @@ indirect_address_cross_sheet:
 
   excel_syntax: "INDIRECT(ADDRESS(row, col, abs, a1, \"SheetName\"))"
 
-  calc_syntax: "INDIRECT(\"$SheetName.\" & ADDRESS(row, col, abs, a1))"
+  calc_syntax: "OFFSET(SheetName.A1, row-1, col-1)"
 
   fix_strategy: |
     1. Identify ADDRESS() calls with 5 parameters where 5th is a sheet name string
     2. Extract the sheet name from the 5th parameter
-    3. Remove the 5th parameter (keep only first 4)
-    4. Prepend "$SheetName." & to the ADDRESS() result
-    5. This creates a full sheet-qualified address string that INDIRECT() can use
+    3. Replace INDIRECT(ADDRESS(row,col,abs,a1,"Sheet")) with OFFSET(Sheet.A1,row-1,col-1)
+    4. OFFSET is 0-indexed so row and col need -1
+    5. IMPORTANT: LibreOffice INDIRECT does NOT support cross-sheet references, use OFFSET instead
 
   examples:
     - description: "Simple INDIRECT with ADDRESS"
@@ -51,38 +51,52 @@ indirect_address_cross_sheet:
 
     FIX REQUIRED:
     Convert: ADDRESS(row, col, abs, a1, "SheetName")
-    To:      "$SheetName." & ADDRESS(row, col, abs, a1)
+    To:      "SheetName." & ADDRESS(row, col, abs, a1)
 
     Then wrap in INDIRECT:
     Convert: INDIRECT(ADDRESS(..., "Sheet"))
-    To:      INDIRECT("$Sheet." & ADDRESS(...))
+    To:      INDIRECT("Sheet." & ADDRESS(...))
+
+    IMPORTANT SHEET NAME QUOTING RULES:
+    - If sheet name contains spaces, dashes, or starts with a number, wrap it in single quotes
+    - Examples: "Sheet1." is fine, but "'1-2'." or "'My Sheet'." need quotes
+    - The $ sign is NOT needed before the sheet name in this context
+    - The sheet name goes INSIDE the double quotes that are part of the string concatenation
 
     STEP-BY-STEP INSTRUCTIONS:
     1. Find ALL occurrences of ADDRESS() with 5 parameters
     2. For each ADDRESS() call:
        a. Extract the sheet name (5th parameter, a string literal)
        b. Remove the 5th parameter completely
-       c. Prepend "$SheetName." & before the ADDRESS() call
+       c. If sheet name needs quoting (has special chars), use: "'SheetName'." & ADDRESS(...)
+       d. If sheet name is simple, use: "SheetName." & ADDRESS(...)
     3. Preserve ALL other formula logic exactly (IF, MOD, COLUMN(), etc.)
     4. Handle nested cases carefully (formula may have multiple ADDRESS calls)
     5. Ensure the result formula is valid LibreOffice Calc syntax
 
-    EXAMPLES:
+    CORRECT EXAMPLES:
 
     Input:  =INDIRECT(ADDRESS(10,5,1,1,"Sheet1"))
-    Output: =INDIRECT("$Sheet1." & ADDRESS(10,5,1,1))
+    Output: =INDIRECT("Sheet1." & ADDRESS(10,5,1,1))
 
-    Input:  =IF(INDIRECT(ADDRESS(48+COLUMN(),12,1,1,"Spielplan"))="ja",100,0)
-    Output: =IF(INDIRECT("$Spielplan." & ADDRESS(48+COLUMN(),12,1,1))="ja",100,0)
+    Input:  =INDIRECT(ADDRESS(10,5,1,1,"1-2"))
+    Output: =INDIRECT("'1-2'." & ADDRESS(10,5,1,1))
 
-    Input:  =INDIRECT(ADDRESS(R,C,1,1,"A")) + INDIRECT(ADDRESS(R2,C2,1,1,"B"))
-    Output: =INDIRECT("$A." & ADDRESS(R,C,1,1)) + INDIRECT("$B." & ADDRESS(R2,C2,1,1))
+    Input:  =IF(INDIRECT(ADDRESS(48+COLUMN(),12,1,1,"Spielplan"))="ja",INDIRECT(ADDRESS(10,5,1,1,"3-4")),"")
+    Output: =IF(INDIRECT("Spielplan." & ADDRESS(48+COLUMN(),12,1,1))="ja",INDIRECT("'3-4'." & ADDRESS(10,5,1,1)),"")
+
+    WRONG EXAMPLES (DO NOT USE):
+    - =INDIRECT("$Sheet1." & ADDRESS(...))  ❌ Extra $ sign
+    - =INDIRECT("$'1-2'." & ADDRESS(...))   ❌ Extra $ sign with quotes
+    - =INDIRECT(Sheet1. & ADDRESS(...))     ❌ Missing quotes around sheet name
+    - =INDIRECT("1-2." & ADDRESS(...))      ❌ Missing single quotes for special chars
 
     OUTPUT RULES:
     - Output ONLY the fixed formula
     - Start with = sign
     - No explanations, comments, or additional text
     - Ensure formula is valid Calc syntax
+    - Use the sheet name mapping provided after this prompt if available
 
     Now fix the formula above:
 

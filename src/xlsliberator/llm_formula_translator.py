@@ -115,10 +115,50 @@ class LLMFormulaTranslator:
             # Fallback: use rule-based result or original formula
             return rule_based_result if rule_based_result else excel_formula
 
+    def _fix_offset_syntax(self, formula: str) -> str:
+        """Fix LibreOffice OFFSET syntax issues that LLMs commonly generate.
+
+        Problem: LLMs generate OFFSET(Sheet.$A$1;...) which causes #NAME? error
+        Solution: Replace with OFFSET(Sheet.A1;...) - remove dollar signs from base ref
+
+        Args:
+            formula: Formula potentially containing broken OFFSET syntax
+
+        Returns:
+            Formula with fixed OFFSET syntax
+        """
+        import re
+
+        # Pattern: OFFSET(SheetName.$A$1 or similar patterns with dollar signs
+        # Match: OFFSET( followed by sheet name, dot, then $A$1 style reference
+        # We need to remove the $ signs from the cell reference after the dot
+
+        # Pattern matches: OFFSET(Sheet.$A$1... or OFFSET('Sheet-Name'.$A$1...
+        pattern = r"(OFFSET\(['\"]?[\w\-]+['\"]?\.)(\$?)([A-Z]+)(\$?)(\d+)"
+
+        def replace_dollars(match):
+            """Remove dollar signs from the cell reference in OFFSET base."""
+            prefix = match.group(1)  # OFFSET(Sheet.
+            # groups 2,4 are the $ signs we want to remove
+            col = match.group(3)  # Column letter (A, B, etc.)
+            row = match.group(5)  # Row number
+            return f"{prefix}{col}{row}"
+
+        fixed = re.sub(pattern, replace_dollars, formula, flags=re.IGNORECASE)
+
+        if fixed != formula:
+            logger.debug("Post-processing: Fixed OFFSET syntax")
+            logger.debug(f"  Before: {formula[:100]}...")
+            logger.debug(f"  After:  {fixed[:100]}...")
+
+        return fixed
+
     def translate_excel_to_calc(
         self,
         excel_formula: str,
         issue_type: str = "indirect_address_cross_sheet",
+        sheet_name_mapping: dict[str, str] | None = None,
+        custom_prompt: str | None = None,
     ) -> str:
         """Translate Excel formula with known incompatibility to Calc syntax.
 
@@ -128,6 +168,8 @@ class LLMFormulaTranslator:
         Args:
             excel_formula: Excel formula with incompatibility
             issue_type: Type of incompatibility (key from rules YAML)
+            sheet_name_mapping: Mapping of Excel sheet names to ODS quoted names
+            custom_prompt: Optional custom prompt to use instead of rule-based prompt
 
         Returns:
             Calc-compatible formula
@@ -136,25 +178,43 @@ class LLMFormulaTranslator:
             Uses specialized prompts based on incompatibility rules to ensure
             accurate translation. Results are cached for performance.
         """
-        # Check cache first
+        # Check cache first (skip caching if using custom prompt with retry logic)
         cache_key = f"repair:{issue_type}:{excel_formula}"
-        if cache_key in self.cache:
+        if not custom_prompt and cache_key in self.cache:
             logger.debug(f"LLM cache hit for formula repair: {excel_formula[:50]}...")
             return self.cache[cache_key]
 
-        # Get the rule for this issue type
-        rule = self.incompatibility_rules.get(issue_type)
-        if not rule:
-            logger.warning(f"No rule found for issue type: {issue_type}, falling back to original")
-            return excel_formula
+        # Use custom prompt if provided, otherwise build from rules
+        if custom_prompt:
+            prompt = custom_prompt
+        else:
+            # Get the rule for this issue type
+            rule = self.incompatibility_rules.get(issue_type)
+            if not rule:
+                logger.warning(
+                    f"No rule found for issue type: {issue_type}, falling back to original"
+                )
+                return excel_formula
 
-        # Build specialized prompt from rule template
-        prompt_template = rule.get("llm_prompt_template", "")
-        if not prompt_template:
-            logger.warning(f"No prompt template for issue type: {issue_type}")
-            return excel_formula
+            # Build specialized prompt from rule template
+            prompt_template = rule.get("llm_prompt_template", "")
+            if not prompt_template:
+                logger.warning(f"No prompt template for issue type: {issue_type}")
+                return excel_formula
 
-        prompt = prompt_template.format(excel_formula=excel_formula)
+            # Add sheet name mapping to prompt
+            sheet_mapping_text = ""
+            if sheet_name_mapping:
+                sheet_mapping_text = (
+                    "\n\nIMPORTANT - Sheet name mapping (Excel → LibreOffice Calc):\n"
+                )
+                for excel_name, calc_name in sheet_name_mapping.items():
+                    sheet_mapping_text += f'  "{excel_name}" → {calc_name}\n'
+                sheet_mapping_text += (
+                    "\nUse the LibreOffice Calc names (right side) in your output."
+                )
+
+            prompt = prompt_template.format(excel_formula=excel_formula) + sheet_mapping_text
 
         # Call Claude API
         logger.info(f"LLM formula repair ({issue_type}): {excel_formula[:60]}...")
@@ -173,9 +233,15 @@ class LLMFormulaTranslator:
             if not translated.startswith("="):
                 translated = "=" + translated
 
-            # Cache the result
-            self.cache[cache_key] = translated
-            self._save_cache()
+            # Post-process: Fix LibreOffice OFFSET syntax issues
+            # LLM often generates Sheet.$A$1 which causes #NAME? errors
+            # LibreOffice Calc requires Sheet.A1 (no dollar signs in cross-sheet OFFSET)
+            translated = self._fix_offset_syntax(translated)
+
+            # Cache the result (only if not using custom prompt for retry)
+            if not custom_prompt:
+                self.cache[cache_key] = translated
+                self._save_cache()
 
             logger.info(f"LLM repair: {excel_formula[:60]}... → {translated[:60]}...")
             return translated
