@@ -195,7 +195,6 @@ If you use XLSLiberator in academic work, please cite:
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/johannhartmann/xlsliberator/issues)
-- **Documentation**: [Read the Docs](https://xlsliberator.readthedocs.io)
 - **Discussions**: [GitHub Discussions](https://github.com/johannhartmann/xlsliberator/discussions)
 
 ## Author
@@ -212,9 +211,5 @@ GitHub: [@johannhartmann](https://github.com/johannhartmann)
 
 ## Roadmap
 
-- [ ] Support for more VBA patterns
-- [ ] GUI application
-- [ ] Cloud conversion service
-- [ ] Excel→Google Sheets converter
-- [ ] Batch processing improvements
+- [ ] Support for more VBA patterns and validation
 - [ ] Enhanced formula repair logic
