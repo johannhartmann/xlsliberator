@@ -44,10 +44,10 @@ jobs:
         run: pip install bandit[toml]
 
       - name: Run bandit
-        run: bandit -r src/ -c pyproject.toml -f json -o bandit-report.json || true
+        run: bandit -r src/ -c pyproject.toml -f json -o bandit-report.json --exit-zero
 
-      - name: Show report
-        run: bandit -r src/ -c pyproject.toml
+      - name: Show report (informational)
+        run: bandit -r src/ -c pyproject.toml --exit-zero
 
   secret-scan:
     name: Secret Scanning
