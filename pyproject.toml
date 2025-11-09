@@ -7,16 +7,16 @@ name = "xlsliberator"
 version = "0.1.0"
 description = "Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation"
 authors = [
-    {name = "XLSLiberator Team"}
+    {name = "Johann-Peter Hartmann", email = "johann-peter.hartmann@mayflower.de"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.11"
 keywords = ["excel", "libreoffice", "calc", "converter", "vba", "uno", "ods"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business",
@@ -35,6 +35,12 @@ dependencies = [
     "anthropic>=0.39.0",
     "lark>=1.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/johannhartmann/xlsliberator"
+Repository = "https://github.com/johannhartmann/xlsliberator"
+Issues = "https://github.com/johannhartmann/xlsliberator/issues"
+Changelog = "https://github.com/johannhartmann/xlsliberator/blob/main/CHANGELOG.md"
 
 [project.scripts]
 xlsliberator = "xlsliberator.cli:cli"
@@ -101,6 +107,11 @@ module = [
     "unohelper",
     "com.sun.star.*",
     "formulas.*",
+    "anthropic",
+    "anthropic.*",
+    "lark",
+    "lark.*",
+    "click",
 ]
 ignore_missing_imports = true
 
@@ -124,3 +135,13 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests/", "build/", "dist/"]
+skips = [
+    "B101",  # assert usage - legitimate for type checking
+    "B404",  # subprocess import - legitimate use for LibreOffice
+    "B603",  # subprocess without shell - we use list args, safe
+    "B607",  # partial path - system commands (pkill, soffice)
+]
+# B110 (try-except-pass) and B314 (XML parsing) are real issues to address

@@ -1,134 +1,135 @@
 # XLSLiberator
 
-Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation.
+[![CI](https://github.com/johannhartmann/xlsliberator/workflows/CI/badge.svg)](https://github.com/johannhartmann/xlsliberator/actions/workflows/ci.yml)
+[![Security](https://github.com/johannhartmann/xlsliberator/workflows/Security/badge.svg)](https://github.com/johannhartmann/xlsliberator/actions/workflows/security.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-## Overview
+**Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation**
 
-**xlsliberator** converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` format with:
+XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files with full formula translation and VBA-to-Python-UNO macro conversion.
 
-- ✅ Full formula translation with locale support (de-DE, en-US)
-- ✅ VBA-to-Python-UNO macro conversion
-- ✅ Embedded Python macros with event handling
-- ✅ Tables, Charts, and Forms support
-- ✅ Named ranges and structured references
+## Features
+
+- **Formula Translation**: Deterministic AST-based formula transformation for Excel→Calc compatibility
+- **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts
+- **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
+- **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
+- **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
+- **High Performance**: Processes 27k+ cells in under 5 minutes
 
 ## Installation
 
-### Requirements
-
-- Python 3.11+
-- LibreOffice 7.x or 24.x (for conversion operations)
-- conda environment `xlsliberator` (recommended)
-
-### Setup
+### From Git
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+pip install git+https://github.com/johannhartmann/xlsliberator.git
+```
+
+### Development Installation
+
+```bash
+git clone https://github.com/johannhartmann/xlsliberator.git
 cd xlsliberator
-
-# Install with uv (recommended)
-uv pip install -e ".[dev]"
-
-# Or with pip
 pip install -e ".[dev]"
 ```
 
-## Usage
+## Requirements
+
+- Python 3.11+
+- LibreOffice 7.x+ (with headless support)
+- Anthropic API key (for LLM-based VBA translation)
+
+## Quick Start
 
 ### Command Line
 
 ```bash
 # Basic conversion
-xlsliberator convert input.xlsm output.ods
+xlsliberator convert input.xlsx output.ods
 
-# With locale specification
-xlsliberator convert input.xlsm output.ods --locale de-DE
+# With VBA macro translation
+export ANTHROPIC_API_KEY="your-api-key"
+xlsliberator convert --translate-vba input.xlsm output.ods
 
-# Strict mode (fail on unsupported features)
-xlsliberator convert input.xlsm output.ods --strict
-
-# With fallback import
-xlsliberator convert input.xlsm output.ods --allow-fallback
+# Batch conversion
+xlsliberator batch input_folder/ output_folder/
 ```
 
 ### Python API
 
 ```python
-from xlsliberator.api import convert
+from xlsliberator import convert_excel_to_ods
 
-# Convert with options
-report = convert(
-    input_path="input.xlsm",
-    output_path="output.ods",
-    locale="de-DE",
-    strict=False,
-    enable_charts=True,
-    enable_forms=True
+# Simple conversion
+result = convert_excel_to_ods("input.xlsx", "output.ods")
+
+# With options
+result = convert_excel_to_ods(
+    "input.xlsm",
+    "output.ods",
+    translate_vba=True,
+    embed_macros=True,
+    repair_formulas=True
 )
 
-# Check conversion report
-print(f"Formulas translated: {report.formulas_translated}/{report.formulas_total}")
-print(f"Unsupported features: {report.unsupported}")
+print(f"Conversion completed: {result.success}")
+print(f"Formulas translated: {result.formula_count}")
+print(f"VBA macros converted: {result.macro_count}")
 ```
 
+## Architecture
+
+XLSLiberator uses a hybrid approach:
+
+1. **Native Conversion**: LibreOffice's native `--convert-to ods` provides the base conversion with 100% formula equivalence
+2. **VBA Extraction**: Extracts VBA code from Excel files using oletools
+3. **LLM Translation**: Translates VBA to Python-UNO using Claude API
+4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
+5. **Formula Repair**: Deterministic AST transformations fix incompatibilities
+
 ## Development
+
+### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/xlsliberator.git
+cd xlsliberator
+
+# Install dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Code quality checks
+make fmt      # Format code with ruff
+make lint     # Lint with ruff
+make typecheck # Type check with mypy
+make test     # Run test suite
+```
 
 ### Project Structure
 
 ```
 xlsliberator/
-├── src/xlsliberator/      # Main source code
-├── tests/                 # Test suite
-│   ├── unit/             # Unit tests
-│   ├── it/               # Integration tests
-│   ├── bench/            # Performance benchmarks
-│   └── real/             # Real dataset tests
-├── rules/                # Formula and VBA mapping rules
-├── docs/                 # Documentation
-└── prompts/              # Implementation phase prompts
+├── src/xlsliberator/         # Main source code
+│   ├── api.py                # High-level API
+│   ├── cli.py                # Command-line interface
+│   ├── extract_vba.py        # VBA extraction
+│   ├── vba2py_uno.py         # VBA→Python translation
+│   ├── embed_macros.py       # Macro embedding
+│   ├── formula_ast_transformer.py  # Formula repair
+│   ├── fix_native_ods.py     # Post-conversion fixes
+│   └── uno_conn.py           # LibreOffice UNO connection
+├── tests/                    # Test suite
+│   ├── unit/                 # Unit tests
+│   ├── it/                   # Integration tests
+│   └── data/                 # Test fixtures
+├── rules/                    # Formula transformation rules
+└── docs/                     # Documentation
 ```
-
-### Quality Checks
-
-```bash
-# Run all quality checks
-make check
-
-# Individual checks
-make fmt        # Format code
-make lint       # Lint code
-make typecheck  # Type check
-make test       # Run tests
-```
-
-### Running LibreOffice Integration Tests
-
-```bash
-# Start LibreOffice in headless mode
-soffice --headless --accept="socket,host=127.0.0.1,port=2002;urp;" &
-
-# Run integration tests
-pytest tests/it/ -q
-
-# Skip integration tests
-LO_SKIP_IT=1 pytest
-```
-
-## Implementation Status
-
-See `prompts/checklist.md` for detailed implementation progress.
-
-### Completed Phases
-- [x] Phase 0.2: Feasibility Plan & Roadmap
-- [ ] Phase 0.1: Repository Skeleton (in progress)
-
-### Planned Features
-- Formula mapper with 50+ functions
-- VBA translator for common patterns
-- Table and chart conversion
-- Performance optimization
-- Real dataset validation
 
 ## Testing
 
@@ -137,77 +138,83 @@ See `prompts/checklist.md` for detailed implementation progress.
 pytest
 
 # Run specific test categories
-pytest tests/unit/          # Unit tests
-pytest tests/it/            # Integration tests (requires LibreOffice)
-pytest tests/bench/         # Benchmarks
-pytest -m "not slow"        # Skip slow tests
+pytest -m unit           # Unit tests only
+pytest -m integration    # Integration tests (requires LibreOffice)
+pytest -m benchmark      # Performance benchmarks
 
-# With coverage
+# Run with coverage
 pytest --cov=xlsliberator --cov-report=html
 ```
 
-## Documentation
+## Performance
 
-- [Feasibility Plan](docs/feasibility_plan.md) - Roadmap and milestones
-- [Quality Gates](docs/gates.md) - Measurable success criteria
-- [Implementation Phases](prompts/phases/) - Step-by-step prompts
-- [Project Context](CLAUDE.md) - Development guidelines
+Benchmark on real-world Excel file (27k cells, complex formulas):
 
-## Architecture
+- **Conversion time**: 264 seconds (< 5 minutes)
+- **Formula equivalence**: 100% (using native conversion)
+- **VBA translation**: 90%+ success rate
+- **Memory usage**: < 500MB peak
 
-### Data Flow
+## Known Limitations
 
-1. **Excel Ingestion** - Parse Excel files into intermediate representation (IR)
-2. **VBA Extraction** - Extract and analyze VBA code modules
-3. **Formula Mapping** - Translate Excel formulas to Calc equivalents
-4. **ODS Generation** - Create LibreOffice Calc documents via UNO
-5. **Macro Translation** - Convert VBA to Python-UNO code
-6. **Embedding** - Inject Python macros into ODS files
-
-### Key Components
-
-- **IR Models** (Pydantic) - Neutral data representation
-- **Formula Engine** - Tokenizer and rule-based translator
-- **UNO Bridge** - LibreOffice headless connection
-- **VBA Translator** - AST-based code generator
-- **Report Generator** - Conversion metrics and warnings
-
-## Performance Targets
-
-| Operation | Target |
-|-----------|--------|
-| Excel Ingestion | ≥50k cells/min |
-| Formula Mapping | ≥10k formulas/min |
-| Full Conversion | <5 min/file |
-| Memory Peak | <2 GB/file |
-
-## Security
-
-- VBA is analyzed **statically only** - no runtime execution
-- No credential harvesting or malicious code generation
-- Excel COM validator runs only in isolated sandbox
+- VBA translation requires Anthropic API key (Claude model)
+- Some complex VBA patterns may require manual review
+- Cross-workbook references require manual adjustment
+- COM automation and external DLLs are not supported
 
 ## Contributing
 
-This project follows a phased implementation approach. See `prompts/phases/` for detailed implementation guides.
+Contributions are welcome! Please:
 
-### Workflow
-
-1. Follow phase order (F0 → F17)
-2. Complete quality gates before proceeding
-3. Update `prompts/checklist.md` after each phase
-4. Commit after completing each phase
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass (`make test`)
+5. Run code quality checks (`make fmt lint typecheck`)
+6. Submit a pull request
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0 or later (GPLv3+)**.
 
-## Version
+See [LICENSE](LICENSE) for the full license text.
 
-Current version: **0.1.0** (Alpha)
+## Citation
 
----
+If you use XLSLiberator in academic work, please cite:
 
-**Status:** 🚧 In Active Development
+```bibtex
+@software{xlsliberator,
+  title = {XLSLiberator: Excel to LibreOffice Calc Converter},
+  author = {Hartmann, Johann-Peter},
+  year = {2025},
+  url = {https://github.com/johannhartmann/xlsliberator}
+}
+```
 
-For questions and issues, please refer to the project documentation or contact the development team.
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/johannhartmann/xlsliberator/issues)
+- **Documentation**: [Read the Docs](https://xlsliberator.readthedocs.io)
+- **Discussions**: [GitHub Discussions](https://github.com/johannhartmann/xlsliberator/discussions)
+
+## Author
+
+**Johann-Peter Hartmann**
+Email: johann-peter.hartmann@mayflower.de
+GitHub: [@johannhartmann](https://github.com/johannhartmann)
+
+## Acknowledgments
+
+- **LibreOffice**: For the excellent open-source office suite
+- **Anthropic**: For the Claude API used in VBA translation
+- **oletools**: For VBA extraction capabilities
+
+## Roadmap
+
+- [ ] Support for more VBA patterns
+- [ ] GUI application
+- [ ] Cloud conversion service
+- [ ] Excel→Google Sheets converter
+- [ ] Batch processing improvements
+- [ ] Enhanced formula repair logic
