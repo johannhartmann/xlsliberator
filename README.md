@@ -12,7 +12,8 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 ## Features
 
 - **Formula Translation**: Deterministic AST-based formula transformation for Excel→Calc compatibility
-- **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts
+- **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts with 4-phase quality pipeline
+- **Translation Quality Assurance**: Reference-aware translation, syntax validation, reflection loop, and automated test generation
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
 - **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
 - **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
@@ -132,7 +133,11 @@ XLSLiberator uses a hybrid approach:
 
 1. **Native Conversion**: LibreOffice's native `--convert-to ods` provides the base conversion with 100% formula equivalence
 2. **VBA Extraction**: Extracts VBA code from Excel files using oletools
-3. **LLM Translation**: Translates VBA to Python-UNO using Claude API
+3. **LLM Translation**: Translates VBA to Python-UNO using Claude API with 4-phase quality pipeline:
+   - Phase 1: Reference-aware translation (hybrid LLM + regex pattern detection)
+   - Phase 2: Python-UNO syntax validation (AST parsing, compilation checks)
+   - Phase 3: Agentic reflection loop (self-evaluation and iterative refinement)
+   - Phase 4: LLM-generated validation tests (behavioral equivalence testing)
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
 5. **Formula Repair**: Deterministic AST transformations fix incompatibilities
 
@@ -167,6 +172,11 @@ xlsliberator/
 │   ├── cli.py                # Command-line interface
 │   ├── extract_vba.py        # VBA extraction
 │   ├── vba2py_uno.py         # VBA→Python translation
+│   ├── llm_vba_translator.py # LLM-based VBA translator
+│   ├── vba_reference_analyzer.py    # Phase 1: Reference-aware analysis
+│   ├── python_syntax_validator.py   # Phase 2: Syntax validation
+│   ├── vba_translation_validator.py # Phase 3: Quality evaluation
+│   ├── vba_test_generator.py        # Phase 4: Test generation
 │   ├── embed_macros.py       # Macro embedding
 │   ├── formula_ast_transformer.py  # Formula repair
 │   ├── fix_native_ods.py     # Post-conversion fixes
@@ -247,5 +257,6 @@ GitHub: [@johannhartmann](https://github.com/johannhartmann)
 
 ## Roadmap
 
-- [ ] Support for more VBA patterns and validation
+- [x] Support for more VBA patterns and validation (4-phase quality pipeline)
 - [ ] Enhanced formula repair logic
+- [ ] Integration tests for VBA quality pipeline
