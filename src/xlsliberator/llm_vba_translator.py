@@ -2,11 +2,19 @@
 
 import json
 import os
+import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from anthropic import Anthropic
 from loguru import logger
+
+from xlsliberator.python_syntax_validator import PythonSyntaxValidator
+
+if TYPE_CHECKING:
+    from xlsliberator.vba_reference_analyzer import VBAReferences
+    from xlsliberator.vba_translation_validator import TranslationEvaluation
 
 
 class LLMVBATranslator:
@@ -34,6 +42,9 @@ class LLMVBATranslator:
         self.event_map_path = event_map_path or Path("rules/event_map.yaml")
         self.vba_mappings = self._load_vba_mappings()
         self.event_mappings = self._load_event_mappings()
+
+        # Initialize syntax validator
+        self.syntax_validator = PythonSyntaxValidator()
 
     def _load_cache(self) -> dict[str, str]:
         """Load translation cache from disk."""
@@ -80,18 +91,21 @@ class LLMVBATranslator:
             logger.error(f"Failed to load event mappings: {e}")
             return {}
 
-    def translate_vba(self, vba_code: str, is_event_handler: bool = False) -> str:
+    def translate_vba(
+        self, vba_code: str, is_event_handler: bool = False, enable_reference_aware: bool = True
+    ) -> str:
         """Translate VBA code to Python-UNO using Claude LLM.
 
         Args:
             vba_code: VBA source code
             is_event_handler: Whether this is an event handler (affects context setup)
+            enable_reference_aware: Use reference-aware prompts (Strategy A)
 
         Returns:
             Translated Python-UNO code
         """
         # Check cache first
-        cache_key = f"{vba_code}:{is_event_handler}"
+        cache_key = f"{vba_code}:{is_event_handler}:{enable_reference_aware}"
         if cache_key in self.cache:
             logger.debug(f"LLM VBA cache hit for code: {vba_code[:50]}...")
             return self.cache[cache_key]
@@ -99,7 +113,20 @@ class LLMVBATranslator:
         # Call Claude API for translation
         logger.info(f"LLM VBA translation for code: {vba_code[:50]}...")
 
-        prompt = self._build_translation_prompt(vba_code, is_event_handler)
+        # Analyze references if reference-aware enabled
+        references = None
+        if enable_reference_aware:
+            from xlsliberator.vba_reference_analyzer import (
+                analyze_vba_references,
+            )
+
+            references = analyze_vba_references(vba_code)
+            logger.info(
+                f"Reference-aware translation: {len(references.api_calls)} APIs, "
+                f"{len(references.special_patterns)} patterns"
+            )
+
+        prompt = self._build_translation_prompt(vba_code, is_event_handler, references)
 
         try:
             response = self.client.messages.create(
@@ -116,11 +143,37 @@ class LLMVBATranslator:
             else:
                 raise ValueError(f"Unexpected content block type: {type(content_block)}")
 
+            # Strip markdown code blocks if present
+            translated = re.sub(r"^```python\n|^```\n|```$", "", translated, flags=re.MULTILINE)
+
+            # Validate syntax (Phase 2: Syntax Validation)
+            validation_result = self.syntax_validator.validate_syntax(translated)
+
+            if not validation_result.is_valid:
+                logger.error(
+                    f"Syntax validation failed for translated code:\n"
+                    f"Errors: {validation_result.syntax_errors}"
+                )
+                for error in validation_result.syntax_errors:
+                    logger.error(f"  - {error}")
+
+            if validation_result.warnings:
+                logger.warning(f"Syntax validation warnings ({len(validation_result.warnings)}):")
+                for warning in validation_result.warnings:
+                    logger.warning(f"  - {warning}")
+
+            if not validation_result.uno_compatible:
+                logger.warning("Translated code may not be compatible with LibreOffice Python")
+
             # Cache the result
             self.cache[cache_key] = translated
             self._save_cache()
 
-            logger.info(f"LLM VBA translation: {vba_code[:50]}... → {translated[:50]}...")
+            logger.info(
+                f"LLM VBA translation: {vba_code[:50]}... → {translated[:50]}... "
+                f"(valid: {validation_result.is_valid}, "
+                f"warnings: {len(validation_result.warnings)})"
+            )
             return translated
 
         except Exception as e:
@@ -128,12 +181,15 @@ class LLMVBATranslator:
             # Fallback: return comment with original VBA
             return f"# VBA translation failed\n# Original VBA:\n# {vba_code}"
 
-    def _build_translation_prompt(self, vba_code: str, _is_event_handler: bool) -> str:
+    def _build_translation_prompt(
+        self, vba_code: str, _is_event_handler: bool, references: "VBAReferences | None" = None
+    ) -> str:
         """Build prompt for Claude to translate VBA code.
 
         Args:
             vba_code: VBA code to translate
             _is_event_handler: Whether this is an event handler (reserved for future use)
+            references: Optional VBA references for targeted translation
 
         Returns:
             Prompt string for Claude
@@ -148,6 +204,12 @@ class LLMVBATranslator:
         required_imports = self.vba_mappings.get("required_imports", [])
         context_setup = self.vba_mappings.get("context_setup", "")
 
+        # Filter mappings based on detected references (Strategy A)
+        if references:
+            object_mappings = self._filter_object_mappings(object_mappings, references)
+            method_mappings = self._filter_method_mappings(method_mappings, references)
+            control_flow = self._filter_control_flow(control_flow, references)
+
         # Format mappings for prompt
         object_map_str = self._format_mappings_for_prompt(object_mappings, "Object Mappings")
         method_map_str = self._format_method_mappings(method_mappings)
@@ -158,6 +220,26 @@ class LLMVBATranslator:
 
         imports_str = "\n".join(required_imports)
 
+        # Build API usage section if references available
+        api_usage_str = ""
+        patterns_str = ""
+        if references:
+            api_usage_str = self._format_api_usage(references)
+            patterns_str = self._format_special_patterns(references)
+
+        # Build reference-aware prompt sections
+        reference_sections = ""
+        if references and (api_usage_str or patterns_str):
+            reference_sections = f"""
+{api_usage_str}
+
+{patterns_str}
+
+Translation Rules (filtered for detected APIs):
+"""
+        else:
+            reference_sections = "Translation Rules:"
+
         prompt = f"""Translate this VBA code to Python-UNO format for LibreOffice Calc.
 
 VBA Code:
@@ -165,7 +247,7 @@ VBA Code:
 {vba_code}
 ```
 
-Translation Rules:
+{reference_sections}
 
 {object_map_str}
 
@@ -343,3 +425,350 @@ Now translate the VBA code above:"""
         indent = "    " * levels
         lines = code.split("\n")
         return "\n".join(indent + line if line.strip() else "" for line in lines)
+
+    def _filter_object_mappings(self, mappings: dict, references: "VBAReferences") -> dict:
+        """Filter object mappings to only those referenced in VBA code.
+
+        Args:
+            mappings: Full object mappings dict
+            references: Detected VBA references
+
+        Returns:
+            Filtered mappings dict
+        """
+
+        filtered: dict[str, str] = {}
+
+        for api_name in references.api_calls:
+            if api_name in mappings:
+                filtered[api_name] = mappings[api_name]
+
+        # Always include commonly related APIs
+        related_apis = {
+            "Range": ["Cells", "ActiveSheet", "Worksheets"],
+            "Cells": ["Range", "ActiveSheet"],
+            "Worksheets": ["ActiveSheet", "Workbooks"],
+        }
+
+        for detected_api in references.api_calls:
+            if detected_api in related_apis:
+                for related in related_apis[detected_api]:
+                    if related in mappings:
+                        filtered[related] = mappings[related]
+
+        return filtered if filtered else mappings
+
+    def _filter_method_mappings(self, mappings: dict, references: "VBAReferences") -> dict:
+        """Filter method mappings to only those referenced in VBA code.
+
+        Args:
+            mappings: Full method mappings dict
+            references: Detected VBA references
+
+        Returns:
+            Filtered mappings dict
+        """
+
+        filtered: dict[str, dict] = {}
+
+        for method_name, method_config in mappings.items():
+            # Check if any detected API is related to this method
+            for api_name in references.api_calls:
+                if api_name.lower() in method_name.lower():
+                    filtered[method_name] = method_config
+                    break
+
+        return filtered if filtered else mappings
+
+    def _filter_control_flow(self, mappings: dict, references: "VBAReferences") -> dict:
+        """Filter control flow mappings based on detected patterns.
+
+        Args:
+            mappings: Full control flow mappings dict
+            references: Detected VBA references
+
+        Returns:
+            Filtered mappings dict
+        """
+
+        filtered: dict[str, dict] = {}
+
+        pattern_to_mapping = {
+            "for_each_loop": ["For_Each"],
+            "for_to_loop": ["For_To", "Next"],
+            "do_while_loop": ["Do_While", "Loop"],
+            "select_case": ["Select_Case"],
+            "with_block": ["With"],
+            "exit_early": ["Exit_Sub", "Exit_Function"],
+        }
+
+        for pattern in references.special_patterns:
+            if pattern in pattern_to_mapping:
+                for mapping_key in pattern_to_mapping[pattern]:
+                    if mapping_key in mappings:
+                        filtered[mapping_key] = mappings[mapping_key]
+
+        return filtered if filtered else mappings
+
+    def _format_api_usage(self, references: "VBAReferences") -> str:
+        """Format API usage statistics for prompt.
+
+        Args:
+            references: Detected VBA references
+
+        Returns:
+            Formatted API usage string
+        """
+
+        if not references.api_calls:
+            return ""
+
+        sorted_apis = sorted(references.api_calls.items(), key=lambda x: x[1], reverse=True)
+
+        lines = ["Detected API Usage (prioritize these mappings):"]
+        for api, count in sorted_apis[:10]:
+            lines.append(f"  {api}: {count} occurrence{'s' if count > 1 else ''}")
+
+        return "\n".join(lines)
+
+    def _format_special_patterns(self, references: "VBAReferences") -> str:
+        """Format special patterns for prompt.
+
+        Args:
+            references: Detected VBA references
+
+        Returns:
+            Formatted special patterns string
+        """
+
+        if not references.special_patterns:
+            return ""
+
+        pattern_descriptions = {
+            "error_handling": "Error handling (On Error Resume Next/GoTo)",
+            "for_each_loop": "For Each loops",
+            "for_to_loop": "For...To loops",
+            "do_while_loop": "Do While/Until loops",
+            "arrays": "Array declarations",
+            "dynamic_arrays": "Dynamic arrays (ReDim)",
+            "select_case": "Select Case statements",
+            "with_block": "With blocks",
+            "exit_early": "Early exit (Exit Sub/Function)",
+            "string_concatenation": "Complex string concatenation",
+            "optional_params": "Optional parameters",
+            "byref_params": "ByRef parameters",
+            "property_procedures": "Property Get/Let/Set",
+            "late_binding": "Late binding (CreateObject/GetObject)",
+            "worksheet_functions": "WorksheetFunction calls",
+            "variant_types": "Variant types",
+            "object_variables": "Object variables (Set keyword)",
+            "user_defined_types": "User-defined types",
+            "named_parameters": "Named parameters (:=)",
+        }
+
+        lines = ["Special Patterns Detected:"]
+        for pattern in references.special_patterns:
+            description = pattern_descriptions.get(pattern, pattern)
+            lines.append(f"  - {description}")
+
+        return "\n".join(lines)
+
+    def translate_vba_with_reflection(
+        self,
+        vba_code: str,
+        is_event_handler: bool = False,
+        max_iterations: int = 3,
+        quality_threshold: int = 85,
+    ) -> tuple[str, list]:
+        """Translate VBA with agentic reflection loop (Phase 3).
+
+        Iteratively improves translation quality by:
+        1. Initial translation (reference-aware)
+        2. Self-evaluation by LLM
+        3. Refinement based on feedback
+        4. Repeat until quality threshold met or max iterations
+
+        Args:
+            vba_code: VBA source code
+            is_event_handler: Whether this is an event handler
+            max_iterations: Maximum refinement iterations (default: 3)
+            quality_threshold: Minimum acceptable quality 0-100 (default: 85)
+
+        Returns:
+            Tuple of (final_python_code, evaluation_history)
+        """
+        from xlsliberator.vba_reference_analyzer import analyze_vba_references
+        from xlsliberator.vba_translation_validator import VBATranslationValidator
+
+        logger.info(f"Starting reflection-based translation (max {max_iterations} iterations)")
+
+        references = analyze_vba_references(vba_code)
+        validator = VBATranslationValidator()
+
+        evaluations = []
+
+        # Initial translation (reference-aware, Phase 1)
+        python_code = self.translate_vba(vba_code, is_event_handler, enable_reference_aware=True)
+
+        for iteration in range(max_iterations):
+            logger.info(f"Reflection iteration {iteration + 1}/{max_iterations}")
+
+            # Evaluate translation (Phase 3: Self-evaluation)
+            evaluation = validator.evaluate_translation(vba_code, python_code, references)
+            evaluations.append(evaluation)
+
+            logger.info(
+                f"Translation quality: {evaluation.overall_quality}/100 "
+                f"(acceptable: {evaluation.is_acceptable}, issues: {len(evaluation.issues)})"
+            )
+
+            # Log issues
+            if evaluation.issues:
+                logger.warning(f"Issues found ({len(evaluation.issues)}):")
+                for issue in evaluation.issues:
+                    logger.warning(f"  - [{issue.issue_type.value}] {issue.description}")
+
+            # Check if acceptable
+            if evaluation.is_acceptable and evaluation.overall_quality >= quality_threshold:
+                logger.success(
+                    f"Translation accepted (quality: {evaluation.overall_quality}/100, "
+                    f"iteration: {iteration + 1})"
+                )
+                break
+
+            # If not acceptable and not last iteration, refine
+            if iteration < max_iterations - 1:
+                logger.info(f"Refining translation (quality below threshold: {quality_threshold})")
+                python_code = self._refine_translation(
+                    vba_code, python_code, evaluation, references
+                )
+            else:
+                logger.warning(
+                    f"Max iterations reached, returning best translation "
+                    f"(quality: {evaluation.overall_quality}/100)"
+                )
+
+        return python_code, evaluations
+
+    def _refine_translation(
+        self,
+        vba_code: str,
+        python_code: str,
+        evaluation: "TranslationEvaluation",
+        references: "VBAReferences",
+    ) -> str:
+        """Refine translation based on evaluation feedback.
+
+        Args:
+            vba_code: Original VBA code
+            python_code: Current Python translation
+            evaluation: TranslationEvaluation with issues and suggestions
+            references: VBA references
+
+        Returns:
+            Improved Python-UNO code
+        """
+        prompt = self._build_refinement_prompt(vba_code, python_code, evaluation, references)
+
+        try:
+            response = self.client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=20000,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            content_block = response.content[0]
+            if hasattr(content_block, "text"):
+                refined_code: str = content_block.text.strip()
+            else:
+                raise ValueError(f"Unexpected content block type: {type(content_block)}")
+
+            # Strip markdown code blocks if present
+            refined_code = re.sub(r"^```python\n|^```\n|```$", "", refined_code, flags=re.MULTILINE)
+
+            logger.info(f"Translation refined: {len(python_code)} → {len(refined_code)} bytes")
+            return refined_code
+
+        except Exception as e:
+            logger.error(f"Translation refinement failed: {e}")
+            # Return original if refinement fails
+            return python_code
+
+    def _build_refinement_prompt(
+        self,
+        vba_code: str,
+        python_code: str,
+        evaluation: "TranslationEvaluation",
+        references: "VBAReferences",
+    ) -> str:
+        """Build prompt for translation refinement.
+
+        Args:
+            vba_code: Original VBA code
+            python_code: Current Python translation
+            evaluation: TranslationEvaluation with feedback
+            references: VBA references
+
+        Returns:
+            Refinement prompt string
+        """
+        issues_str = self._format_issues_for_prompt(evaluation.issues)
+        suggestions_str = "\n".join(f"- {s}" for s in evaluation.suggestions)
+        api_usage_str = self._format_api_usage(references)
+
+        return f"""Improve this VBA-to-Python-UNO translation based on evaluation feedback.
+
+Original VBA Code:
+```vba
+{vba_code}
+```
+
+Current Python Translation (Quality: {evaluation.overall_quality}/100):
+```python
+{python_code}
+```
+
+Detected VBA API Usage:
+{api_usage_str}
+
+Issues to Fix ({len(evaluation.issues)}):
+{issues_str}
+
+Improvement Suggestions:
+{suggestions_str}
+
+Your task:
+1. Fix all identified issues
+2. Ensure all VBA logic is preserved
+3. Use correct Python-UNO API mappings
+4. Fix indexing errors (VBA 1-based → Python 0-based)
+5. Add proper error handling
+6. Include all required imports
+
+Provide an improved Python-UNO translation.
+Output ONLY the corrected Python code, no explanations or markdown.
+"""
+
+    def _format_issues_for_prompt(self, issues: list) -> str:
+        """Format issues for refinement prompt.
+
+        Args:
+            issues: List of TranslationIssue objects
+
+        Returns:
+            Formatted string
+        """
+        if not issues:
+            return "(No issues)"
+
+        lines = []
+        for i, issue in enumerate(issues, 1):
+            lines.append(f"{i}. [{issue.issue_type.value}] (severity {issue.severity}/10)")
+            lines.append(f"   Description: {issue.description}")
+            if issue.vba_line:
+                lines.append(f"   VBA line: {issue.vba_line}")
+            if issue.python_line:
+                lines.append(f"   Python line: {issue.python_line}")
+
+        return "\n".join(lines)
