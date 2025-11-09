@@ -1,9 +1,16 @@
 """Unit tests for VBA test generator."""
 
+import os
+
 import pytest
 
 from xlsliberator.vba_reference_analyzer import VBAReferences
 from xlsliberator.vba_test_generator import ValidationTest, VBATestGenerator
+
+# Skip tests requiring Anthropic API if key not set
+requires_api_key = pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
+)
 
 
 @pytest.fixture
@@ -46,6 +53,7 @@ def test_validation_test_dataclass() -> None:
     assert len(test.assertions) == 1
 
 
+@requires_api_key
 def test_generate_tests_simple_vba(
     generator: VBATestGenerator, simple_references: VBAReferences
 ) -> None:
@@ -82,6 +90,7 @@ def TestMacro():
     assert len(test.assertions) > 0
 
 
+@requires_api_key
 def test_generate_tests_with_loop(generator: VBATestGenerator) -> None:
     """Test generating tests for VBA with loop."""
     vba_code = """
@@ -171,6 +180,7 @@ def test_build_test_generation_prompt(
     assert "assertions" in prompt
 
 
+@requires_api_key
 def test_generate_tests_with_complex_vba(generator: VBATestGenerator) -> None:
     """Test generating tests for complex VBA with multiple operations."""
     vba_code = """
@@ -216,6 +226,7 @@ def ProcessData():
     assert any(len(test.assertions) > 0 for test in tests)
 
 
+@requires_api_key
 def test_generate_tests_error_handling(generator: VBATestGenerator) -> None:
     """Test that generator handles errors gracefully."""
     # Test with minimal/empty code
