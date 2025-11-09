@@ -277,7 +277,7 @@ def _extract_xlsb(file_path: Path) -> tuple[WorkbookIR, ExtractionStats]:
 
                         # pyxlsb provides limited formula info
                         cell_type = (
-                            CellType.NUMBER if isinstance(cell.v, (int, float)) else CellType.STRING
+                            CellType.NUMBER if isinstance(cell.v, int | float) else CellType.STRING
                         )
 
                         if cell.f:

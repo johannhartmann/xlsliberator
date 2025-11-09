@@ -22,7 +22,7 @@ sys.path.insert(0, str(src_path))
 sys.path.append("/usr/lib/python3/dist-packages")
 
 # Now run the CLI
-from xlsliberator.cli import cli
+from xlsliberator.cli import cli  # noqa: E402
 
 if __name__ == "__main__":
     cli()

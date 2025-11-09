@@ -80,7 +80,7 @@ class UnoCtx:
             logger.debug(f"LibreOffice process started (PID: {self._libreoffice_process.pid})")
 
             # Wait for LibreOffice to start accepting connections
-            for attempt in range(30):  # Try for 30 seconds
+            for _attempt in range(30):  # Try for 30 seconds
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(1)
                 result = sock.connect_ex((self.host, self.port))

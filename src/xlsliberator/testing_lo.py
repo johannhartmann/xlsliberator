@@ -68,7 +68,7 @@ def values_equal(val1: Any, val2: Any, tolerance: float = 1e-9) -> bool:
         return False
 
     # Handle numeric values
-    if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+    if isinstance(val1, int | float) and isinstance(val2, int | float):
         # Check for NaN
         if math.isnan(val1) and math.isnan(val2):
             return True

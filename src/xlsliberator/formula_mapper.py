@@ -137,7 +137,12 @@ def _load_formula_mapping() -> tuple[dict[str, dict[str, Any]], dict[str, dict[s
 
         # Extract function mappings (all keys except 'locales')
         _formula_mapping = {k: v for k, v in data.items() if k != "locales"}
-        _locale_config = data.get("locales", {})
+        locale_data: dict[str, dict[str, str]] = data.get("locales", {})
+        _locale_config = locale_data
+
+        # Ensure both are loaded (for type checking)
+        assert _formula_mapping is not None
+        assert _locale_config is not None
 
         logger.debug(
             f"Loaded {len(_formula_mapping)} function mappings and "

@@ -2,7 +2,9 @@
 
 import json
 import os
+import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 from anthropic import Anthropic
@@ -36,7 +38,8 @@ class LLMFormulaTranslator:
         if self.cache_path.exists():
             try:
                 with open(self.cache_path) as f:
-                    return json.load(f)
+                    cache: dict[str, str] = json.load(f)
+                    return cache
             except Exception as e:
                 logger.warning(f"Failed to load formula cache: {e}")
         return {}
@@ -97,7 +100,12 @@ class LLMFormulaTranslator:
                 messages=[{"role": "user", "content": prompt}],
             )
 
-            translated = response.content[0].text.strip()
+            # Extract text from response
+            content_block = response.content[0]
+            if hasattr(content_block, "text"):
+                translated: str = content_block.text.strip()
+            else:
+                raise ValueError(f"Unexpected content block type: {type(content_block)}")
 
             # Ensure formula starts with =
             if not translated.startswith("="):
@@ -127,7 +135,6 @@ class LLMFormulaTranslator:
         Returns:
             Formula with fixed OFFSET syntax
         """
-        import re
 
         # Pattern: OFFSET(SheetName.$A$1 or similar patterns with dollar signs
         # Match: OFFSET( followed by sheet name, dot, then $A$1 style reference
@@ -136,7 +143,7 @@ class LLMFormulaTranslator:
         # Pattern matches: OFFSET(Sheet.$A$1... or OFFSET('Sheet-Name'.$A$1...
         pattern = r"(OFFSET\(['\"]?[\w\-]+['\"]?\.)(\$?)([A-Z]+)(\$?)(\d+)"
 
-        def replace_dollars(match):
+        def replace_dollars(match: re.Match[str]) -> str:
             """Remove dollar signs from the cell reference in OFFSET base."""
             prefix = match.group(1)  # OFFSET(Sheet.
             # groups 2,4 are the $ signs we want to remove
@@ -227,7 +234,12 @@ class LLMFormulaTranslator:
                 messages=[{"role": "user", "content": prompt}],
             )
 
-            translated = response.content[0].text.strip()
+            # Extract text from response
+            content_block = response.content[0]
+            if hasattr(content_block, "text"):
+                translated: str = content_block.text.strip()
+            else:
+                raise ValueError(f"Unexpected content block type: {type(content_block)}")
 
             # Ensure formula starts with =
             if not translated.startswith("="):
@@ -261,7 +273,7 @@ class LLMFormulaTranslator:
             Prompt string for Claude
         """
         # Get locale-specific information
-        locale_info = {
+        locale_info: dict[str, dict[str, Any]] = {
             "en-US": {
                 "separator": ",",
                 "name": "English",
@@ -280,7 +292,7 @@ class LLMFormulaTranslator:
             },
         }
 
-        info = locale_info.get(locale, locale_info["en-US"])
+        info: dict[str, Any] = locale_info.get(locale, locale_info["en-US"])
 
         if info.get("keep_english"):
             # For English, just return as-is

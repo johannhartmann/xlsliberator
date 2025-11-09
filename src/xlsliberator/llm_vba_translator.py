@@ -111,7 +111,10 @@ class LLMVBATranslator:
 
             # Extract text from response
             content_block = response.content[0]
-            translated = content_block.text.strip() if hasattr(content_block, "text") else ""
+            if hasattr(content_block, "text"):
+                translated: str = content_block.text.strip()
+            else:
+                raise ValueError(f"Unexpected content block type: {type(content_block)}")
 
             # Cache the result
             self.cache[cache_key] = translated
