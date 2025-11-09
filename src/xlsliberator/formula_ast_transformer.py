@@ -43,6 +43,7 @@ CALC_FORMULA_GRAMMAR = r"""
     cell_ref: /\$?[A-Z]+\$?[0-9]+/
             | /\$?[A-Z]+\$?[0-9]+:\$?[A-Z]+\$?[0-9]+/
             | /\$?'?[\w\-]+'?\.\$?[A-Z]+\$?[0-9]+/
+            | /\$?'?[\w\-]+'?\.\$?[A-Z]+\$?[0-9]+:\$?'?[\w\-]+'?\.\$?[A-Z]+\$?[0-9]+/
 
     STRING: /"[^"]*"/
     NUMBER: /\-?\d+(\.\d+)?/
@@ -90,13 +91,16 @@ class IndirectAddressTransformer(Transformer):
         return Tree("function_call", children)
 
     def _transform_indirect_address(self, address_children: list) -> Tree:
-        """Transform ADDRESS(...) to OFFSET(...).
+        """Transform INDIRECT(ADDRESS(..., sheet)) to INDIRECT(sheet & ADDRESS(...)).
+
+        Removes the unsupported 5th parameter (sheet) from ADDRESS and concatenates
+        it as a string prefix instead.
 
         Args:
             address_children: [Token(ADDRESS), row, col, abs, a1, sheet]
 
         Returns:
-            Tree for OFFSET function call
+            Tree for INDIRECT function call with concatenated sheet reference
         """
         if len(address_children) < 6:
             logger.warning(f"ADDRESS has only {len(address_children) - 1} args, need 5. Skipping.")
@@ -107,8 +111,6 @@ class IndirectAddressTransformer(Transformer):
             )
 
         # Extract arguments: ADDRESS(row, col, abs, a1, sheet)
-        row_tree = address_children[1]
-        col_tree = address_children[2]
         sheet_tree = address_children[5]
 
         # Extract sheet name from string tree
@@ -130,19 +132,22 @@ class IndirectAddressTransformer(Transformer):
             needs_quote = sheet_name[0].isdigit() or "-" in sheet_name or " " in sheet_name
             sheet_ref = f"'{sheet_name}'" if needs_quote else sheet_name
 
-        # Build OFFSET(Sheet.A1, row-1, col-1)
-        # ADDRESS is 1-indexed, OFFSET is 0-indexed
-        base_ref = Tree("cell", [Token("__ANON_0", f"{sheet_ref}.A1")])
+        # Build ADDRESS without the 5th parameter (sheet)
+        # ADDRESS(row, col, abs, a1) - only first 4 parameters
+        address_no_sheet = Tree("function_call", address_children[:5])
 
-        # Create (row - 1) and (col - 1) trees
-        offset_row = Tree("sub", [row_tree, Tree("number", [Token("NUMBER", "1")])])
-        offset_col = Tree("sub", [col_tree, Tree("number", [Token("NUMBER", "1")])])
+        # Build string for sheet reference: "Sheet."
+        sheet_prefix = Tree("string", [Token("STRING", f'"{sheet_ref}."')])
+
+        # Build concatenation: "Sheet." & ADDRESS(row, col, abs, a1)
+        concat_tree = Tree("concat", [sheet_prefix, address_no_sheet])
 
         logger.debug(
-            f"Transformed INDIRECT(ADDRESS(..., {sheet_name})) → OFFSET({sheet_ref}.A1, ...)"
+            f'Transformed INDIRECT(ADDRESS(..., {sheet_name})) → INDIRECT("{sheet_ref}." & ADDRESS(...))'
         )
 
-        return Tree("function_call", [Token("NAME", "OFFSET"), base_ref, offset_row, offset_col])
+        # Return INDIRECT(concatenation)
+        return Tree("function_call", [Token("NAME", "INDIRECT"), concat_tree])
 
 
 def needs_parens(tree: Tree, parent_op: str | None = None) -> bool:
@@ -196,10 +201,19 @@ def tree_to_formula(tree: Tree | Token, parent_op: str | None = None) -> str:
         child = tree.children[0]
         if isinstance(child, Tree) and child.data == "cell_ref":
             # Nested: cell -> cell_ref -> Token
-            return str(child.children[0])
+            cell_ref_str = str(child.children[0])
         else:
             # Direct Token
-            return str(child)
+            cell_ref_str = str(child)
+
+        # Fix LibreOffice bug: $SheetName.$Cell → SheetName.$Cell
+        # Cross-sheet references shouldn't have $ before the sheet name
+        # Examples: $Tabelle.$D$5 → Tabelle.$D$5, $'My Sheet'.$A$1 → 'My Sheet'.$A$1
+        # But preserve: $D$5 (no dot) stays as $D$5
+        if cell_ref_str.startswith("$") and "." in cell_ref_str:
+            cell_ref_str = cell_ref_str[1:]
+
+        return cell_ref_str
     elif tree.data == "cell_ref":
         # cell_ref has a Token child
         return str(tree.children[0])

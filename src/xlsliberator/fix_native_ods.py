@@ -259,7 +259,6 @@ def fix_indirect_address_formulas(
 
                 # Set the fixed formula
                 cell.setFormula(fixed_formula)
-
                 stats["formulas_fixed"] += 1
 
                 if stats["formulas_fixed"] <= 5:

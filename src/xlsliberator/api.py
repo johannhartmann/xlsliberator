@@ -13,7 +13,6 @@ from loguru import logger
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
 from xlsliberator.extract_vba import extract_vba_modules
-from xlsliberator.fix_native_ods import post_process_native_ods
 from xlsliberator.report import ConversionReport
 from xlsliberator.vba2py_uno import translate_vba_to_python
 
@@ -133,6 +132,8 @@ def convert(
 
         # Step 1.5: Post-process native ODS to fix known bugs
         logger.info("Step 1.5: Post-processing native ODS (fix formulas & ranges)...")
+        from xlsliberator.fix_native_ods import post_process_native_ods
+
         post_stats = post_process_native_ods(input_path, output_path)
         report.formulas_fixed = post_stats.get("formulas_fixed", 0)
 
