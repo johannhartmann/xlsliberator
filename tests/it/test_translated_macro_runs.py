@@ -67,7 +67,11 @@ End Sub
     # Check handler structure
     assert "def on_open" in handler
     assert "import uno" in handler
-    assert "doc = desktop.getCurrentComponent()" in handler
+    # Check for document access (either direct or conditional)
+    assert "desktop.getCurrentComponent()" in handler or "XSCRIPTCONTEXT.getDocument()" in handler
+    # Check VBA translation is present
+    assert "Workbook_Open" in handler
+    assert "getCellRangeByName" in handler or "setString" in handler
 
 
 @pytest.mark.integration
