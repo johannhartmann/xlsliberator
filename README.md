@@ -18,6 +18,60 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 - **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
 - **High Performance**: Processes 27k+ cells in under 5 minutes
 
+## Prerequisites
+
+### System Requirements
+
+**LibreOffice 7.x+ with Python UNO bridge**
+
+Ubuntu/Debian:
+```bash
+sudo apt-get update
+sudo apt-get install libreoffice libreoffice-script-provider-python
+```
+
+Fedora/RHEL:
+```bash
+sudo dnf install libreoffice libreoffice-pyuno
+```
+
+macOS (Homebrew):
+```bash
+brew install --cask libreoffice
+```
+
+Windows:
+- Download from [libreoffice.org](https://www.libreoffice.org/download/download/)
+- Ensure Python support is included during installation
+
+**Verify LibreOffice installation:**
+```bash
+soffice --version
+```
+
+**Python 3.11+**
+
+Ubuntu/Debian:
+```bash
+sudo apt-get install python3.11 python3.11-venv python3-pip
+```
+
+macOS/Windows:
+- Download from [python.org](https://www.python.org/downloads/)
+
+### Optional Requirements
+
+**Anthropic API Key** (required only for VBA-to-Python translation)
+
+1. Sign up at [anthropic.com](https://www.anthropic.com/)
+2. Generate API key from console
+3. Set environment variable:
+```bash
+export ANTHROPIC_API_KEY="your-api-key-here"
+```
+
+Without the API key, XLSLiberator can still convert Excel to ODS with full formula preservation, but VBA macros will not be translated.
+
 ## Installation
 
 ### From Git
@@ -33,12 +87,6 @@ git clone https://github.com/johannhartmann/xlsliberator.git
 cd xlsliberator
 pip install -e ".[dev]"
 ```
-
-## Requirements
-
-- Python 3.11+
-- LibreOffice 7.x+ (with headless support)
-- Anthropic API key (for LLM-based VBA translation)
 
 ## Quick Start
 
@@ -179,19 +227,6 @@ This project is licensed under the **GNU General Public License v3.0 or later (G
 
 See [LICENSE](LICENSE) for the full license text.
 
-## Citation
-
-If you use XLSLiberator in academic work, please cite:
-
-```bibtex
-@software{xlsliberator,
-  title = {XLSLiberator: Excel to LibreOffice Calc Converter},
-  author = {Hartmann, Johann-Peter},
-  year = {2025},
-  url = {https://github.com/johannhartmann/xlsliberator}
-}
-```
-
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/johannhartmann/xlsliberator/issues)
@@ -205,6 +240,7 @@ GitHub: [@johannhartmann](https://github.com/johannhartmann)
 
 ## Acknowledgments
 
+- **Lukas Kahwe Smith** ([@lsmith77](https://github.com/lsmith77)): For the original idea and concept
 - **LibreOffice**: For the excellent open-source office suite
 - **Anthropic**: For the Claude API used in VBA translation
 - **oletools**: For VBA extraction capabilities
