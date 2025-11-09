@@ -1,0 +1,48 @@
+# Minimal formula mapping for backward compatibility with tests
+# NOTE: This file is no longer used in production - we use LibreOffice native conversion
+#
+# Formula name mappings for locale support
+formulas:
+  en-US:
+    SUM: SUM
+    AVERAGE: AVERAGE
+    COUNT: COUNT
+    IF: IF
+    VLOOKUP: VLOOKUP
+    HLOOKUP: HLOOKUP
+    INDEX: INDEX
+    MATCH: MATCH
+    LEFT: LEFT
+    RIGHT: RIGHT
+    MID: MID
+    LEN: LEN
+    CONCATENATE: CONCATENATE
+    SUMIF: SUMIF
+    COUNTIF: COUNTIF
+    AVERAGEIF: AVERAGEIF
+    MAX: MAX
+    MIN: MIN
+    ROUND: ROUND
+    ABS: ABS
+
+  de-DE:
+    SUM: SUMME
+    AVERAGE: MITTELWERT
+    COUNT: ANZAHL
+    IF: WENN
+    VLOOKUP: SVERWEIS
+    HLOOKUP: HVERWEIS
+    INDEX: INDEX
+    MATCH: VERGLEICH
+    LEFT: LINKS
+    RIGHT: RECHTS
+    MID: TEIL
+    LEN: LÄNGE
+    CONCATENATE: VERKETTEN
+    SUMIF: SUMMEWENN
+    COUNTIF: ZÄHLENWENN
+    AVERAGEIF: MITTELWERTWENN
+    MAX: MAX
+    MIN: MIN
+    ROUND: RUNDEN
+    ABS: ABS
