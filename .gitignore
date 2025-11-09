@@ -141,6 +141,7 @@ Thumbs.db
 *.xls
 .formula_cache.json
 .formula_cache.json.*
+.vba_cache.json
 *.backup
 *.broken
 
@@ -154,4 +155,17 @@ output_*.ods
 
 # Development tools
 /kill
+/tools/
 prompts/
+rules/calc_transforms/
+
+# Internal documentation
+IMPLEMENTATION_SUMMARY.md
+CLAUDE.md
+
+# Temporary files
+*.tmp
+lu*.tmp
+
+# Package manager locks (use pyproject.toml)
+uv.lock
