@@ -241,6 +241,51 @@ def new_calc(ctx: UnoCtx) -> Any:
     return doc
 
 
+def set_macro_security_level(ctx: UnoCtx, level: int = 0) -> None:
+    """Set LibreOffice macro security level.
+
+    Args:
+        ctx: UNO connection context
+        level: Security level (0=Low, 1=Medium, 2=High, 3=Very High)
+
+    Raises:
+        UnoConnectionError: If not connected
+    """
+    if not ctx.is_connected:
+        raise UnoConnectionError("Not connected to LibreOffice")
+
+    try:
+        # Get configuration provider
+        from com.sun.star.beans import PropertyValue
+
+        config_provider = ctx.component_context.ServiceManager.createInstanceWithContext(
+            "com.sun.star.configuration.ConfigurationProvider", ctx.component_context
+        )
+
+        # Configuration path for macro security
+        config_path = PropertyValue()
+        config_path.Name = "nodepath"
+        config_path.Value = "/org.openoffice.Office.Common/Security/Scripting"
+
+        # Get update access to the configuration
+        config_access = config_provider.createInstanceWithArguments(
+            "com.sun.star.configuration.ConfigurationUpdateAccess", (config_path,)
+        )
+
+        # Set MacroSecurityLevel (0=Low, 1=Medium, 2=High, 3=Very High)
+        config_access.setPropertyValue("MacroSecurityLevel", level)
+
+        # Commit changes
+        config_access.commitChanges()
+
+        level_names = {0: "Low", 1: "Medium", 2: "High", 3: "Very High"}
+        logger.success(f"Set macro security level to {level_names.get(level, level)}")
+
+    except Exception as e:
+        logger.warning(f"Failed to set macro security level: {e}")
+        raise UnoConnectionError(f"Failed to set macro security level: {e}") from e
+
+
 def open_calc(ctx: UnoCtx, path: str | Path) -> Any:
     """Open an existing Calc spreadsheet document.
 
@@ -262,13 +307,20 @@ def open_calc(ctx: UnoCtx, path: str | Path) -> Any:
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
+    from com.sun.star.beans import PropertyValue
     from uno import systemPathToFileUrl
 
     file_url = systemPathToFileUrl(str(file_path))
     logger.debug(f"Opening Calc document: {file_url}")
 
-    doc = ctx.desktop.loadComponentFromURL(file_url, "_blank", 0, ())
-    logger.debug("Opened Calc document")
+    # Enable macros automatically (MacroExecutionMode = 4 = ALWAYS_EXECUTE_NO_WARN)
+    # This allows Python-UNO macros to run without security warnings
+    load_props = (
+        PropertyValue(Name="MacroExecutionMode", Value=4),  # ALWAYS_EXECUTE_NO_WARN
+    )
+
+    doc = ctx.desktop.loadComponentFromURL(file_url, "_blank", 0, load_props)
+    logger.debug("Opened Calc document with macros enabled")
     return doc
 
 

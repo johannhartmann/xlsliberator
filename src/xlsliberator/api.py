@@ -230,6 +230,19 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
+            # Step 4.5: Enable macros by setting security level to Low
+            logger.info("Step 4.5: Setting macro security to Low...")
+            try:
+                from xlsliberator.uno_conn import UnoCtx, set_macro_security_level
+
+                with UnoCtx() as ctx:
+                    set_macro_security_level(ctx, level=0)  # 0 = Low
+                logger.success("Macro security set to Low (persists across sessions)")
+            except Exception as e:
+                msg = f"Failed to set macro security: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
+
         # Step 5: Test formula equivalence
         logger.info("Step 5: Testing formula equivalence...")
         try:
