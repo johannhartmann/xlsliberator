@@ -15,6 +15,7 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 - **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts with 4-phase quality pipeline
 - **Translation Quality Assurance**: Reference-aware translation, syntax validation, reflection loop, and automated test generation
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
+- **Automatic Macro Enabling**: Automatically configures LibreOffice to allow Python macros to run without security warnings
 - **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
 - **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
 - **High Performance**: Processes 27k+ cells in under 5 minutes
@@ -127,6 +128,51 @@ print(f"Formulas translated: {result.formula_count}")
 print(f"VBA macros converted: {result.macro_count}")
 ```
 
+## Python Macro Support
+
+XLSLiberator automatically enables Python macros in converted ODS files. When converting Excel files with VBA:
+
+1. **VBA Translation**: VBA macros are translated to Python-UNO equivalents
+2. **Event Handler Rewriting**: VBA event handlers are automatically updated to point to Python functions
+3. **Macro Security Configuration**: LibreOffice macro security is set to "Low" to allow Python macros to run without warnings
+
+This happens automatically during conversion - no manual configuration needed! The macro security setting persists across LibreOffice sessions.
+
+### How It Works
+
+During conversion, XLSLiberator:
+- Embeds Python-UNO macros into the ODS file's `Scripts/python/` directory
+- Rewrites event handlers in `content.xml` from `language=Basic` to `language=Python`
+- Sets LibreOffice's global macro security level to Low (value: 0)
+- Opens documents with `MacroExecutionMode=4` (ALWAYS_EXECUTE_NO_WARN)
+
+### Manual Configuration (Optional)
+
+If you prefer to manually control macro security:
+
+**Option 1: GUI Configuration**
+- Open LibreOffice Calc
+- Navigate to: `Tools → Options → LibreOffice → Security → Macro Security`
+- Select **"Low"** (run all macros) or **"Medium"** (prompt for approval)
+
+**Option 2: Trusted File Locations**
+- Navigate to: `Tools → Options → LibreOffice → Security → Macro Security → Trusted Sources → Trusted File Locations`
+- Add the directory containing your converted ODS files
+
+**Option 3: Using the Utility Script**
+```bash
+# Set macro security to Low
+python tools/set_macro_security.py --level low
+
+# Set to Medium (prompt for approval)
+python tools/set_macro_security.py --level medium
+
+# Set to High (only signed macros)
+python tools/set_macro_security.py --level high
+```
+
+Note: The utility script requires the tools directory to be present in a development installation.
+
 ## Architecture
 
 XLSLiberator uses a hybrid approach:
@@ -139,7 +185,9 @@ XLSLiberator uses a hybrid approach:
    - Phase 3: Agentic reflection loop (self-evaluation and iterative refinement)
    - Phase 4: LLM-generated validation tests (behavioral equivalence testing)
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
-5. **Formula Repair**: Deterministic AST transformations fix incompatibilities
+5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
+6. **Macro Security Configuration**: Automatically enables Python macros by setting LibreOffice security to Low
+7. **Formula Repair**: Deterministic AST transformations fix incompatibilities
 
 ## Development
 
