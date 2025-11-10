@@ -35,8 +35,8 @@ def convert_native(
         ConversionError: If native conversion fails
 
     Note:
-        Uses UNO bridge for conversion to avoid conflicts with persistent UNO server.
-        This ensures the same LibreOffice instance can be used for formula repair.
+        Uses UNO bridge for conversion to enable interactive document manipulation.
+        This allows complex operations like formula repair, macro embedding, etc.
     """
     from xlsliberator.uno_conn import UnoCtx
 
@@ -50,7 +50,7 @@ def convert_native(
         if output_path.exists():
             output_path.unlink()
 
-        # Convert using UNO (avoids subprocess conflicts)
+        # Convert using UNO (enables interactive document manipulation)
         with UnoCtx() as ctx:
             # Load Excel file
             input_url = f"file://{input_path.absolute()}"
@@ -131,26 +131,42 @@ def convert(
         convert_native(input_path, output_path)
 
         # Step 1.5: Post-process native ODS to fix known bugs
-        logger.info("Step 1.5: Post-processing native ODS (fix formulas & ranges)...")
-        from xlsliberator.fix_native_ods import post_process_native_ods
+        # Skip for old .xls files (openpyxl doesn't support them)
+        if input_path.suffix.lower() != ".xls":
+            logger.info("Step 1.5: Post-processing native ODS (fix formulas & ranges)...")
+            try:
+                from xlsliberator.fix_native_ods import post_process_native_ods
 
-        post_stats = post_process_native_ods(input_path, output_path)
-        report.formulas_fixed = post_stats.get("formulas_fixed", 0)
+                post_stats = post_process_native_ods(input_path, output_path)
+                report.formulas_fixed = post_stats.get("formulas_fixed", 0)
+            except Exception as e:
+                msg = f"Post-processing failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
+        else:
+            logger.info("Skipping post-processing for .xls file (openpyxl limitation)")
 
         # Extract metadata for reporting (from original Excel)
         logger.info("Extracting metadata for report...")
-        wb_ir, _ = extract_workbook(input_path)
-        report.total_cells = wb_ir.total_cells
-        report.total_formulas = wb_ir.total_formulas
-        report.named_ranges = len(wb_ir.named_ranges)
-        report.sheet_count = wb_ir.sheet_count
-        report.formulas_translated = wb_ir.total_formulas  # Native conversion handles this
+        try:
+            wb_ir, _ = extract_workbook(input_path)
+            report.total_cells = wb_ir.total_cells
+            report.total_formulas = wb_ir.total_formulas
+            report.named_ranges = len(wb_ir.named_ranges)
+            report.sheet_count = wb_ir.sheet_count
+            report.formulas_translated = wb_ir.total_formulas  # Native conversion handles this
 
-        logger.success(
-            f"Native conversion: {report.total_cells:,} cells, "
-            f"{report.total_formulas:,} formulas, "
-            f"{report.sheet_count} sheets"
-        )
+            logger.success(
+                f"Native conversion: {report.total_cells:,} cells, "
+                f"{report.total_formulas:,} formulas, "
+                f"{report.sheet_count} sheets"
+            )
+        except Exception as e:
+            msg = f"Metadata extraction failed: {e}"
+            logger.warning(msg)
+            report.warnings.append(msg)
+            # Continue without metadata
+            logger.info("Continuing without metadata extraction")
 
         # Step 2: Extract VBA from original Excel (if embed_macros=True)
         vba_modules = []
