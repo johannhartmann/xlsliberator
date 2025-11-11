@@ -68,8 +68,10 @@ mcp.tool(get_cell_colors)
 mcp.tool(take_screenshot)
 
 
-def serve(host: str = "0.0.0.0", port: int = 8000) -> None:
+def serve(host: str = "0.0.0.0", port: int = 8000) -> None:  # nosec B104
     """Start the MCP server with HTTP streaming transport.
+
+    Note: Binds to 0.0.0.0 by design for Docker/container environments.
 
     Args:
         host: Host address to bind to (default: 0.0.0.0)

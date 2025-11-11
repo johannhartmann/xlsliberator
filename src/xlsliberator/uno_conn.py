@@ -80,8 +80,8 @@ class UnoCtx:
                 # Find available display number
                 for display_num in range(99, 200):
                     display = f":{display_num}"
-                    # Check if display is already in use
-                    lock_file = f"/tmp/.X{display_num}-lock"
+                    # Check if display is already in use (X11 lock file location is standard)
+                    lock_file = f"/tmp/.X{display_num}-lock"  # nosec B108
                     if not Path(lock_file).exists():
                         self._display = display
                         break

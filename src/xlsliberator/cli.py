@@ -88,7 +88,7 @@ def convert_cmd(
 
 
 @cli.command(name="mcp-serve")
-@click.option("--host", default="0.0.0.0", help="Host address to bind to")
+@click.option("--host", default="0.0.0.0", help="Host address to bind to")  # nosec B104
 @click.option("--port", default=8000, help="Port number")
 def mcp_serve_cmd(host: str, port: int) -> None:
     """Start MCP server with HTTP streaming transport.

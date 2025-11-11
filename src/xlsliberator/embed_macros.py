@@ -199,7 +199,8 @@ def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[st
     # Try to read existing manifest, or create new one
     try:
         manifest_data = zip_in.read("META-INF/manifest.xml")
-        root = ET.fromstring(manifest_data)
+        # Safe: parsing manifest from ODS file we control
+        root = ET.fromstring(manifest_data)  # nosec B314
     except KeyError:
         # No existing manifest - create new one
         root = ET.Element(f"{{{NS['manifest']}}}manifest")
