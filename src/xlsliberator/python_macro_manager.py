@@ -327,3 +327,422 @@ def generate_script_uri(module_name: str, function_name: str) -> str:
 
 # Script editing is already implemented in embed_macros.py
 # No additional implementation needed here
+
+
+# ============================================================================
+# 5. Post-Conversion Validation
+# ============================================================================
+
+
+@dataclass
+class MacroValidationSummary:
+    """Summary of macro validation results."""
+
+    total_modules: int
+    valid_syntax: int
+    syntax_errors: int
+    has_exported_scripts: int
+    missing_exported_scripts: int
+    validation_details: dict[str, ScriptValidationResult]
+
+
+def validate_all_embedded_macros(ods_path: str | Path) -> MacroValidationSummary:
+    """Validate all embedded Python macros in an ODS file.
+
+    Args:
+        ods_path: Path to ODS file
+
+    Returns:
+        MacroValidationSummary with comprehensive validation results
+    """
+    import zipfile
+
+    ods_path = Path(ods_path)
+    if not ods_path.exists():
+        raise PythonMacroError(f"File not found: {ods_path}")
+
+    validation_details = {}
+    total_modules = 0
+    valid_syntax = 0
+    syntax_errors = 0
+    has_exported_scripts = 0
+    missing_exported_scripts = 0
+
+    try:
+        with zipfile.ZipFile(ods_path, "r") as zip_file:
+            # Find all Python scripts
+            for filename in zip_file.namelist():
+                if filename.startswith("Scripts/python/") and filename.endswith(".py"):
+                    total_modules += 1
+                    module_name = Path(filename).name
+
+                    # Read script content
+                    script_code = zip_file.read(filename).decode("utf-8")
+
+                    # Validate
+                    result = validate_python_script(script_code)
+                    validation_details[module_name] = result
+
+                    # Update counters
+                    if result.valid:
+                        valid_syntax += 1
+                    else:
+                        syntax_errors += 1
+
+                    # Check for g_exportedScripts
+                    if "g_exportedScripts" in script_code:
+                        has_exported_scripts += 1
+                    else:
+                        missing_exported_scripts += 1
+
+        logger.info(
+            f"Validated {total_modules} Python modules: "
+            f"{valid_syntax} valid, {syntax_errors} with errors"
+        )
+
+        return MacroValidationSummary(
+            total_modules=total_modules,
+            valid_syntax=valid_syntax,
+            syntax_errors=syntax_errors,
+            has_exported_scripts=has_exported_scripts,
+            missing_exported_scripts=missing_exported_scripts,
+            validation_details=validation_details,
+        )
+
+    except zipfile.BadZipFile as e:
+        raise PythonMacroError(f"Invalid ODS file: {e}") from e
+    except Exception as e:
+        raise PythonMacroError(f"Failed to validate macros: {e}") from e
+
+
+# ============================================================================
+# 6. Macro Execution Testing with Undo Contexts
+# ============================================================================
+
+
+@dataclass
+class MacroExecutionSummary:
+    """Summary of macro execution testing results."""
+
+    total_functions: int
+    successful: int
+    failed: int
+    skipped: int
+    execution_details: dict[str, ScriptExecutionResult]
+
+
+def test_all_macros_safe(ods_path: str | Path) -> MacroExecutionSummary:
+    """Test all embedded Python macros with Undo context safety.
+
+    Creates a temporary copy of the document and tests all macros with
+    automatic rollback on errors.
+
+    Args:
+        ods_path: Path to ODS file
+
+    Returns:
+        MacroExecutionSummary with test results
+    """
+    import shutil
+    import tempfile
+
+    ods_path = Path(ods_path)
+    if not ods_path.exists():
+        raise PythonMacroError(f"File not found: {ods_path}")
+
+    execution_details = {}
+    total_functions = 0
+    successful = 0
+    failed = 0
+    skipped = 0
+
+    # Create temporary copy for safe testing
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_ods = Path(tmpdir) / "test.ods"
+        shutil.copy(ods_path, test_ods)
+
+        try:
+            # Get all script infos
+            script_infos = enumerate_python_scripts(test_ods)
+
+            for script_info in script_infos:
+                for function_name in script_info.functions:
+                    total_functions += 1
+
+                    # Skip private functions and special methods
+                    if function_name.startswith("_"):
+                        skipped += 1
+                        logger.debug(f"Skipping private function: {function_name}")
+                        continue
+
+                    # Generate script URI
+                    script_uri = generate_script_uri(script_info.module_name, function_name)
+
+                    # Test execution
+                    logger.debug(f"Testing macro: {script_uri}")
+                    result = test_script_execution_safe(test_ods, script_uri)
+
+                    execution_details[script_uri] = result
+
+                    if result.success:
+                        successful += 1
+                        logger.debug(f"✓ {function_name} executed successfully")
+                    else:
+                        failed += 1
+                        logger.warning(f"✗ {function_name} failed: {result.error}")
+
+            logger.info(
+                f"Tested {total_functions} functions: "
+                f"{successful} passed, {failed} failed, {skipped} skipped"
+            )
+
+        except Exception as e:
+            logger.error(f"Macro testing failed: {e}")
+            raise PythonMacroError(f"Failed to test macros: {e}") from e
+
+    return MacroExecutionSummary(
+        total_functions=total_functions,
+        successful=successful,
+        failed=failed,
+        skipped=skipped,
+        execution_details=execution_details,
+    )
+
+
+def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptExecutionResult:
+    """Test execution of a script with Undo context for safety.
+
+    Args:
+        ods_path: Path to ODS file (should be a test copy)
+        script_uri: Script URI to execute
+
+    Returns:
+        ScriptExecutionResult
+    """
+    from xlsliberator.uno_conn import UnoCtx, open_calc
+
+    try:
+        with UnoCtx() as ctx:
+            doc = open_calc(ctx, ods_path)
+
+            try:
+                # Get undo manager
+                um = doc.getUndoManager()
+                um.enterUndoContext("Test Macro Execution")
+
+                try:
+                    # Get script provider
+                    msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
+                        "com.sun.star.script.provider.MasterScriptProviderFactory",
+                        ctx.component_context,
+                    )
+                    script_provider = msp_factory.createScriptProvider(doc)
+
+                    # Get and execute script
+                    script = script_provider.getScript(script_uri)
+                    result = script.invoke((), (), ())
+
+                    # Success - leave undo context
+                    um.leaveUndoContext()
+
+                    logger.debug(f"Script executed successfully: {script_uri}")
+                    return ScriptExecutionResult(True, None, result)
+
+                except Exception as e:
+                    # Execution failed - undo changes
+                    error_msg = f"Script execution failed: {e}"
+                    logger.debug(error_msg)
+
+                    try:
+                        um.leaveUndoContext()
+                        um.undo()
+                    except Exception as undo_error:
+                        logger.warning(f"Undo failed: {undo_error}")
+
+                    return ScriptExecutionResult(False, error_msg, None)
+
+            finally:
+                doc.close(False)  # Don't save
+
+    except Exception as e:
+        error_msg = f"Failed to open document: {e}"
+        logger.error(error_msg)
+        return ScriptExecutionResult(False, error_msg, None)
+
+
+# ============================================================================
+# 7. Formula Validation with FunctionAccess
+# ============================================================================
+
+
+@dataclass
+class FormulaValidationResult:
+    """Result of formula validation."""
+
+    valid: bool
+    error: str | None
+    formula: str
+    result: Any | None
+
+
+@dataclass
+class FormulaValidationSummary:
+    """Summary of formula validation for a document."""
+
+    total_formulas: int
+    valid_formulas: int
+    invalid_formulas: int
+    validation_details: dict[str, FormulaValidationResult]
+
+
+def validate_formula(formula: str) -> FormulaValidationResult:
+    """Validate a formula using FunctionAccess service.
+
+    Args:
+        formula: Formula string (without leading "=")
+
+    Returns:
+        FormulaValidationResult with validation details
+
+    Example:
+        >>> result = validate_formula("SUM(1,2,3)")
+        >>> result.valid
+        True
+        >>> result.result
+        6.0
+    """
+    from xlsliberator.uno_conn import UnoCtx
+
+    # Strip leading "=" if present
+    formula = formula.lstrip("=")
+
+    try:
+        with UnoCtx() as ctx:
+            # Create FunctionAccess service
+            smgr = ctx.component_context.ServiceManager
+            fa = smgr.createInstanceWithContext(
+                "com.sun.star.sheet.FunctionAccess", ctx.component_context
+            )
+
+            try:
+                # Try to evaluate the formula
+                # Note: This is a simplified approach that works for simple function calls
+                # More complex formulas with cell references may not work
+                result = fa.callFunction(formula, ())
+
+                logger.debug(f"Formula validated successfully: {formula} = {result}")
+                return FormulaValidationResult(
+                    valid=True, error=None, formula=formula, result=result
+                )
+
+            except Exception as e:
+                error_msg = f"Formula evaluation failed: {e}"
+                logger.debug(error_msg)
+                return FormulaValidationResult(
+                    valid=False, error=error_msg, formula=formula, result=None
+                )
+
+    except Exception as e:
+        error_msg = f"Failed to create FunctionAccess service: {e}"
+        logger.error(error_msg)
+        return FormulaValidationResult(valid=False, error=error_msg, formula=formula, result=None)
+
+
+def validate_all_formulas(ods_path: str | Path) -> FormulaValidationSummary:
+    """Validate all formulas in an ODS file.
+
+    Args:
+        ods_path: Path to ODS file
+
+    Returns:
+        FormulaValidationSummary with validation results
+
+    Note:
+        This extracts formulas from all cells and validates them using FunctionAccess.
+        Complex formulas with cell references may not be fully validated.
+    """
+    from xlsliberator.uno_conn import UnoCtx, open_calc
+
+    ods_path = Path(ods_path)
+    if not ods_path.exists():
+        raise PythonMacroError(f"File not found: {ods_path}")
+
+    validation_details = {}
+    total_formulas = 0
+    valid_formulas = 0
+    invalid_formulas = 0
+
+    try:
+        with UnoCtx() as ctx:
+            doc = open_calc(ctx, ods_path)
+
+            try:
+                # Iterate through all sheets
+                sheets = doc.getSheets()
+                for sheet_idx in range(sheets.getCount()):
+                    sheet = sheets.getByIndex(sheet_idx)
+                    sheet_name = sheet.getName()
+
+                    # Get all formula cells
+                    # CellFlags.FORMULA = 2 (com.sun.star.sheet.CellFlags.FORMULA)
+                    formula_cells = sheet.queryContentCells(2)
+
+                    # Iterate through formula cells
+                    cell_ranges = formula_cells.getRangeAddresses()
+                    for cell_range in cell_ranges:
+                        for row in range(cell_range.StartRow, cell_range.EndRow + 1):
+                            for col in range(cell_range.StartColumn, cell_range.EndColumn + 1):
+                                cell = sheet.getCellByPosition(col, row)
+                                formula = cell.getFormula()
+
+                                if formula and formula.startswith("="):
+                                    total_formulas += 1
+                                    cell_ref = f"{sheet_name}!{_get_cell_address(row, col)}"
+
+                                    # Validate formula
+                                    result = validate_formula(formula)
+                                    validation_details[cell_ref] = result
+
+                                    if result.valid:
+                                        valid_formulas += 1
+                                    else:
+                                        invalid_formulas += 1
+
+                logger.info(
+                    f"Validated {total_formulas} formulas: "
+                    f"{valid_formulas} valid, {invalid_formulas} invalid"
+                )
+
+            finally:
+                doc.close(True)
+
+    except Exception as e:
+        logger.error(f"Formula validation failed: {e}")
+        raise PythonMacroError(f"Failed to validate formulas: {e}") from e
+
+    return FormulaValidationSummary(
+        total_formulas=total_formulas,
+        valid_formulas=valid_formulas,
+        invalid_formulas=invalid_formulas,
+        validation_details=validation_details,
+    )
+
+
+def _get_cell_address(row: int, col: int) -> str:
+    """Convert row/col indices to Excel-style address (A1, B2, etc).
+
+    Args:
+        row: Row index (0-based)
+        col: Column index (0-based)
+
+    Returns:
+        Cell address string
+    """
+    # Convert column index to letter(s)
+    col_str = ""
+    col_num = col + 1
+    while col_num > 0:
+        col_num, remainder = divmod(col_num - 1, 26)
+        col_str = chr(65 + remainder) + col_str
+
+    return f"{col_str}{row + 1}"

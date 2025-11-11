@@ -21,6 +21,11 @@ def cli() -> None:
 @click.option("--locale", default="en-US", help="Target locale (en-US or de-DE)")
 @click.option("--strict", is_flag=True, help="Fail on any errors")
 @click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
+@click.option(
+    "--agent-rewrite",
+    is_flag=True,
+    help="Use multi-agent system for complex VBA rewriting (experimental)",
+)
 @click.option("--report", type=click.Path(path_type=Path), help="Save report to file")
 def convert_cmd(
     input_file: Path,
@@ -28,6 +33,7 @@ def convert_cmd(
     locale: str,
     strict: bool,
     no_macros: bool,
+    agent_rewrite: bool,
     report: Path | None,
 ) -> None:
     """Convert Excel file to ODS format.
@@ -47,6 +53,7 @@ def convert_cmd(
             locale=locale,
             strict=strict,
             embed_macros=not no_macros,
+            agent_rewrite=agent_rewrite,
         )
 
         # Display results
