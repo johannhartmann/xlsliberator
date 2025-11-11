@@ -19,11 +19,6 @@ from loguru import logger
 
 from xlsliberator.extract_vba import VBAModuleIR
 from xlsliberator.pattern_detector import ComplexityAnalysis, VBAPatternDetector
-from xlsliberator.templates.game_architecture import (
-    GAME_ARCHITECTURE_GUIDE,
-    KEY_CONCEPTS,
-    UNO_GAME_IMPORTS,
-)
 
 
 @dataclass
@@ -202,14 +197,15 @@ You have analyzed this VBA project and determined it requires architecture trans
 **Transformation Strategy:**
 {complexity.transformation_strategy}
 
-**Architecture Knowledge:**
-{GAME_ARCHITECTURE_GUIDE}
-
-**Key Concepts:**
-{self._format_key_concepts(KEY_CONCEPTS)}
-
 Your task is to design a detailed architecture transformation plan that converts this VBA code
 into working LibreOffice Python-UNO code.
+
+Focus on identifying the VBA patterns used and their LibreOffice Python-UNO equivalents:
+- Windows API calls → UNO services
+- VBA event handlers → Python-UNO event listeners
+- VBA automation objects → UNO interfaces
+- Blocking loops → Timer-based or event-driven patterns
+- Synchronous operations → Asynchronous patterns where needed
 
 Return a JSON document with this structure:
 {{
@@ -317,16 +313,13 @@ Implementation Plan:
 Critical Notes:
 {chr(10).join(f"- {note}" for note in architecture.critical_notes)}
 
-**Required Imports:**
-{UNO_GAME_IMPORTS}
-
 **CRITICAL REQUIREMENTS:**
 1. ALL modules MUST include g_exportedScripts tuple at the end
-2. Use XSCRIPTCONTEXT for document access
+2. Use XSCRIPTCONTEXT for document access (available in LibreOffice Python macros)
 3. Follow the architecture design exactly
-4. Implement event-driven patterns, not polling loops
-5. Use threading.Timer for frame updates, not blocking loops
-6. Include proper error handling and logging
+4. Use appropriate UNO services based on the identified patterns
+5. Import necessary UNO modules: uno, unohelper, com.sun.star.* as needed
+6. Include proper error handling and logging (use loguru.logger)
 
 Generate complete, working Python-UNO code that implements this architecture.
 """
@@ -407,7 +400,11 @@ Generate complete Python-UNO code with all required components.
             Validation result
         """
         from xlsliberator.embed_macros import embed_python_macros
-        from xlsliberator.python_macro_manager import validate_all_embedded_macros
+        from xlsliberator.python_macro_manager import (
+            enumerate_python_scripts,
+            test_script_execution,
+            validate_all_embedded_macros,
+        )
 
         errors: list[str] = []
         warnings: list[str] = []
@@ -438,17 +435,103 @@ Generate complete Python-UNO code with all required components.
                 has_exports = validation_summary.missing_exported_scripts == 0
 
                 if syntax_valid and has_exports:
-                    # Success!
+                    # Success! Now test runtime execution
                     logger.success(
                         f"Validation passed after {iteration + 1} iteration(s): "
                         f"{validation_summary.valid_syntax}/{validation_summary.total_modules} "
                         f"modules valid"
                     )
 
+                    # Runtime testing: Try to execute embedded scripts
+                    execution_successful = True
+                    runtime_errors: list[str] = []
+
+                    try:
+                        logger.debug("Testing runtime execution of embedded macros...")
+                        script_infos = enumerate_python_scripts(output_path)
+
+                        # Try full UNO execution first
+                        uno_execution_failed = False
+                        for script_info in script_infos:
+                            for script_uri in script_info.script_uris:
+                                try:
+                                    exec_result = test_script_execution(output_path, script_uri)
+                                    if not exec_result.success:
+                                        # Check if it's XScriptProvider limitation
+                                        if "XScriptProvider" in str(exec_result.error):
+                                            uno_execution_failed = True
+                                            break
+                                        runtime_errors.append(
+                                            f"{script_info.module_name}: {exec_result.error}"
+                                        )
+                                        execution_successful = False
+                                    else:
+                                        logger.debug(
+                                            f"✓ {script_info.module_name}: "
+                                            f"{script_uri.split('$')[1].split('?')[0]} executed"
+                                        )
+                                except Exception as e:
+                                    if "XScriptProvider" in str(e):
+                                        uno_execution_failed = True
+                                        break
+                                    runtime_errors.append(
+                                        f"{script_info.module_name}: Runtime test failed: {e}"
+                                    )
+                                    execution_successful = False
+                            if uno_execution_failed:
+                                break
+
+                        # Fallback to direct execution if UNO fails (headless mode)
+                        if uno_execution_failed:
+                            logger.info(
+                                "UNO execution unavailable (headless mode), "
+                                "using direct execution fallback..."
+                            )
+                            from xlsliberator.direct_exec_validator import (
+                                validate_all_scripts_direct,
+                            )
+
+                            direct_results = validate_all_scripts_direct(output_path)
+                            execution_successful = True
+                            runtime_errors = []
+
+                            for uri, direct_result in direct_results.items():
+                                if not direct_result.success:
+                                    # Skip expected failures (class methods, private functions)
+                                    function_name = uri.split("$")[1].split("?")[0]
+                                    if function_name.startswith("_") or function_name in [
+                                        "__init__",
+                                        "__add__",
+                                        "__eq__",
+                                    ]:
+                                        continue  # These are expected to fail
+                                    runtime_errors.append(f"{uri}: {direct_result.error}")
+                                    execution_successful = False
+
+                            logger.info(
+                                f"Direct execution: {sum(1 for r in direct_results.values() if r.success)}/{len(direct_results)} callable"
+                            )
+
+                        if execution_successful:
+                            logger.success(
+                                f"All {sum(len(s.script_uris) for s in script_infos)} "
+                                f"embedded scripts validated successfully"
+                            )
+                        else:
+                            logger.warning(
+                                f"Runtime validation failed for {len(runtime_errors)} script(s)"
+                            )
+                            all_warnings.extend(runtime_errors)
+
+                    except Exception as e:
+                        logger.warning(f"Runtime testing failed: {e}")
+                        execution_successful = False
+                        all_warnings.append(f"Runtime testing error: {e}")
+
                     return ValidationResult(
                         syntax_valid=True,
                         has_exports=True,
-                        execution_successful=False,  # Not tested (games need interaction)
+                        execution_successful=execution_successful,
                         errors=[],
                         warnings=all_warnings,
                         iterations_used=iteration + 1,
@@ -666,14 +749,3 @@ Dependencies: {", ".join(module.dependencies) if module.dependencies else "None"
             if p.uno_approach:
                 lines.append(f"  UNO Approach: {p.uno_approach}")
         return "\n".join(lines)
-
-    def _format_key_concepts(self, concepts: dict[str, str]) -> str:
-        """Format key concepts for prompt.
-
-        Args:
-            concepts: Key concepts dictionary
-
-        Returns:
-            Formatted string
-        """
-        return "\n".join(f"- **{k}**: {v}" for k, v in concepts.items())
