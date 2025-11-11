@@ -21,11 +21,6 @@ def cli() -> None:
 @click.option("--locale", default="en-US", help="Target locale (en-US or de-DE)")
 @click.option("--strict", is_flag=True, help="Fail on any errors")
 @click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
-@click.option(
-    "--no-agent",
-    is_flag=True,
-    help="Disable automatic agent rewriting (force simple translation)",
-)
 @click.option("--report", type=click.Path(path_type=Path), help="Save report to file")
 def convert_cmd(
     input_file: Path,
@@ -33,7 +28,6 @@ def convert_cmd(
     locale: str,
     strict: bool,
     no_macros: bool,
-    no_agent: bool,
     report: Path | None,
 ) -> None:
     """Convert Excel file to ODS format.
@@ -53,7 +47,7 @@ def convert_cmd(
             locale=locale,
             strict=strict,
             embed_macros=not no_macros,
-            use_agent=not no_agent,
+            use_agent=True,
         )
 
         # Display results
@@ -88,6 +82,40 @@ def convert_cmd(
 
         sys.exit(0 if result.success else 1)
 
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red")
+        sys.exit(1)
+
+
+@cli.command(name="mcp-serve")
+@click.option("--host", default="0.0.0.0", help="Host address to bind to")
+@click.option("--port", default=8000, help="Port number")
+def mcp_serve_cmd(host: str, port: int) -> None:
+    """Start MCP server with HTTP streaming transport.
+
+    \b
+    Exposes LibreOffice UNO operations as MCP tools for Claude Agent SDK integration.
+
+    \b
+    Examples:
+        xlsliberator mcp-serve
+        xlsliberator mcp-serve --port 9000
+        xlsliberator mcp-serve --host 127.0.0.1 --port 8080
+
+    \b
+    Client endpoint: http://<host>:<port>/mcp
+    """
+    from xlsliberator.mcp_server import serve
+
+    click.echo(f"Starting LibreOffice UNO MCP server on {host}:{port}")
+    click.echo(f"Client endpoint: http://{host}:{port}/mcp")
+    click.echo("\nPress Ctrl+C to stop\n")
+
+    try:
+        serve(host=host, port=port)
+    except KeyboardInterrupt:
+        click.echo("\nShutting down...")
+        sys.exit(0)
     except Exception as e:
         click.secho(f"Error: {e}", fg="red")
         sys.exit(1)
