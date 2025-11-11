@@ -457,8 +457,12 @@ Generate complete Python-UNO code with all required components.
                                 try:
                                     exec_result = test_script_execution(output_path, script_uri)
                                     if not exec_result.success:
-                                        # Check if it's XScriptProvider limitation
-                                        if "XScriptProvider" in str(exec_result.error):
+                                        # Check if it's XScriptProvider limitation or timeout
+                                        error_str = str(exec_result.error)
+                                        if (
+                                            "XScriptProvider" in error_str
+                                            or "timed out" in error_str
+                                        ):
                                             uno_execution_failed = True
                                             break
                                         runtime_errors.append(

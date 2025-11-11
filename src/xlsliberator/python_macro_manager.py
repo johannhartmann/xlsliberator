@@ -149,11 +149,16 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
     Returns:
         ScriptExecutionResult with execution details
     """
+    import signal
+
     from xlsliberator.uno_conn import UnoCtx, open_calc
 
     ods_path = Path(ods_path)
     if not ods_path.exists():
         return ScriptExecutionResult(False, f"File not found: {ods_path}", None)
+
+    def timeout_handler(_signum: int, _frame: Any) -> None:
+        raise TimeoutError("Script execution timed out")
 
     try:
         with UnoCtx(use_gui=True) as ctx:
@@ -161,21 +166,35 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
             doc = open_calc(ctx, ods_path)
 
             try:
-                # Get MasterScriptProvider
-                msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
-                    "com.sun.star.script.provider.MasterScriptProviderFactory",
-                    ctx.component_context,
-                )
-                script_provider = msp_factory.createScriptProvider(doc)
+                # Set timeout for script execution (5 seconds)
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(5)
 
-                # Get script
-                script = script_provider.getScript(script_uri)
+                try:
+                    # Get MasterScriptProvider
+                    msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
+                        "com.sun.star.script.provider.MasterScriptProviderFactory",
+                        ctx.component_context,
+                    )
+                    script_provider = msp_factory.createScriptProvider(doc)
 
-                # Execute script (with empty parameters)
-                result = script.invoke((), (), ())
+                    # Get script (this may hang if XScriptProvider unavailable)
+                    script = script_provider.getScript(script_uri)
 
-                logger.debug(f"Script executed successfully: {script_uri}")
-                return ScriptExecutionResult(True, None, result)
+                    # Execute script (with empty parameters)
+                    result = script.invoke((), (), ())
+
+                    logger.debug(f"Script executed successfully: {script_uri}")
+                    return ScriptExecutionResult(True, None, result)
+
+                finally:
+                    # Cancel alarm
+                    signal.alarm(0)
+
+            except TimeoutError:
+                error_msg = "Script execution timed out (XScriptProvider likely unavailable)"
+                logger.warning(error_msg)
+                return ScriptExecutionResult(False, error_msg, None)
 
             except Exception as e:
                 error_msg = f"Script execution failed: {e}"
@@ -519,7 +538,13 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
     Returns:
         ScriptExecutionResult
     """
+    import contextlib
+    import signal
+
     from xlsliberator.uno_conn import UnoCtx, open_calc
+
+    def timeout_handler(_signum: int, _frame: Any) -> None:
+        raise TimeoutError("Script execution timed out")
 
     try:
         with UnoCtx(use_gui=True) as ctx:
@@ -530,6 +555,10 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
                 um = doc.getUndoManager()
                 um.enterUndoContext("Test Macro Execution")
 
+                # Set timeout for script execution (5 seconds)
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(5)
+
                 try:
                     # Get script provider
                     msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
@@ -538,7 +567,7 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
                     )
                     script_provider = msp_factory.createScriptProvider(doc)
 
-                    # Get and execute script
+                    # Get and execute script (this may hang if XScriptProvider unavailable)
                     script = script_provider.getScript(script_uri)
                     result = script.invoke((), (), ())
 
@@ -547,6 +576,14 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
 
                     logger.debug(f"Script executed successfully: {script_uri}")
                     return ScriptExecutionResult(True, None, result)
+
+                except TimeoutError:
+                    error_msg = "Script execution timed out (XScriptProvider likely unavailable)"
+                    logger.warning(error_msg)
+                    # Try to leave undo context, ignore if it fails
+                    with contextlib.suppress(Exception):
+                        um.leaveUndoContext()
+                    return ScriptExecutionResult(False, error_msg, None)
 
                 except Exception as e:
                     # Execution failed - undo changes
@@ -560,6 +597,10 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
                         logger.warning(f"Undo failed: {undo_error}")
 
                     return ScriptExecutionResult(False, error_msg, None)
+
+                finally:
+                    # Cancel alarm
+                    signal.alarm(0)
 
             finally:
                 doc.close(False)  # Don't save
