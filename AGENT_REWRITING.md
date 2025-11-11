@@ -4,8 +4,11 @@
 
 The agent-based rewriting system uses semantic analysis and multi-phase orchestration to translate complex VBA code (especially games and event-driven applications) into properly architected Python-UNO code.
 
+**This system is now enabled by default.** XLSLiberator automatically detects VBA complexity and chooses the best translation approach.
+
 ### Key Features
 
+- **Automatic Complexity Detection**: Analyzes VBA semantically to determine translation approach
 - **Semantic Analysis**: Uses LLM to understand code intent, not regex pattern matching
 - **Architecture Transformation**: Converts VBA patterns to Python-UNO equivalents
   - Blocking loops (`While...Wend` + `Sleep`) → Timer-based updates (`threading.Timer`)
@@ -13,10 +16,24 @@ The agent-based rewriting system uses semantic analysis and multi-phase orchestr
   - Global state → Class-based state management
 - **Iterative Refinement**: Validates and fixes generated code automatically
 - **Knowledge-Based**: Uses comprehensive templates and examples for transformations
+- **Smart Selection**: Simple VBA uses fast translation, complex VBA uses agent rewriting
 
-## When to Use Agent Rewriting
+## Automatic Behavior (Default)
 
-Use `--agent-rewrite` when your VBA code contains:
+When you convert an Excel file with VBA macros, XLSLiberator automatically:
+
+1. **Detects Complexity** (~30 seconds): Analyzes VBA code semantically
+2. **Chooses Approach**:
+   - **Simple VBA** → Fast LLM translation (~5-10 seconds per module)
+   - **Game/Advanced VBA** → Multi-agent rewriting (~1 minute per module)
+3. **Translates Code**: Uses the selected approach
+4. **Validates**: Checks syntax and structure
+
+No user intervention required - the system intelligently chooses the best approach.
+
+### What Triggers Agent Rewriting?
+
+The system uses agent rewriting when it detects:
 
 - **Games** (Tetris, Snake, Pong, etc.)
 - **Keyboard input handling** (GetAsyncKeyState, KeyDown events)
@@ -24,26 +41,31 @@ Use `--agent-rewrite` when your VBA code contains:
 - **Real-time updates** (game loops, timers)
 - **Windows API calls** (user32.dll, kernel32.dll)
 - **Event-driven architecture**
+- **Complex state machines**
 
-For simple VBA (basic formulas, button clicks, simple loops), the standard translation is faster and sufficient.
+Simple VBA (basic formulas, button clicks, simple loops) uses fast translation automatically.
 
 ## Usage
 
 ```bash
-# Convert with agent-based rewriting (experimental)
-xlsliberator convert input.xlsm output.ods --agent-rewrite
+# Default: Auto-detect and use best approach
+xlsliberator convert input.xlsm output.ods
+
+# Force simple translation (skip auto-detection and agent mode)
+xlsliberator convert input.xlsm output.ods --no-agent
 
 # With strict mode (fail on any errors)
-xlsliberator convert input.xlsm output.ods --agent-rewrite --strict
+xlsliberator convert input.xlsm output.ods --strict
 
-# Generate detailed report
-xlsliberator convert input.xlsm output.ods --agent-rewrite --report report.json
+# Generate detailed report (includes complexity detection results)
+xlsliberator convert input.xlsm output.ods --report report.json
 ```
 
 ### Requirements
 
-- `ANTHROPIC_API_KEY` environment variable must be set
-- Requires Claude Sonnet 4 model access
+- `ANTHROPIC_API_KEY` environment variable must be set for agent mode
+- Without API key, system falls back to rule-based translation
+- Requires Claude Sonnet 4 model access for best results
 
 ## Architecture
 
@@ -271,12 +293,13 @@ generated_code, validation = agent.rewrite_vba_project(
 ### CLI
 
 ```bash
-xlsliberator convert INPUT OUTPUT --agent-rewrite [OPTIONS]
+xlsliberator convert INPUT OUTPUT [OPTIONS]
 
 Options:
-  --agent-rewrite     Use multi-agent system for complex VBA rewriting
-  --strict           Fail on any errors
-  --report PATH      Save detailed report (JSON or Markdown)
+  --no-agent        Disable automatic agent rewriting (force simple translation)
+  --strict          Fail on any errors
+  --report PATH     Save detailed report (JSON or Markdown)
+  --no-macros       Skip VBA macro translation entirely
 ```
 
 ### Return Values
