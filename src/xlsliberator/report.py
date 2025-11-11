@@ -52,6 +52,15 @@ class ConversionReport:
     formulas_valid: int = 0
     formulas_invalid: int = 0
 
+    # Agent-based GUI validation (post-conversion)
+    agent_validation_run: bool = False
+    agent_macros_validated: int = 0
+    agent_macros_valid: int = 0
+    agent_functions_found: int = 0
+    agent_buttons_found: int = 0
+    agent_buttons_with_handlers: int = 0
+    agent_cells_readable: int = 0
+
     # Sheets
     sheet_count: int = 0
 

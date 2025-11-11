@@ -404,6 +404,44 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
+            # Step 4.8: Agent-based GUI validation
+            logger.info("Step 4.8: Running agent-based GUI validation...")
+            try:
+                from xlsliberator.agent_validator import validate_document_with_agent_sync
+
+                agent_result = validate_document_with_agent_sync(output_path)
+                report.agent_validation_run = True
+                report.agent_macros_validated = agent_result.macros_validated
+                report.agent_macros_valid = agent_result.macros_valid
+                report.agent_functions_found = agent_result.functions_found
+                report.agent_buttons_found = agent_result.buttons_found
+                report.agent_buttons_with_handlers = agent_result.buttons_with_handlers
+                report.agent_cells_readable = agent_result.cells_readable
+
+                if agent_result.success:
+                    logger.success(
+                        f"Agent validation: {agent_result.macros_valid} macros, "
+                        f"{agent_result.functions_found} functions, "
+                        f"{agent_result.buttons_with_handlers} button handlers"
+                    )
+                else:
+                    logger.warning(
+                        f"Agent validation completed with issues: "
+                        f"{len(agent_result.warnings)} warnings, "
+                        f"{len(agent_result.errors)} errors"
+                    )
+
+                # Add warnings/errors to report
+                for warning in agent_result.warnings:
+                    report.warnings.append(f"Agent validation: {warning}")
+                for error in agent_result.errors:
+                    report.errors.append(f"Agent validation: {error}")
+
+            except Exception as e:
+                msg = f"Agent validation failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
+
         # Step 5: Test formula equivalence
         logger.info("Step 5: Testing formula equivalence...")
         try:
