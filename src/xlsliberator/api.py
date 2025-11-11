@@ -87,7 +87,7 @@ def convert(
     locale: str = "en-US",
     strict: bool = False,
     embed_macros: bool = True,
-    agent_rewrite: bool = False,
+    use_agent: bool = True,
 ) -> ConversionReport:
     """Convert Excel file to LibreOffice Calc ODS format (Hybrid Approach).
 
@@ -97,7 +97,7 @@ def convert(
         locale: Target locale for formulas (note: native conversion handles this)
         strict: If True, fail on any errors; if False, continue with warnings
         embed_macros: If True, translate and embed VBA macros
-        agent_rewrite: If True, use multi-agent system for complex VBA rewriting (experimental)
+        use_agent: If True, automatically use agent rewriting for complex VBA (default)
 
     Returns:
         ConversionReport with conversion statistics and results
@@ -106,11 +106,16 @@ def convert(
         ConversionError: If conversion fails (in strict mode)
 
     Note:
-        Phase 6.2 implementation - Hybrid approach:
+        Hybrid approach with intelligent VBA translation:
         1. LibreOffice native conversion (100% formula equivalence)
         2. VBA extraction from original Excel
-        3. VBA→Python-UNO translation (simple LLM or agent-based)
-        4. Embed Python macros into native ODS
+        3. Complexity detection (semantic analysis)
+        4. VBA→Python-UNO translation (auto-selects simple or agent-based)
+        5. Embed Python macros into native ODS
+
+        The system automatically detects VBA complexity and uses:
+        - Simple LLM translation for basic macros
+        - Multi-agent rewriting for games and complex event-driven code
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
@@ -191,18 +196,43 @@ def convert(
         # Step 3: Translate VBA to Python-UNO (if VBA found)
         python_modules = {}
         if vba_modules:
-            if agent_rewrite:
-                # Use multi-agent system for complex VBA rewriting
-                logger.info("Step 3: Translating VBA with multi-agent system...")
+            # Check if LLM is available
+            has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
 
-                # Check if LLM is available
-                if not os.environ.get("ANTHROPIC_API_KEY"):
-                    msg = "ANTHROPIC_API_KEY required for agent-based rewriting"
-                    logger.error(msg)
-                    report.errors.append(msg)
-                    if strict:
-                        raise ConversionError(msg)
-                else:
+            if use_agent and has_api_key:
+                # Step 3a: Detect complexity (always do this when agent mode enabled)
+                logger.info("Step 3a: Detecting VBA complexity...")
+                try:
+                    from xlsliberator.pattern_detector import VBAPatternDetector
+
+                    detector = VBAPatternDetector()
+                    complexity = detector.analyze_modules(vba_modules, str(input_path))
+
+                    logger.info(
+                        f"Detected complexity: {complexity.complexity_level} "
+                        f"(confidence: {complexity.confidence:.0%})"
+                    )
+
+                    # Add to report
+                    report.warnings.append(
+                        f"VBA complexity: {complexity.complexity_level} "
+                        f"({complexity.confidence:.0%} confidence)"
+                    )
+
+                except Exception as e:
+                    msg = f"Complexity detection failed: {e}"
+                    logger.warning(msg)
+                    report.warnings.append(msg)
+                    # Default to simple if detection fails
+                    complexity = None
+
+                # Step 3b: Choose translation approach based on complexity
+                if complexity and complexity.complexity_level in ["game", "advanced"]:
+                    # Use multi-agent system for complex VBA
+                    logger.info(
+                        f"Step 3b: Using agent rewriting for {complexity.complexity_level} VBA..."
+                    )
+
                     try:
                         from xlsliberator.agent_rewriter import AgentRewriter
 
@@ -235,12 +265,38 @@ def convert(
                         report.warnings.append(msg)
                         if strict:
                             raise ConversionError(msg) from e
-            else:
-                # Use simple LLM translation (original approach)
-                logger.info("Step 3: Translating VBA to Python-UNO with LLM...")
+                else:
+                    # Use simple LLM translation for simple VBA
+                    logger.info("Step 3b: Using simple translation for basic VBA...")
 
-                # Check if LLM is available
-                use_llm = bool(os.environ.get("ANTHROPIC_API_KEY"))
+                    try:
+                        for vba_module in vba_modules:
+                            module_name = f"{vba_module.name}.py"
+                            result = translate_vba_to_python(vba_module.source_code, use_llm=True)
+
+                            if result.python_code:
+                                python_modules[module_name] = result.python_code
+                                logger.debug(f"Translated: {module_name}")
+
+                            for warning in result.warnings:
+                                report.warnings.append(f"VBA translation: {warning}")
+
+                        logger.success(f"Translated {len(python_modules)} Python modules")
+
+                    except Exception as e:
+                        msg = f"VBA translation failed: {e}"
+                        logger.warning(msg)
+                        report.warnings.append(msg)
+            else:
+                # No agent mode or no API key - use simple translation
+                if use_agent and not has_api_key:
+                    logger.warning(
+                        "ANTHROPIC_API_KEY not set - using simple translation instead of agent mode"
+                    )
+
+                logger.info("Step 3: Translating VBA to Python-UNO...")
+
+                use_llm = has_api_key
                 if not use_llm:
                     logger.warning(
                         "No ANTHROPIC_API_KEY set - VBA translation will use rule-based fallback"
@@ -248,7 +304,6 @@ def convert(
 
                 try:
                     for vba_module in vba_modules:
-                        # Translate the entire module source code
                         module_name = f"{vba_module.name}.py"
                         result = translate_vba_to_python(vba_module.source_code, use_llm=use_llm)
 
@@ -256,9 +311,8 @@ def convert(
                             python_modules[module_name] = result.python_code
                             logger.debug(f"Translated: {module_name}")
 
-                        # Collect warnings
                         for warning in result.warnings:
-                            report.warnings.append(f"VBA translation warning: {warning}")
+                            report.warnings.append(f"VBA translation: {warning}")
 
                     logger.success(f"Translated {len(python_modules)} Python modules")
 
