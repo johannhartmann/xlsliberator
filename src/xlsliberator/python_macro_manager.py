@@ -156,7 +156,7 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
         return ScriptExecutionResult(False, f"File not found: {ods_path}", None)
 
     try:
-        with UnoCtx() as ctx:
+        with UnoCtx(use_gui=True) as ctx:
             # Open document
             doc = open_calc(ctx, ods_path)
 
@@ -522,7 +522,7 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
     from xlsliberator.uno_conn import UnoCtx, open_calc
 
     try:
-        with UnoCtx() as ctx:
+        with UnoCtx(use_gui=True) as ctx:
             doc = open_calc(ctx, ods_path)
 
             try:
