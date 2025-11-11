@@ -19,6 +19,7 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 - **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
 - **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
 - **High Performance**: Processes 27k+ cells in under 5 minutes
+- **🆕 MCP Server**: FastMCP 2.0 server for Claude Agent SDK integration with 8 tools
 
 ## Prerequisites
 
@@ -106,6 +107,48 @@ xlsliberator convert --translate-vba input.xlsm output.ods
 xlsliberator batch input_folder/ output_folder/
 ```
 
+### MCP Server (Claude Agent SDK)
+
+Start the MCP server for Claude Agent SDK integration:
+
+```bash
+# Start server with defaults (0.0.0.0:8000)
+xlsliberator mcp-serve
+
+# Client connects to: http://localhost:8000/mcp
+```
+
+Use with Claude Agent SDK:
+
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+const mcpServers = {
+  "libreoffice-uno": {
+    url: "http://localhost:8000/mcp"
+  }
+};
+
+for await (const message of query({
+  prompt: generateMessages(),
+  options: {
+    mcpServers,
+    allowedTools: ["mcp__libreoffice-uno__convert_excel_to_ods"],
+  }
+})) {
+  // Agent can now convert Excel files!
+}
+```
+
+**Available Tools:**
+- `convert_excel_to_ods` - Convert Excel to ODS with macro translation
+- `compare_formulas` - Test formula equivalence
+- `read_cell`, `list_sheets`, `get_sheet_data` - Read spreadsheet data
+- `embed_macros`, `validate_macros`, `list_embedded_macros`, `test_macro_execution` - Manage and test Python-UNO macros
+- `recalculate_document` - Force recalculation of all formulas
+
+📚 See [Claude Agent SDK Integration Guide](docs/claude_agent_sdk_integration.md) for complete examples
+
 ### Python API
 
 ```python
@@ -183,7 +226,7 @@ XLSLiberator uses a hybrid approach:
    - Phase 1: Reference-aware translation (hybrid LLM + regex pattern detection)
    - Phase 2: Python-UNO syntax validation (AST parsing, compilation checks)
    - Phase 3: Agentic reflection loop (self-evaluation and iterative refinement)
-   - Phase 4: LLM-generated validation tests (behavioral equivalence testing)
+   - Phase 4: Runtime execution testing (UNO script execution validation)
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
 5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
 6. **Macro Security Configuration**: Automatically enables Python macros by setting LibreOffice security to Low

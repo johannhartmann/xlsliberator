@@ -34,6 +34,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "anthropic>=0.39.0",
     "lark>=1.1.0",
+    "fastmcp>=2.0.0",
 ]
 
 [project.urls]
@@ -50,6 +51,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-xdist>=3.3.0",
     "pytest-benchmark>=4.0.0",
+    "pytest-asyncio>=0.21.0",
     "mypy>=1.5.0",
     "ruff>=0.1.0",
     "types-openpyxl",
@@ -113,6 +115,8 @@ module = [
     "lark",
     "lark.*",
     "click",
+    "fastmcp",
+    "fastmcp.*",
 ]
 ignore_missing_imports = true
 
@@ -131,6 +135,7 @@ markers = [
     "integration: marks tests requiring LibreOffice UNO",
     "benchmark: marks performance benchmarks",
     "real: marks tests using real datasets",
+    "asyncio: marks tests as async",
 ]
 filterwarnings = [
     "error",
