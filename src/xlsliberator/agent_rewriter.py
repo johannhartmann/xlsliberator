@@ -69,7 +69,7 @@ class AgentRewriter:
             anthropic_client: Anthropic client. If None, creates new one.
         """
         self.client = anthropic_client or Anthropic()
-        self.model = "claude-sonnet-4-20250514"
+        self.model = "claude-sonnet-4-5"
         self.pattern_detector = VBAPatternDetector(self.client)
 
     def rewrite_vba_project(

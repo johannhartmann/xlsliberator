@@ -51,7 +51,7 @@ class VBAPatternDetector:
             anthropic_client: Anthropic client instance. If None, creates new one.
         """
         self.client = anthropic_client or Anthropic()
-        self.model = "claude-sonnet-4-20250514"
+        self.model = "claude-sonnet-4-5"
 
     def analyze_modules(self, modules: list[VBAModuleIR], source_file: str) -> ComplexityAnalysis:
         """Analyze VBA modules and determine complexity.
