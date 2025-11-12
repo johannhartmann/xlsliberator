@@ -379,62 +379,69 @@ def convert(
                 report.warnings.append(msg)
 
             # Step 4.7: Test macro execution
-            # TODO: Fix XScriptProvider runtime validation hang
-            # Problem: test_all_macros_safe() launches LibreOffice in GUI mode with Xvfb
-            # and attempts to execute each embedded Python macro via XScriptProvider.
-            # All execution attempts fail with:
-            #   "invalid attempt to assign an empty interface of type
-            #    com.sun.star.script.provider.XScriptProvider!"
-            # This causes the conversion to hang testing ~100+ macros, each taking 4-5
-            # seconds to fail, resulting in 8-10 minute hangs even though files are valid.
-            # The macros ARE syntactically correct and WILL execute when document is
-            # opened in actual LibreOffice GUI.
-            # Solution needed: Either fix XScriptProvider access in automated mode, or
-            # add timeout/skip logic for programmatic validation.
-            logger.info(
-                "Step 4.7: Skipping runtime macro execution tests "
-                "(XScriptProvider unreliable in automated mode)"
-            )
+            logger.info("Step 4.7: Testing macro execution...")
+            try:
+                from xlsliberator.python_macro_manager import test_all_macros_safe
+
+                execution_summary = test_all_macros_safe(output_path)
+                report.macro_functions_tested = execution_summary.total_functions
+                report.macro_functions_passed = execution_summary.successful
+                report.macro_functions_failed = execution_summary.failed
+                report.macro_functions_skipped = execution_summary.skipped
+
+                logger.success(
+                    f"Macro execution: {execution_summary.successful}/"
+                    f"{execution_summary.total_functions} passed"
+                )
+
+                # Log execution failures
+                for uri, exec_result in execution_summary.execution_details.items():
+                    if not exec_result.success:
+                        msg = f"Macro execution failed: {uri}: {exec_result.error}"
+                        report.warnings.append(msg)
+
+            except Exception as e:
+                msg = f"Macro execution testing failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
 
             # Step 4.8: Agent-based GUI validation
-            # TODO: Re-enable once XScriptProvider issues are fully resolved
-            # This validation uses browser automation which may hang on complex documents
-            logger.info("Step 4.8: Skipping agent-based GUI validation (experimental feature)")
-            # try:
-            #     from xlsliberator.agent_validator import validate_document_with_agent_sync
-            #
-            #     agent_result = validate_document_with_agent_sync(output_path)
-            #     report.agent_validation_run = True
-            #     report.agent_macros_validated = agent_result.macros_validated
-            #     report.agent_macros_valid = agent_result.macros_valid
-            #     report.agent_functions_found = agent_result.functions_found
-            #     report.agent_buttons_found = agent_result.buttons_found
-            #     report.agent_buttons_with_handlers = agent_result.buttons_with_handlers
-            #     report.agent_cells_readable = agent_result.cells_readable
-            #
-            #     if agent_result.success:
-            #         logger.success(
-            #             f"Agent validation: {agent_result.macros_valid} macros, "
-            #             f"{agent_result.functions_found} functions, "
-            #             f"{agent_result.buttons_with_handlers} button handlers"
-            #         )
-            #     else:
-            #         logger.warning(
-            #             f"Agent validation completed with issues: "
-            #             f"{len(agent_result.warnings)} warnings, "
-            #             f"{len(agent_result.errors)} errors"
-            #         )
-            #
-            #     # Add warnings/errors to report
-            #     for warning in agent_result.warnings:
-            #         report.warnings.append(f"Agent validation: {warning}")
-            #     for error in agent_result.errors:
-            #         report.errors.append(f"Agent validation: {error}")
-            #
-            # except Exception as e:
-            #     msg = f"Agent validation failed: {e}"
-            #     logger.warning(msg)
-            #     report.warnings.append(msg)
+            logger.info("Step 4.8: Running agent-based GUI validation...")
+            try:
+                from xlsliberator.agent_validator import validate_document_with_agent_sync
+
+                agent_result = validate_document_with_agent_sync(output_path)
+                report.agent_validation_run = True
+                report.agent_macros_validated = agent_result.macros_validated
+                report.agent_macros_valid = agent_result.macros_valid
+                report.agent_functions_found = agent_result.functions_found
+                report.agent_buttons_found = agent_result.buttons_found
+                report.agent_buttons_with_handlers = agent_result.buttons_with_handlers
+                report.agent_cells_readable = agent_result.cells_readable
+
+                if agent_result.success:
+                    logger.success(
+                        f"Agent validation: {agent_result.macros_valid} macros, "
+                        f"{agent_result.functions_found} functions, "
+                        f"{agent_result.buttons_with_handlers} button handlers"
+                    )
+                else:
+                    logger.warning(
+                        f"Agent validation completed with issues: "
+                        f"{len(agent_result.warnings)} warnings, "
+                        f"{len(agent_result.errors)} errors"
+                    )
+
+                # Add warnings/errors to report
+                for warning in agent_result.warnings:
+                    report.warnings.append(f"Agent validation: {warning}")
+                for error in agent_result.errors:
+                    report.errors.append(f"Agent validation: {error}")
+
+            except Exception as e:
+                msg = f"Agent validation failed: {e}"
+                logger.warning(msg)
+                report.warnings.append(msg)
 
         # Step 5: Test formula equivalence
         logger.info("Step 5: Testing formula equivalence...")
