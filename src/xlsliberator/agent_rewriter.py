@@ -41,6 +41,7 @@ class GeneratedCode:
     architecture_doc: str  # Architecture design reference
     completeness_score: float  # 0.0-1.0 confidence in completeness
     known_limitations: list[str]  # Known issues/limitations
+    architecture: "ArchitectureDesign | None" = None  # Full architecture object for self-healing
 
 
 @dataclass
@@ -384,6 +385,7 @@ Generate complete Python-UNO code with all required components.
             architecture_doc=f"Strategy: {architecture.strategy}\n\nPlan: {architecture.implementation_plan}",
             completeness_score=0.8,  # Initial estimate
             known_limitations=[],
+            architecture=architecture,  # Store for self-healing
         )
 
         return generated_code
@@ -706,6 +708,113 @@ Provide fixed code for each module with errors."""
 
         except Exception as e:
             logger.error(f"Failed to generate fixes: {e}")
+            return None
+
+    def fix_module_with_error(
+        self,
+        module_name: str,
+        module_code: str,
+        error_message: str,
+        architecture: ArchitectureDesign,
+    ) -> str | None:
+        """Fix a Python module that failed execution using LLM error feedback.
+
+        Args:
+            module_name: Name of the module (e.g., "Sheet1.cls.py")
+            module_code: The Python code that failed
+            error_message: The error message/traceback from execution
+            architecture: The architecture design document
+
+        Returns:
+            Fixed Python code, or None if fix failed
+        """
+        logger.info(f"Attempting to fix {module_name} based on error feedback")
+
+        system_prompt = f"""You are an expert Python-UNO developer fixing broken LibreOffice Python macros.
+
+**Architecture Design:**
+Strategy: {architecture.strategy}
+
+Required Components:
+{chr(10).join(f"- {c}" for c in architecture.required_components)}
+
+UNO Services:
+{chr(10).join(f"- {s}" for s in architecture.uno_services)}
+
+Key Transformations:
+{chr(10).join(f"- {k} → {v}" for k, v in architecture.key_transformations.items())}
+
+**CRITICAL REQUIREMENTS:**
+1. ALL modules MUST include g_exportedScripts tuple at the end
+2. Use XSCRIPTCONTEXT for document access (available in LibreOffice Python macros)
+3. Follow the architecture design exactly
+4. Use appropriate UNO services based on the identified patterns
+5. Import necessary UNO modules: uno, unohelper, com.sun.star.* as needed
+6. Include proper error handling and logging (use loguru.logger)
+7. DO NOT use package-style imports (e.g., from tetris_game.module import Class)
+   - All Python modules are in the same flat Scripts/python/ directory
+   - LibreOffice cannot import from packages, only flat modules
+   - Use direct imports: `from module_name import ClassName` or `import module_name`
+   - If you need cross-module references, use try/except:
+     ```python
+     try:
+         from module_name import ClassName
+     except ImportError:
+         import module_name
+         ClassName = module_name.ClassName
+     ```
+8. **CRITICAL**: Analyze the error message carefully - it often contains the exact line and issue
+
+Your task: Fix the broken code based on the error message.
+Output ONLY the corrected Python code, nothing else."""
+
+        user_prompt = f"""This Python module failed during execution:
+
+**Module:** {module_name}
+
+**Error:**
+```
+{error_message}
+```
+
+**Current Code:**
+```python
+{module_code}
+```
+
+Analyze the error and provide the COMPLETE corrected Python code.
+Output ONLY the Python code, no explanations."""
+
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+
+            # Extract code from response
+            for block in response.content:
+                if isinstance(block, TextBlock):
+                    text = block.text.strip()
+
+                    # Try to extract from markdown code block
+                    code_match = re.search(r"```python\n(.*?)\n```", text, re.DOTALL)
+                    fixed_code = code_match.group(1) if code_match else text
+
+                    # Validate it has g_exportedScripts
+                    if "g_exportedScripts" in fixed_code:
+                        logger.success(f"Generated fix for {module_name}")
+                        return str(fixed_code)
+                    else:
+                        logger.warning(f"Fix for {module_name} missing g_exportedScripts")
+                        return None
+
+            logger.error(f"No code block found in LLM response for {module_name}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to generate fix for {module_name}: {e}")
             return None
 
     def _build_vba_context(self, modules: list[VBAModuleIR]) -> str:

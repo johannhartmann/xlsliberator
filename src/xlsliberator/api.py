@@ -130,6 +130,9 @@ def convert(
         locale=locale,
     )
 
+    # Track agent architecture for self-healing
+    agent_architecture = None
+
     logger.info(f"Starting hybrid conversion: {input_path} → {output_path}")
 
     try:
@@ -246,6 +249,9 @@ def convert(
 
                         # Use generated modules
                         python_modules = generated_code.modules
+
+                        # Store architecture for self-healing (if available)
+                        agent_architecture = generated_code.architecture
 
                         # Add validation info to report
                         if not validation.syntax_valid:
@@ -378,27 +384,62 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
-            # Step 4.7: Test macro execution
+            # Step 4.7: Test macro execution (with self-healing if agent-generated)
             logger.info("Step 4.7: Testing macro execution...")
             try:
-                from xlsliberator.python_macro_manager import test_all_macros_safe
+                if agent_architecture:
+                    # Use self-healing for agent-generated code
+                    from xlsliberator.python_macro_manager import test_macros_with_self_healing
 
-                execution_summary = test_all_macros_safe(output_path)
-                report.macro_functions_tested = execution_summary.total_functions
-                report.macro_functions_passed = execution_summary.successful
-                report.macro_functions_failed = execution_summary.failed
-                report.macro_functions_skipped = execution_summary.skipped
+                    logger.info("Using self-healing macro testing for agent-generated code...")
+                    healing_summary = test_macros_with_self_healing(
+                        output_path,
+                        agent_architecture,
+                        max_retries=3,
+                    )
 
-                logger.success(
-                    f"Macro execution: {execution_summary.successful}/"
-                    f"{execution_summary.total_functions} passed"
-                )
+                    report.macro_functions_tested = healing_summary["total_functions"]
+                    report.macro_functions_passed = healing_summary["passed"]
+                    report.macro_functions_failed = healing_summary["failed"]
 
-                # Log execution failures
-                for uri, exec_result in execution_summary.execution_details.items():
-                    if not exec_result.success:
-                        msg = f"Macro execution failed: {uri}: {exec_result.error}"
-                        report.warnings.append(msg)
+                    logger.success(
+                        f"Self-healing complete: {healing_summary['passed']}/"
+                        f"{healing_summary['total_functions']} passed, "
+                        f"{healing_summary['fixed']} modules fixed "
+                        f"({healing_summary['fix_attempts']} attempts)"
+                    )
+
+                    # Log fix history
+                    for fix in healing_summary["fix_history"]:
+                        if fix["success"]:
+                            msg = f"Self-healing: Fixed {fix['module']} (attempt {fix['attempt']})"
+                            report.warnings.append(msg)
+                        else:
+                            msg = (
+                                f"Self-healing: Failed to fix {fix['module']}: {fix['error'][:200]}"
+                            )
+                            report.warnings.append(msg)
+
+                else:
+                    # Use regular testing for simple-translated code
+                    from xlsliberator.python_macro_manager import test_all_macros_safe
+
+                    execution_summary = test_all_macros_safe(output_path)
+                    report.macro_functions_tested = execution_summary.total_functions
+                    report.macro_functions_passed = execution_summary.successful
+                    report.macro_functions_failed = execution_summary.failed
+                    report.macro_functions_skipped = execution_summary.skipped
+
+                    logger.success(
+                        f"Macro execution: {execution_summary.successful}/"
+                        f"{execution_summary.total_functions} passed"
+                    )
+
+                    # Log execution failures
+                    for uri, exec_result in execution_summary.execution_details.items():
+                        if not exec_result.success:
+                            msg = f"Macro execution failed: {uri}: {exec_result.error}"
+                            report.warnings.append(msg)
 
             except Exception as e:
                 msg = f"Macro execution testing failed: {e}"

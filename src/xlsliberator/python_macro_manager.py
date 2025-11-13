@@ -812,3 +812,170 @@ def _get_cell_address(row: int, col: int) -> str:
         col_str = chr(65 + remainder) + col_str
 
     return f"{col_str}{row + 1}"
+
+
+# ============================================================================
+# 6. Self-Healing Macro Testing with LLM Error Correction
+# ============================================================================
+
+
+def test_macros_with_self_healing(
+    ods_path: str | Path,
+    architecture: Any,  # ArchitectureDesign from agent_rewriter
+    max_retries: int = 3,
+) -> dict[str, Any]:
+    """Test macros with self-healing: fix errors using LLM feedback and retry.
+
+    This function:
+    1. Tests all embedded Python macros
+    2. For each failing macro, extracts the error and module code
+    3. Calls LLM to generate a fix based on the error
+    4. Re-embeds the fixed module
+    5. Retries testing (up to max_retries)
+
+    Args:
+        ods_path: Path to ODS file with embedded macros
+        architecture: ArchitectureDesign object with transformation context
+        max_retries: Maximum fix attempts per module (default 3)
+
+    Returns:
+        Dictionary with test results and fix history:
+        {
+            "total_functions": int,
+            "passed": int,
+            "failed": int,
+            "fixed": int,  # Number of modules successfully fixed
+            "fix_attempts": int,  # Total fix attempts made
+            "results": {function_uri: ScriptExecutionResult},
+            "fix_history": [{"module": str, "attempt": int, "success": bool, "error": str}]
+        }
+    """
+    from xlsliberator.agent_rewriter import AgentRewriter
+    from xlsliberator.embed_macros import embed_python_macros
+
+    ods_path = Path(ods_path)
+    fix_history: list[dict[str, Any]] = []
+    fixed_modules: set[str] = set()
+
+    # Initialize agent rewriter for fixes
+    agent_rewriter = AgentRewriter()
+
+    for attempt in range(max_retries):
+        logger.info(f"Self-healing test attempt {attempt + 1}/{max_retries} for {ods_path.name}")
+
+        # Test all macros
+        script_infos = enumerate_python_scripts(ods_path)
+        results: dict[str, ScriptExecutionResult] = {}
+        failed_modules: dict[str, tuple[str, str]] = {}  # module_name -> (error, code)
+
+        for script_info in script_infos:
+            # Read module code
+            try:
+                with zipfile.ZipFile(ods_path, "r") as zf:
+                    module_code = zf.read(script_info.file_path).decode("utf-8")
+            except Exception as e:
+                logger.error(f"Failed to read {script_info.file_path}: {e}")
+                continue
+
+            # Test each function in the module
+            for uri in script_info.script_uris:
+                result = test_script_execution_safe(ods_path, uri)
+                results[uri] = result
+
+                # Track failed modules (not failed functions with missing args)
+                if not result.success and result.error:
+                    # Skip functions that fail due to missing required arguments
+                    if "missing" in result.error and "required positional argument" in result.error:
+                        logger.debug(f"Skipping {uri}: function requires arguments (expected)")
+                        continue
+
+                    # This is a real error (import, syntax, etc) - needs fixing
+                    module_name = script_info.module_name
+                    if module_name not in failed_modules and module_name not in fixed_modules:
+                        failed_modules[module_name] = (result.error, module_code)
+                        logger.warning(f"Module {module_name} failed: {result.error[:200]}")
+
+        # If no failures, we're done!
+        if not failed_modules:
+            logger.success(f"Self-healing complete: all macros passing (attempt {attempt + 1})")
+            break
+
+        # Try to fix each failed module
+        for module_name, (error, code) in failed_modules.items():
+            logger.info(f"Attempting to fix {module_name} (attempt {attempt + 1}/{max_retries})")
+
+            fixed_code = agent_rewriter.fix_module_with_error(
+                module_name=module_name,
+                module_code=code,
+                error_message=error,
+                architecture=architecture,
+            )
+
+            if fixed_code:
+                # Re-embed the fixed module
+                try:
+                    # Update the module in the ODS (replaces existing module)
+                    modules_to_embed = {module_name: fixed_code}
+                    embed_python_macros(ods_path, modules_to_embed)
+
+                    logger.success(f"Re-embedded fixed module: {module_name}")
+                    fixed_modules.add(module_name)
+
+                    fix_history.append(
+                        {
+                            "module": module_name,
+                            "attempt": attempt + 1,
+                            "success": True,
+                            "error": error[:500],
+                        }
+                    )
+
+                except Exception as e:
+                    logger.error(f"Failed to re-embed {module_name}: {e}")
+                    fix_history.append(
+                        {
+                            "module": module_name,
+                            "attempt": attempt + 1,
+                            "success": False,
+                            "error": f"Re-embed failed: {e}",
+                        }
+                    )
+            else:
+                logger.error(f"Failed to generate fix for {module_name}")
+                fix_history.append(
+                    {
+                        "module": module_name,
+                        "attempt": attempt + 1,
+                        "success": False,
+                        "error": "LLM fix generation failed",
+                    }
+                )
+
+    # Final test to get results
+    script_infos = enumerate_python_scripts(ods_path)
+    final_results: dict[str, ScriptExecutionResult] = {}
+    for script_info in script_infos:
+        for uri in script_info.script_uris:
+            result = test_script_execution_safe(ods_path, uri)
+            final_results[uri] = result
+
+    # Count results
+    total = len(final_results)
+    passed = sum(1 for r in final_results.values() if r.success)
+    failed = total - passed
+
+    logger.info(
+        f"Self-healing complete: {passed}/{total} passed, "
+        f"{len(fixed_modules)} modules fixed, "
+        f"{len(fix_history)} fix attempts"
+    )
+
+    return {
+        "total_functions": total,
+        "passed": passed,
+        "failed": failed,
+        "fixed": len(fixed_modules),
+        "fix_attempts": len(fix_history),
+        "results": final_results,
+        "fix_history": fix_history,
+    }
