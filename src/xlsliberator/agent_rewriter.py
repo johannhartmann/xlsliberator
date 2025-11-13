@@ -320,6 +320,17 @@ Critical Notes:
 4. Use appropriate UNO services based on the identified patterns
 5. Import necessary UNO modules: uno, unohelper, com.sun.star.* as needed
 6. Include proper error handling and logging (use loguru.logger)
+7. DO NOT use package-style imports (e.g., from tetris_game.module import Class)
+   - All Python modules are in the same flat Scripts/python/ directory
+   - Use try/except ImportError with fallback imports instead:
+     ```python
+     try:
+         from module_name import ClassName
+     except ImportError:
+         # Fallback for LibreOffice embedded environment
+         import module_name
+         ClassName = module_name.ClassName
+     ```
 
 Generate complete, working Python-UNO code that implements this architecture.
 """
