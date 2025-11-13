@@ -414,8 +414,6 @@ Generate complete Python-UNO code with all required components.
         """
         from xlsliberator.embed_macros import embed_python_macros
         from xlsliberator.python_macro_manager import (
-            enumerate_python_scripts,
-            test_script_execution,
             validate_all_embedded_macros,
         )
 
@@ -455,76 +453,14 @@ Generate complete Python-UNO code with all required components.
                         f"modules valid"
                     )
 
-                    # Runtime testing: Try to execute embedded scripts
+                    # Runtime testing: Skip in favor of self-healing in api.py Step 4.7
+                    # Self-healing provides better error-specific fixes with retry logic
                     execution_successful = True
-                    runtime_errors: list[str] = []
 
-                    try:
-                        logger.debug("Testing runtime execution of embedded macros...")
-                        script_infos = enumerate_python_scripts(output_path)
-
-                        # Try full UNO execution first
-                        uno_execution_failed = False
-                        for script_info in script_infos:
-                            for script_uri in script_info.script_uris:
-                                try:
-                                    exec_result = test_script_execution(output_path, script_uri)
-                                    if not exec_result.success:
-                                        # Check if it's XScriptProvider limitation or timeout
-                                        error_str = str(exec_result.error)
-                                        if (
-                                            "XScriptProvider" in error_str
-                                            or "timed out" in error_str
-                                        ):
-                                            uno_execution_failed = True
-                                            break
-                                        runtime_errors.append(
-                                            f"{script_info.module_name}: {exec_result.error}"
-                                        )
-                                        execution_successful = False
-                                    else:
-                                        logger.debug(
-                                            f"✓ {script_info.module_name}: "
-                                            f"{script_uri.split('$')[1].split('?')[0]} executed"
-                                        )
-                                except Exception as e:
-                                    if "XScriptProvider" in str(e):
-                                        uno_execution_failed = True
-                                        break
-                                    runtime_errors.append(
-                                        f"{script_info.module_name}: Runtime test failed: {e}"
-                                    )
-                                    execution_successful = False
-                            if uno_execution_failed:
-                                break
-
-                        # Skip runtime execution testing if XScriptProvider unavailable
-                        if uno_execution_failed:
-                            logger.info(
-                                "XScriptProvider unavailable - skipping runtime execution tests. "
-                                "Scripts are syntactically valid and will execute when document "
-                                "is opened in LibreOffice GUI."
-                            )
-                            execution_successful = True
-                            all_warnings.append(
-                                "Runtime execution testing skipped (XScriptProvider unavailable)"
-                            )
-
-                        if execution_successful:
-                            logger.success(
-                                f"All {sum(len(s.script_uris) for s in script_infos)} "
-                                f"embedded scripts validated successfully"
-                            )
-                        else:
-                            logger.warning(
-                                f"Runtime validation failed for {len(runtime_errors)} script(s)"
-                            )
-                            all_warnings.extend(runtime_errors)
-
-                    except Exception as e:
-                        logger.warning(f"Runtime testing failed: {e}")
-                        execution_successful = False
-                        all_warnings.append(f"Runtime testing error: {e}")
+                    logger.info(
+                        "Skipping agent runtime execution testing - "
+                        "self-healing in api.py Step 4.7 will handle runtime errors"
+                    )
 
                     return ValidationResult(
                         syntax_valid=True,
