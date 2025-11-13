@@ -261,13 +261,38 @@ def enumerate_python_scripts(ods_path: str | Path) -> list[ScriptInfo]:
                     # Read script content
                     script_code = zip_file.read(filename).decode("utf-8")
 
-                    # Parse to find functions
+                    # Parse to find exported functions (from g_exportedScripts)
                     functions = []
                     try:
                         tree = ast.parse(script_code)
+
+                        # First, find all function definitions
+                        all_functions = {
+                            node.name
+                            for node in ast.walk(tree)
+                            if isinstance(node, ast.FunctionDef)
+                        }
+
+                        # Then, look for g_exportedScripts tuple
+                        exported_functions = set()
                         for node in ast.walk(tree):
-                            if isinstance(node, ast.FunctionDef):
-                                functions.append(node.name)
+                            if isinstance(node, ast.Assign):
+                                for target in node.targets:
+                                    if (
+                                        isinstance(target, ast.Name)
+                                        and target.id == "g_exportedScripts"
+                                        and isinstance(node.value, ast.Tuple)
+                                    ):
+                                        # Extract function names from tuple
+                                        for elt in node.value.elts:
+                                            if isinstance(elt, ast.Name):
+                                                exported_functions.add(elt.id)
+
+                        # Use exported functions if defined, otherwise all functions
+                        functions = (
+                            list(exported_functions) if exported_functions else list(all_functions)
+                        )
+
                     except Exception as e:
                         logger.warning(f"Failed to parse {filename} for function extraction: {e}")
 
