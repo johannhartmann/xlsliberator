@@ -17,6 +17,118 @@ if TYPE_CHECKING:
     from xlsliberator.vba_translation_validator import TranslationEvaluation
 
 
+# Python-UNO Best Practices Context (from LibreOffice manual research)
+PYTHON_UNO_BEST_PRACTICES = """
+## Python-UNO Best Practices for LibreOffice Calc
+
+### CRITICAL REQUIREMENTS
+
+1. **g_exportedScripts Tuple**
+   ALL macros MUST include a g_exportedScripts tuple listing callable functions:
+   ```python
+   def my_function():
+       # ... code ...
+
+   g_exportedScripts = (my_function,)  # Required!
+   ```
+
+2. **XSCRIPTCONTEXT for Document Access**
+   Use XSCRIPTCONTEXT (provided by LibreOffice) to access the document:
+   ```python
+   def my_function():
+       doc = XSCRIPTCONTEXT.getDocument()
+       sheet = doc.Sheets.getByIndex(0)
+       # ... work with sheet ...
+   ```
+
+### COMMON PATTERNS
+
+**Access Cells:**
+```python
+cell = sheet.getCellRangeByName("A1")
+cell.Value = 42              # number
+cell.String = "text"         # string
+cell.Formula = "=SUM(A1:A10)" # formula
+```
+
+**Get Active Sheet:**
+```python
+doc = XSCRIPTCONTEXT.getDocument()
+sheet = doc.getCurrentController().getActiveSheet()
+```
+
+**Iterate Ranges:**
+```python
+cell_range = sheet.getCellRangeByName("A1:B10")
+data = cell_range.getDataArray()  # tuple of tuples
+for row in data:
+    for cell_value in row:
+        # ... process ...
+```
+
+**Call Calc Functions (FunctionAccess):**
+```python
+smgr = XSCRIPTCONTEXT.getComponentContext().ServiceManager
+fa = smgr.createInstanceWithContext(
+    "com.sun.star.sheet.FunctionAccess",
+    XSCRIPTCONTEXT.getComponentContext()
+)
+result = fa.callFunction("SUM", ((1, 2, 3),))  # tuple-of-sequences
+```
+
+**Event Handlers:**
+Event handlers are just regular functions listed in g_exportedScripts.
+Use function name to match the event (e.g., Workbook_Open).
+```python
+def Workbook_Open():
+    doc = XSCRIPTCONTEXT.getDocument()
+    # ... handle event ...
+
+g_exportedScripts = (Workbook_Open,)
+```
+
+### STRICT PROHIBITIONS
+
+**DO NOT USE:**
+- subprocess, os.system, or any external process execution
+- File I/O outside UNO APIs (no open(), file operations)
+- External dependencies (requests, numpy, pandas, etc.)
+- System-level operations
+- Network operations outside UNO
+
+**Instead use:**
+- UNO APIs for all document operations
+- com.sun.star.ucb.SimpleFileAccess for file operations
+- FunctionAccess for Calc calculations
+- Built-in Python stdlib only (no external packages)
+
+### INDEX CONVERSION
+VBA uses 1-based indexing, Python uses 0-based:
+- VBA: Worksheets(1) → Python: doc.Sheets.getByIndex(0)
+- VBA: Range cells → Python: adjust all indices by -1
+
+### ERROR HANDLING
+Replace VBA's "On Error Resume Next" with try-except:
+```python
+try:
+    # ... risky operation ...
+except Exception as e:
+    logger.warning(f"Operation failed: {e}")
+    # ... handle error ...
+```
+
+### LOGGING
+Replace MsgBox/Debug.Print with logger:
+```python
+from loguru import logger
+
+logger.info("Information message")
+logger.warning("Warning message")
+logger.error("Error message")
+```
+"""
+
+
 class LLMVBATranslator:
     """Translates VBA code to Python-UNO using Claude LLM with rule-based mapping injection."""
 
@@ -241,6 +353,8 @@ Translation Rules (filtered for detected APIs):
             reference_sections = "Translation Rules:"
 
         prompt = f"""Translate this VBA code to Python-UNO format for LibreOffice Calc.
+
+{PYTHON_UNO_BEST_PRACTICES}
 
 VBA Code:
 ```vba

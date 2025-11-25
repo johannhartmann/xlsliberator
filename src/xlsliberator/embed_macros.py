@@ -28,7 +28,8 @@ def embed_python_macros(
 
     Note:
         Phase F6 implementation - embeds Python scripts into Scripts/python/
-        and updates META-INF/manifest.xml.
+        and updates META-INF/manifest.xml. Also rewrites VBA event handlers
+        to point to Python-UNO equivalents.
     """
     ods_path = Path(ods_path)
 
@@ -58,6 +59,14 @@ def embed_python_macros(
                 # Skip any existing Scripts/python/ files
                 if item.filename.startswith("Scripts/python/"):
                     continue
+                # Process content.xml to rewrite VBA event handlers
+                if item.filename == "content.xml":
+                    data = zip_in.read(item.filename)
+                    updated_content = _rewrite_vba_to_python_event_handlers(
+                        data.decode("utf-8"), py_modules
+                    )
+                    zip_out.writestr(item, updated_content.encode("utf-8"))
+                    continue
 
                 data = zip_in.read(item.filename)
                 zip_out.writestr(item, data)
@@ -78,6 +87,95 @@ def embed_python_macros(
 
     except Exception as e:
         raise MacroEmbedError(f"Failed to embed macros: {e}") from e
+
+
+def _rewrite_vba_to_python_event_handlers(content_xml: str, py_modules: dict[str, str]) -> str:
+    """Rewrite VBA event handlers to point to Python-UNO equivalents.
+
+    Args:
+        content_xml: Content of content.xml as string
+        py_modules: Dict mapping Python module names to source code
+
+    Returns:
+        Updated content.xml with Python event handlers
+
+    Note:
+        Converts VBA event handlers like:
+        vnd.sun.star.script:VBAProject.Game.StartButton_Click?language=Basic&location=document
+        To Python equivalents:
+        vnd.sun.star.script:Game.bas.py$StartButton_Click?language=Python&location=document
+    """
+    import re
+
+    # Build mapping from VBA module names to Python module names
+    # e.g., "Game.bas" -> "Game.bas.py" AND "Game" -> "Game.bas.py"
+    vba_to_py: dict[str, str] = {}
+    for py_module_name in py_modules:
+        # Remove .py extension to get base name (e.g., "Game.bas.py" -> "Game.bas")
+        if py_module_name.endswith(".py"):
+            base_name = py_module_name[:-3]
+            vba_to_py[base_name] = py_module_name
+
+            # Also map without VBA extension (e.g., "Game.bas" -> "Game")
+            # VBAProject.Game.Function should map to Game.bas.py
+            if "." in base_name:
+                module_only = base_name.split(".")[0]
+                vba_to_py[module_only] = py_module_name
+
+    if not vba_to_py:
+        logger.debug("No VBA modules to map, skipping event handler rewriting")
+        return content_xml
+
+    # Pattern to match VBA script URLs in event handlers
+    # Example: vnd.sun.star.script:VBAProject.Game.StartButton_Click?language=Basic&location=document
+    pattern = (
+        r"(vnd\.sun\.star\.script:)VBAProject\.([^?]+)\?language=Basic(&amp;location=document)"
+    )
+
+    def replace_handler(match: re.Match[str]) -> str:
+        """Replace VBA handler with Python equivalent."""
+        prefix: str = match.group(1)  # "vnd.sun.star.script:"
+        vba_path: str = match.group(2)  # "Game.StartButton_Click"
+        location: str = match.group(3)  # "&amp;location=document"
+        original: str = match.group(0)  # Full match
+
+        # Split VBA path into module and function
+        # "Game.StartButton_Click" -> ["Game", "StartButton_Click"]
+        parts = vba_path.split(".")
+        if len(parts) < 2:
+            logger.warning(f"Invalid VBA path format: {vba_path}")
+            return original  # Return original if malformed
+
+        # Find matching Python module
+        # Try various combinations: "Game", "Game.bas", etc.
+        py_module = None
+        function_name = ""
+        for i in range(len(parts) - 1, 0, -1):
+            vba_module = ".".join(parts[:i])
+            if vba_module in vba_to_py:
+                py_module = vba_to_py[vba_module]
+                function_name = ".".join(parts[i:])
+                break
+
+        if not py_module:
+            logger.warning(f"No Python module found for VBA path: {vba_path}")
+            return original  # Keep VBA handler if no Python equivalent
+
+        # Build Python script URL
+        # Format: Module.py$function_name
+        python_url = f"{prefix}{py_module}${function_name}?language=Python{location}"
+        logger.debug(f"Rewrote event handler: {original} -> {python_url}")
+        return python_url
+
+    # Replace all VBA handlers with Python equivalents
+    updated_content = re.sub(pattern, replace_handler, content_xml)
+
+    # Count replacements
+    replacements = len(re.findall(pattern, content_xml))
+    if replacements > 0:
+        logger.info(f"Rewrote {replacements} VBA event handlers to Python")
+
+    return updated_content
 
 
 def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[str]) -> str:
@@ -101,7 +199,8 @@ def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[st
     # Try to read existing manifest, or create new one
     try:
         manifest_data = zip_in.read("META-INF/manifest.xml")
-        root = ET.fromstring(manifest_data)
+        # Safe: parsing manifest from ODS file we control
+        root = ET.fromstring(manifest_data)  # nosec B314
     except KeyError:
         # No existing manifest - create new one
         root = ET.Element(f"{{{NS['manifest']}}}manifest")

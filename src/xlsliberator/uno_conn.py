@@ -22,6 +22,7 @@ class UnoCtx:
         port: int = 2002,
         timeout: int = 10,
         manage_libreoffice: bool = True,
+        use_gui: bool = False,
     ) -> None:
         """Initialize UNO connection context.
 
@@ -30,17 +31,21 @@ class UnoCtx:
             port: LibreOffice UNO port
             timeout: Connection timeout in seconds
             manage_libreoffice: If True, start/stop LibreOffice process automatically
+            use_gui: If True, use GUI mode with xvfb (enables XScriptProvider for macros)
         """
         self.host = host
         self.port = port
         self.timeout = timeout
         self.manage_libreoffice = manage_libreoffice
+        self.use_gui = use_gui
         self.local_context: Any = None
         self.resolver: Any = None
         self.component_context: Any = None
         self.desktop: Any = None
         self._connected = False
         self._libreoffice_process: subprocess.Popen | None = None
+        self._xvfb_process: subprocess.Popen | None = None
+        self._display: str | None = None
 
     def __enter__(self) -> "UnoCtx":
         """Enter context and establish connection."""
@@ -52,8 +57,12 @@ class UnoCtx:
         self.disconnect()
 
     def _start_libreoffice(self) -> None:
-        """Start LibreOffice headless process."""
-        logger.info(f"Starting LibreOffice headless on port {self.port}")
+        """Start LibreOffice process (headless or GUI mode with xvfb)."""
+        import os
+        import shutil
+
+        mode = "GUI mode with xvfb" if self.use_gui else "headless"
+        logger.info(f"Starting LibreOffice in {mode} on port {self.port}")
 
         # Kill any existing LibreOffice processes
         try:
@@ -62,18 +71,71 @@ class UnoCtx:
         except Exception:
             pass
 
-        # Start LibreOffice headless
-        cmd = [
-            "soffice",
-            "--headless",
-            f"--accept=socket,host={self.host},port={self.port};urp;",
-            "--norestore",
-            "--nofirststartwizard",
-        ]
+        # Start Xvfb if GUI mode requested
+        if self.use_gui:
+            if not shutil.which("Xvfb"):
+                logger.warning("Xvfb not found, falling back to headless mode")
+                self.use_gui = False
+            else:
+                # Find available display number
+                for display_num in range(99, 200):
+                    display = f":{display_num}"
+                    # Check if display is already in use (X11 lock file location is standard)
+                    lock_file = f"/tmp/.X{display_num}-lock"  # nosec B108
+                    if not Path(lock_file).exists():
+                        self._display = display
+                        break
+                else:
+                    logger.warning("No available X display found, falling back to headless")
+                    self.use_gui = False
+
+                if self.use_gui and self._display:
+                    # Start Xvfb on the selected display
+                    try:
+                        self._xvfb_process = subprocess.Popen(
+                            [
+                                "Xvfb",
+                                self._display,
+                                "-screen",
+                                "0",
+                                "1280x1024x24",
+                                "-nolisten",
+                                "tcp",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        time.sleep(1)  # Give Xvfb time to start
+                        logger.debug(f"Started Xvfb on display {self._display}")
+                    except Exception as e:
+                        logger.warning(f"Failed to start Xvfb: {e}, falling back to headless")
+                        self.use_gui = False
+                        if self._xvfb_process:
+                            self._xvfb_process.kill()
+                            self._xvfb_process = None
+
+        # Build LibreOffice command
+        if self.use_gui and self._display:
+            cmd = ["soffice"]
+            env = os.environ.copy()
+            env["DISPLAY"] = self._display
+        else:
+            cmd = ["soffice", "--headless"]
+            env = None
+
+        # Add common arguments
+        cmd.extend(
+            [
+                f"--accept=socket,host={self.host},port={self.port};urp;",
+                "--norestore",
+                "--nofirststartwizard",
+            ]
+        )
 
         try:
             self._libreoffice_process = subprocess.Popen(
                 cmd,
+                env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -96,7 +158,7 @@ class UnoCtx:
             raise UnoConnectionError("soffice command not found. Is LibreOffice installed?") from e
 
     def _stop_libreoffice(self) -> None:
-        """Stop LibreOffice headless process."""
+        """Stop LibreOffice and Xvfb processes."""
         if self._libreoffice_process:
             logger.info("Stopping LibreOffice process")
             try:
@@ -110,6 +172,21 @@ class UnoCtx:
                 logger.warning(f"Error stopping LibreOffice: {e}")
             finally:
                 self._libreoffice_process = None
+
+        # Stop Xvfb if we started it
+        if self._xvfb_process:
+            logger.debug("Stopping Xvfb process")
+            try:
+                self._xvfb_process.terminate()
+                self._xvfb_process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self._xvfb_process.kill()
+                self._xvfb_process.wait()
+            except Exception as e:
+                logger.warning(f"Error stopping Xvfb: {e}")
+            finally:
+                self._xvfb_process = None
+                self._display = None
 
     def connect(self) -> None:
         """Establish connection to LibreOffice UNO."""
@@ -241,6 +318,51 @@ def new_calc(ctx: UnoCtx) -> Any:
     return doc
 
 
+def set_macro_security_level(ctx: UnoCtx, level: int = 0) -> None:
+    """Set LibreOffice macro security level.
+
+    Args:
+        ctx: UNO connection context
+        level: Security level (0=Low, 1=Medium, 2=High, 3=Very High)
+
+    Raises:
+        UnoConnectionError: If not connected
+    """
+    if not ctx.is_connected:
+        raise UnoConnectionError("Not connected to LibreOffice")
+
+    try:
+        # Get configuration provider
+        from com.sun.star.beans import PropertyValue
+
+        config_provider = ctx.component_context.ServiceManager.createInstanceWithContext(
+            "com.sun.star.configuration.ConfigurationProvider", ctx.component_context
+        )
+
+        # Configuration path for macro security
+        config_path = PropertyValue()
+        config_path.Name = "nodepath"
+        config_path.Value = "/org.openoffice.Office.Common/Security/Scripting"
+
+        # Get update access to the configuration
+        config_access = config_provider.createInstanceWithArguments(
+            "com.sun.star.configuration.ConfigurationUpdateAccess", (config_path,)
+        )
+
+        # Set MacroSecurityLevel (0=Low, 1=Medium, 2=High, 3=Very High)
+        config_access.setPropertyValue("MacroSecurityLevel", level)
+
+        # Commit changes
+        config_access.commitChanges()
+
+        level_names = {0: "Low", 1: "Medium", 2: "High", 3: "Very High"}
+        logger.success(f"Set macro security level to {level_names.get(level, level)}")
+
+    except Exception as e:
+        logger.warning(f"Failed to set macro security level: {e}")
+        raise UnoConnectionError(f"Failed to set macro security level: {e}") from e
+
+
 def open_calc(ctx: UnoCtx, path: str | Path) -> Any:
     """Open an existing Calc spreadsheet document.
 
@@ -262,13 +384,20 @@ def open_calc(ctx: UnoCtx, path: str | Path) -> Any:
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
+    from com.sun.star.beans import PropertyValue
     from uno import systemPathToFileUrl
 
     file_url = systemPathToFileUrl(str(file_path))
     logger.debug(f"Opening Calc document: {file_url}")
 
-    doc = ctx.desktop.loadComponentFromURL(file_url, "_blank", 0, ())
-    logger.debug("Opened Calc document")
+    # Enable macros automatically (MacroExecutionMode = 4 = ALWAYS_EXECUTE_NO_WARN)
+    # This allows Python-UNO macros to run without security warnings
+    load_props = (
+        PropertyValue(Name="MacroExecutionMode", Value=4),  # ALWAYS_EXECUTE_NO_WARN
+    )
+
+    doc = ctx.desktop.loadComponentFromURL(file_url, "_blank", 0, load_props)
+    logger.debug("Opened Calc document with macros enabled")
     return doc
 
 

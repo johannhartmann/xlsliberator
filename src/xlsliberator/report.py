@@ -34,6 +34,33 @@ class ConversionReport:
     python_handlers: int = 0
     api_calls_mapped: int = 0
 
+    # Python-UNO macro validation (post-conversion)
+    macros_validated: int = 0
+    macros_syntax_valid: int = 0
+    macros_syntax_errors: int = 0
+    macros_with_exported_scripts: int = 0
+    macros_missing_exported_scripts: int = 0
+
+    # Python-UNO macro execution testing (post-conversion)
+    macro_functions_tested: int = 0
+    macro_functions_passed: int = 0
+    macro_functions_failed: int = 0
+    macro_functions_skipped: int = 0
+
+    # Formula validation (post-conversion)
+    formulas_validated: int = 0
+    formulas_valid: int = 0
+    formulas_invalid: int = 0
+
+    # Agent-based GUI validation (post-conversion)
+    agent_validation_run: bool = False
+    agent_macros_validated: int = 0
+    agent_macros_valid: int = 0
+    agent_functions_found: int = 0
+    agent_buttons_found: int = 0
+    agent_buttons_with_handlers: int = 0
+    agent_cells_readable: int = 0
+
     # Sheets
     sheet_count: int = 0
 
@@ -87,6 +114,26 @@ class ConversionReport:
 - VBA procedures: {self.vba_procedures}
 - Python handlers created: {self.python_handlers}
 - API calls mapped: {self.api_calls_mapped}
+
+### Post-Conversion Validation
+
+#### Macro Validation
+- Macros validated: {self.macros_validated}
+- Syntax valid: {self.macros_syntax_valid} ({self._percentage(self.macros_syntax_valid, self.macros_validated)})
+- Syntax errors: {self.macros_syntax_errors}
+- With g_exportedScripts: {self.macros_with_exported_scripts}
+- Missing g_exportedScripts: {self.macros_missing_exported_scripts}
+
+#### Macro Execution Testing
+- Functions tested: {self.macro_functions_tested}
+- **Passed: {self.macro_functions_passed} ({self._percentage(self.macro_functions_passed, self.macro_functions_tested)})**
+- Failed: {self.macro_functions_failed}
+- Skipped: {self.macro_functions_skipped}
+
+#### Formula Validation
+- Formulas validated: {self.formulas_validated}
+- Valid: {self.formulas_valid} ({self._percentage(self.formulas_valid, self.formulas_validated)})
+- Invalid: {self.formulas_invalid}
 
 ## Issues
 

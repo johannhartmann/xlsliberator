@@ -32,6 +32,7 @@ repos:
           - pydantic
           - loguru
           - openpyxl
+          - fastmcp
         args: [--config-file=pyproject.toml]
         files: ^src/
 
