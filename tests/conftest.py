@@ -1,6 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
 import os
+import shutil
 import sys
 
 import pytest
@@ -16,3 +17,5 @@ def skip_if_no_lo() -> None:
     """Skip test if LibreOffice is not available."""
     if os.getenv("LO_SKIP_IT") == "1":
         pytest.skip("LibreOffice integration tests disabled (LO_SKIP_IT=1)")
+    if not (shutil.which("soffice") or shutil.which("libreoffice")):
+        pytest.skip("LibreOffice integration tests require soffice or libreoffice on PATH")

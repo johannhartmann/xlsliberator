@@ -1,5 +1,7 @@
 """Unit tests for VBA reference analyzer."""
 
+import pytest
+
 from xlsliberator.vba_reference_analyzer import (
     VBAReferences,
     analyze_vba_references,
@@ -7,6 +9,12 @@ from xlsliberator.vba_reference_analyzer import (
     get_top_apis,
     get_translation_complexity_score,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_live_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests exercise deterministic regex fallback behavior."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
 
 def test_analyze_simple_vba() -> None:

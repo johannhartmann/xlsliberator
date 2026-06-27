@@ -2,6 +2,7 @@
 
 import pytest
 
+from xlsliberator import vba_translation_validator
 from xlsliberator.vba_reference_analyzer import VBAReferences
 from xlsliberator.vba_translation_validator import (
     TranslationEvaluation,
@@ -11,9 +12,30 @@ from xlsliberator.vba_translation_validator import (
 )
 
 
+class _DummyTextBlock:
+    text = (
+        '{"overall_quality": 85, "is_acceptable": true, "issues": [], '
+        '"suggestions": ["Review manually before release"]}'
+    )
+
+
+class _DummyMessages:
+    def create(self, *_args: object, **_kwargs: object) -> object:
+        return type("DummyResponse", (), {"content": [_DummyTextBlock()]})()
+
+
+class _DummyAnthropic:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.messages = _DummyMessages()
+
+    def close(self) -> None:
+        pass
+
+
 @pytest.fixture
-def validator() -> VBATranslationValidator:
+def validator(monkeypatch: pytest.MonkeyPatch) -> VBATranslationValidator:
     """Create validator instance."""
+    monkeypatch.setattr(vba_translation_validator, "Anthropic", _DummyAnthropic)
     return VBATranslationValidator()
 
 

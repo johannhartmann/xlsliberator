@@ -236,6 +236,44 @@ def test_extract_unsupported_format() -> None:
             extract_workbook(file_path)
 
 
+def test_extract_xls_reports_incomplete_inventory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Legacy XLS extraction should report incomplete BIFF coverage."""
+    file_path = tmp_path / "legacy.xls"
+    file_path.write_bytes(b"placeholder")
+
+    class FakeOle:
+        def __init__(self, _path: str) -> None:
+            pass
+
+        def __enter__(self) -> "FakeOle":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def listdir(self) -> list[list[str]]:
+            return [["Workbook"], ["_VBA_PROJECT_CUR", "VBA", "dir"]]
+
+    import sys
+    import types
+
+    fake_olefile = types.SimpleNamespace(
+        isOleFile=lambda _path: True,
+        OleFileIO=FakeOle,
+    )
+    monkeypatch.setitem(sys.modules, "olefile", fake_olefile)
+
+    workbook, stats = extract_workbook(file_path)
+
+    assert workbook.file_format == "xls"
+    assert workbook.metadata["legacy_xls_biff_parsing_incomplete"] is True
+    assert workbook.metadata["workbook_stream_detected"] is True
+    assert workbook.has_macros is True
+    assert stats.total_cells == 0
+
+
 def test_ir_model_properties() -> None:
     """Test IR model computed properties."""
     with tempfile.TemporaryDirectory() as tmpdir:

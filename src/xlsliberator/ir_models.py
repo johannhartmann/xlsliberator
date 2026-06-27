@@ -1,12 +1,12 @@
 """Intermediate Representation (IR) models for Excel workbook data."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class CellType(str, Enum):
+class CellType(StrEnum):
     """Cell value type."""
 
     EMPTY = "empty"

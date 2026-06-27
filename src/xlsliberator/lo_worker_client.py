@@ -86,7 +86,9 @@ class LibreOfficeWorkerClient:
         if not self.python_wrapper:
             return self._unavailable(op, "LibreOffice Python wrapper was not found")
         if not Path(self.python_wrapper).exists():
-            return self._unavailable(op, f"LibreOffice Python wrapper not found: {self.python_wrapper}")
+            return self._unavailable(
+                op, f"LibreOffice Python wrapper not found: {self.python_wrapper}"
+            )
 
         request_payload = dict(payload)
         if self.office_executable:
@@ -131,7 +133,7 @@ class LibreOfficeWorkerClient:
                     message=str(exc),
                     wrapper_path=self.python_wrapper,
                 ),
-        )
+            )
 
         stdout = result.stdout.strip()
         if not stdout and result.returncode != 0:

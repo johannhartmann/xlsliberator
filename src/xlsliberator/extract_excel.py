@@ -326,16 +326,42 @@ def _extract_xls(file_path: Path) -> tuple[WorkbookIR, ExtractionStats]:
     """
     logger.warning(f"Legacy .xls format detected: {file_path}")
 
+    metadata: dict[str, Any] = {
+        "legacy_xls_biff_parsing_incomplete": True,
+        "cell_formula_extraction_supported": False,
+        "unsupported_reason": "legacy XLS BIFF parsing incomplete",
+    }
+
+    try:
+        import olefile  # type: ignore[import-untyped]
+
+        if olefile.isOleFile(str(file_path)):
+            with olefile.OleFileIO(str(file_path)) as ole:
+                streams = ["/".join(stream) for stream in ole.listdir()]
+            metadata["ole_streams"] = streams
+            metadata["workbook_stream_detected"] = any(
+                stream.lower() in {"workbook", "book"} for stream in streams
+            )
+            metadata["vba_stream_detected"] = any("vba" in stream.lower() for stream in streams)
+        else:
+            metadata["ole_streams"] = []
+            metadata["workbook_stream_detected"] = False
+            metadata["vba_stream_detected"] = False
+    except Exception as e:
+        logger.warning(f"Could not inspect .xls OLE streams: {e}")
+        metadata["ole_inspection_error"] = str(e)
+
     wb_ir = WorkbookIR(
         file_path=str(file_path),
         file_format="xls",
-        has_macros=False,  # TODO: Detect macros in xls
+        has_macros=bool(metadata.get("vba_stream_detected", False)),
+        metadata=metadata,
     )
 
     stats = ExtractionStats()
 
-    # For now, just return a placeholder
-    # Full implementation would require xlrd or other library
-    logger.warning(".xls format requires additional libraries (xlrd) - returning empty workbook IR")
+    logger.warning(
+        ".xls BIFF cell and formula parsing is incomplete; returning detected metadata only"
+    )
 
     return wb_ir, stats

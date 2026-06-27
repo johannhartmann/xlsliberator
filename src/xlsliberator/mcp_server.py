@@ -23,7 +23,10 @@ from xlsliberator.mcp_tools import (
     embed_macros,
     get_cell_colors,
     get_sheet_data,
+    inspect_workbook,
+    list_controls,
     list_embedded_macros,
+    list_event_bindings,
     list_sheets,
     open_document_gui,
     read_cell,
@@ -32,6 +35,7 @@ from xlsliberator.mcp_tools import (
     take_screenshot,
     test_macro_execution,
     validate_macros,
+    validate_transformation,
 )
 
 # Create FastMCP server instance
@@ -44,12 +48,16 @@ mcp = FastMCP(name="LibreOffice UNO")
 
 # Document Operations
 mcp.tool(convert_excel_to_ods)
+mcp.tool(inspect_workbook)
+mcp.tool(validate_transformation)
 mcp.tool(recalculate_document)
 
 # Cell and Sheet Operations
 mcp.tool(read_cell)
 mcp.tool(list_sheets)
 mcp.tool(get_sheet_data)
+mcp.tool(list_controls)
+mcp.tool(list_event_bindings)
 
 # Formula Testing
 mcp.tool(compare_formulas)

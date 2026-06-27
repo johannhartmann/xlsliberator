@@ -93,9 +93,7 @@ def _parse_formula(request: dict[str, Any]) -> dict[str, Any]:
         try:
             desktop = session["desktop"]
             hidden = _property_value("Hidden", True)
-            document = desktop.loadComponentFromURL(
-                "private:factory/scalc", "_blank", 0, (hidden,)
-            )
+            document = desktop.loadComponentFromURL("private:factory/scalc", "_blank", 0, (hidden,))
             if document is None:
                 raise RuntimeError("LibreOffice did not create a Calc document")
 
@@ -130,9 +128,7 @@ def _with_document(request: dict[str, Any], handler: DocumentHandler) -> dict[st
                 _property_value("MacroExecutionMode", 4),
                 _property_value("Hidden", not bool(request.get("use_gui", False))),
             )
-            document = session["desktop"].loadComponentFromURL(
-                file_url, "_blank", 0, load_props
-            )
+            document = session["desktop"].loadComponentFromURL(file_url, "_blank", 0, load_props)
             if document is None:
                 raise RuntimeError(f"LibreOffice could not open document: {ods_path}")
             return handler(request, session, document)
@@ -140,7 +136,9 @@ def _with_document(request: dict[str, Any], handler: DocumentHandler) -> dict[st
             _close_document(document, save=False)
 
 
-def _list_sheets(_request: dict[str, Any], _session: dict[str, Any], document: Any) -> dict[str, Any]:
+def _list_sheets(
+    _request: dict[str, Any], _session: dict[str, Any], document: Any
+) -> dict[str, Any]:
     sheets = document.getSheets()
     names = [sheets.getByIndex(i).getName() for i in range(sheets.getCount())]
     return {"sheets": names, "count": len(names)}

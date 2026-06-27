@@ -28,6 +28,7 @@ class ScriptInfo:
     file_path: str
     functions: list[str]
     script_uris: list[str]
+    source_map_markers: list[str] | None = None
 
 
 @dataclass
@@ -271,6 +272,7 @@ def enumerate_python_scripts(ods_path: str | Path) -> list[ScriptInfo]:
                         file_path=filename,
                         functions=functions,
                         script_uris=script_uris,
+                        source_map_markers=collect_source_map_markers(script_code),
                     )
                     script_infos.append(script_info)
 
@@ -535,77 +537,7 @@ def test_script_execution_safe(ods_path: str | Path, script_uri: str) -> ScriptE
     Returns:
         ScriptExecutionResult
     """
-    import contextlib
-    import signal
-
-    from xlsliberator.uno_conn import UnoCtx, open_calc
-
-    def timeout_handler(_signum: int, _frame: Any) -> None:
-        raise TimeoutError("Script execution timed out")
-
-    try:
-        with UnoCtx(use_gui=True) as ctx:
-            doc = open_calc(ctx, ods_path)
-
-            try:
-                # Get undo manager
-                um = doc.getUndoManager()
-                um.enterUndoContext("Test Macro Execution")
-
-                # Set timeout for script execution (5 seconds)
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(5)
-
-                try:
-                    # Get script provider
-                    msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
-                        "com.sun.star.script.provider.MasterScriptProviderFactory",
-                        ctx.component_context,
-                    )
-                    script_provider = msp_factory.createScriptProvider(doc)
-
-                    # Get and execute script (this may hang if XScriptProvider unavailable)
-                    script = script_provider.getScript(script_uri)
-                    result = script.invoke((), (), ())
-
-                    # Success - leave undo context
-                    um.leaveUndoContext()
-
-                    logger.debug(f"Script executed successfully: {script_uri}")
-                    return ScriptExecutionResult(True, None, result)
-
-                except TimeoutError:
-                    error_msg = "Script execution timed out (XScriptProvider likely unavailable)"
-                    logger.warning(error_msg)
-                    # Try to leave undo context, ignore if it fails
-                    with contextlib.suppress(Exception):
-                        um.leaveUndoContext()
-                    return ScriptExecutionResult(False, error_msg, None)
-
-                except Exception as e:
-                    # Execution failed - undo changes
-                    error_msg = f"Script execution failed: {e}"
-                    logger.debug(error_msg)
-
-                    try:
-                        um.leaveUndoContext()
-                        um.undo()
-                    except Exception as undo_error:
-                        logger.warning(f"Undo failed: {undo_error}")
-
-                    return ScriptExecutionResult(False, error_msg, None)
-
-                finally:
-                    # Cancel alarm
-                    signal.alarm(0)
-
-            finally:
-                doc.close(False)  # Don't save
-
-    except Exception as e:
-        error_msg = f"Failed to open document: {e}"
-        logger.error(error_msg)
-        return ScriptExecutionResult(False, error_msg, None)
+    return test_script_execution(ods_path, script_uri)
 
 
 # ============================================================================

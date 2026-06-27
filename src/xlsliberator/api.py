@@ -5,13 +5,22 @@ Architecture: Excel → soffice native → ODS + VBA extraction → LLM translat
 """
 
 import os
+import shutil
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from xlsliberator.calc_backend import (
+    RuntimeProfile,
+    create_isolated_user_profile,
+    discover_backends,
+)
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
 from xlsliberator.extract_vba import extract_vba_modules
@@ -23,6 +32,7 @@ class ConversionError(Exception):
     """Raised when conversion fails."""
 
 
+NATIVE_CONVERSION_TIMEOUT_SECONDS = 120
 ProgressCallback = Callable[[str, str, dict[str, Any]], None]
 
 
@@ -62,8 +72,6 @@ def convert_native(
     Args:
         input_path: Path to input Excel file
         output_path: Path for output ODS file
-        user_installation_dir: Optional isolated LibreOffice profile directory
-        uno_port: Optional UNO port override
 
     Raises:
         ConversionError: If native conversion fails
@@ -77,6 +85,15 @@ def convert_native(
     logger.info(f"Running LibreOffice native conversion: {input_path.name}")
 
     try:
+        try:
+            import uno  # noqa: F401
+        except ImportError:
+            logger.info("UNO Python bridge unavailable; using soffice CLI conversion")
+            _convert_native_with_soffice_cli(
+                input_path, output_path, user_installation_dir=user_installation_dir
+            )
+            return
+
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,6 +132,81 @@ def convert_native(
 
     except Exception as e:
         raise ConversionError(f"Native conversion error: {e}") from e
+
+
+def _convert_native_with_soffice_cli(
+    input_path: Path,
+    output_path: Path,
+    *,
+    user_installation_dir: str | Path | None = None,
+) -> None:
+    """Convert Excel to ODS using the office CLI.
+
+    Runs in the caller-supplied ``user_installation_dir`` profile when provided
+    (so a runner-managed, lifecycle-tracked profile is honoured), otherwise in a
+    throwaway isolated profile. Either way the user's global office profile is
+    never touched.
+    """
+    backends = discover_backends()
+    if not backends:
+        raise ConversionError("No LibreOffice/OpenOffice executable discovered for conversion")
+
+    backend = backends[0]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists():
+        output_path.unlink()
+
+    with ExitStack() as stack:
+        if user_installation_dir is not None:
+            profile_dir = Path(user_installation_dir)
+            profile_dir.mkdir(parents=True, exist_ok=True)
+            profile = RuntimeProfile(
+                user_installation_dir=profile_dir,
+                env=dict(os.environ),
+                cleanup=False,
+            )
+        else:
+            profile = stack.enter_context(create_isolated_user_profile("xlsliberator-convert-"))
+        tmpdir = stack.enter_context(
+            tempfile.TemporaryDirectory(prefix="xlsliberator-native-output-")
+        )
+        tmp_output_dir = Path(tmpdir)
+        command = [
+            backend.info.executable,
+            "--headless",
+            "--nologo",
+            "--nodefault",
+            "--norestore",
+            "--nofirststartwizard",
+            "--nolockcheck",
+            profile.user_installation_arg,
+            "--convert-to",
+            "ods",
+            "--outdir",
+            str(tmp_output_dir),
+            str(input_path),
+        ]
+        result = subprocess.run(
+            command,
+            env=profile.env,
+            capture_output=True,
+            text=True,
+            timeout=NATIVE_CONVERSION_TIMEOUT_SECONDS,
+            check=False,
+        )
+        converted = tmp_output_dir / f"{input_path.stem}.ods"
+        if result.returncode != 0 or not converted.exists():
+            raise ConversionError(
+                "soffice CLI conversion failed "
+                f"(exit={result.returncode}, stdout={result.stdout.strip()}, "
+                f"stderr={result.stderr.strip()})"
+            )
+        shutil.move(str(converted), output_path)
+
+    if not output_path.exists():
+        raise ConversionError(f"Native conversion succeeded but output not found: {output_path}")
+
+    logger.success(f"Native CLI conversion complete: {output_path}")
 
 
 def convert(
@@ -252,14 +344,20 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
-        # Step 3: Translate VBA to Python-UNO (if VBA found)
+        # Step 3: Translate VBA to Python-UNO (if VBA found). LLM-only — when no
+        # ANTHROPIC_API_KEY is configured, translation is skipped (no macros
+        # embedded) rather than producing a degraded rule-based result.
         python_modules = {}
-        if vba_modules:
-            # Check if LLM is available
-            has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-
-            if use_agent and has_api_key:
-                # Step 3a: Detect complexity (always do this when agent mode enabled)
+        if vba_modules and not os.environ.get("ANTHROPIC_API_KEY"):
+            msg = (
+                "ANTHROPIC_API_KEY not set - skipping VBA translation; macros will not be embedded"
+            )
+            logger.warning(msg)
+            report.warnings.append(msg)
+        elif vba_modules:
+            complexity = None
+            if use_agent:
+                # Step 3a: Detect complexity to choose the translation approach.
                 logger.info("Step 3a: Detecting VBA complexity...")
                 _emit_progress(progress_callback, "translating", "Analyzing VBA complexity")
                 try:
@@ -272,109 +370,72 @@ def convert(
                         f"Detected complexity: {complexity.complexity_level} "
                         f"(confidence: {complexity.confidence:.0%})"
                     )
-
-                    # Add to report
                     report.warnings.append(
                         f"VBA complexity: {complexity.complexity_level} "
                         f"({complexity.confidence:.0%} confidence)"
                     )
-
                 except Exception as e:
                     msg = f"Complexity detection failed: {e}"
                     logger.warning(msg)
                     report.warnings.append(msg)
-                    # Default to simple if detection fails
                     complexity = None
 
-                # Step 3b: Choose translation approach based on complexity
-                if complexity and complexity.complexity_level in ["game", "advanced"]:
-                    # Use multi-agent system for complex VBA
-                    logger.info(
-                        f"Step 3b: Using agent rewriting for {complexity.complexity_level} VBA..."
+            if use_agent and complexity and complexity.complexity_level in ["game", "advanced"]:
+                # Step 3b: Use the multi-agent system for complex VBA.
+                logger.info(
+                    f"Step 3b: Using agent rewriting for {complexity.complexity_level} VBA..."
+                )
+                _emit_progress(
+                    progress_callback, "translating", "Translating VBA with agent rewriting"
+                )
+
+                try:
+                    from xlsliberator.agent_rewriter import AgentRewriter
+
+                    agent = AgentRewriter()
+                    generated_code, validation = agent.rewrite_vba_project(
+                        modules=vba_modules,
+                        source_file=str(input_path),
+                        output_path=output_path,
+                        max_iterations=5,
                     )
 
-                    _emit_progress(
-                        progress_callback, "translating", "Translating VBA with agent rewriting"
+                    # Use generated modules
+                    python_modules = generated_code.modules
+
+                    # Store architecture for self-healing (if available)
+                    agent_architecture = generated_code.architecture
+
+                    # Add validation info to report
+                    if not validation.syntax_valid:
+                        for error in validation.errors:
+                            report.errors.append(f"Agent validation: {error}")
+                    for warning in validation.warnings:
+                        report.warnings.append(f"Agent validation: {warning}")
+
+                    logger.success(
+                        f"Agent rewriting complete: {len(python_modules)} modules "
+                        f"({validation.iterations_used} iteration(s))"
                     )
 
-                    try:
-                        from xlsliberator.agent_rewriter import AgentRewriter
-
-                        agent = AgentRewriter()
-                        generated_code, validation = agent.rewrite_vba_project(
-                            modules=vba_modules,
-                            source_file=str(input_path),
-                            output_path=output_path,
-                            max_iterations=5,
-                        )
-
-                        # Use generated modules
-                        python_modules = generated_code.modules
-
-                        # Store architecture for self-healing (if available)
-                        agent_architecture = generated_code.architecture
-
-                        # Add validation info to report
-                        if not validation.syntax_valid:
-                            for error in validation.errors:
-                                report.errors.append(f"Agent validation: {error}")
-                        for warning in validation.warnings:
-                            report.warnings.append(f"Agent validation: {warning}")
-
-                        logger.success(
-                            f"Agent rewriting complete: {len(python_modules)} modules "
-                            f"({validation.iterations_used} iteration(s))"
-                        )
-
-                    except Exception as e:
-                        msg = f"Agent-based rewriting failed: {e}"
-                        logger.warning(msg)
-                        report.warnings.append(msg)
-                        if strict:
-                            raise ConversionError(msg) from e
-                else:
-                    # Use simple LLM translation for simple VBA
-                    logger.info("Step 3b: Using simple translation for basic VBA...")
-                    _emit_progress(progress_callback, "translating", "Translating VBA modules")
-
-                    try:
-                        for vba_module in vba_modules:
-                            module_name = f"{vba_module.name}.py"
-                            result = translate_vba_to_python(vba_module.source_code, use_llm=True)
-
-                            if result.python_code:
-                                python_modules[module_name] = result.python_code
-                                logger.debug(f"Translated: {module_name}")
-
-                            for warning in result.warnings:
-                                report.warnings.append(f"VBA translation: {warning}")
-
-                        logger.success(f"Translated {len(python_modules)} Python modules")
-
-                    except Exception as e:
-                        msg = f"VBA translation failed: {e}"
-                        logger.warning(msg)
-                        report.warnings.append(msg)
+                except Exception as e:
+                    msg = f"Agent-based rewriting failed: {e}"
+                    logger.warning(msg)
+                    report.warnings.append(msg)
+                    if strict:
+                        raise ConversionError(msg) from e
             else:
-                # No agent mode or no API key - use simple translation
-                if use_agent and not has_api_key:
-                    logger.warning(
-                        "ANTHROPIC_API_KEY not set - using simple translation instead of agent mode"
-                    )
-
-                logger.info("Step 3: Translating VBA to Python-UNO...")
+                # Step 3b: Use simple LLM translation.
+                logger.info("Step 3b: Translating VBA modules...")
                 _emit_progress(progress_callback, "translating", "Translating VBA modules")
-
-                use_llm = has_api_key
-                if not use_llm:
-                    logger.warning(
-                        "No ANTHROPIC_API_KEY set - VBA translation will use rule-based fallback"
-                    )
 
                 try:
                     for vba_module in vba_modules:
                         module_name = f"{vba_module.name}.py"
-                        result = translate_vba_to_python(vba_module.source_code, use_llm=use_llm)
+                        result = translate_vba_to_python(
+                            vba_module.source_code,
+                            module_name=vba_module.name,
+                        )
 
                         if result.python_code:
                             python_modules[module_name] = result.python_code
@@ -395,8 +456,10 @@ def convert(
             logger.info("Step 4: Embedding Python macros into ODS...")
             _emit_progress(progress_callback, "embedding", "Embedding translated Python macros")
             try:
-                embed_python_macros(output_path, python_modules)
+                unresolved_bindings = embed_python_macros(output_path, python_modules)
                 logger.success(f"Embedded {len(python_modules)} Python modules")
+                for binding in unresolved_bindings:
+                    report.warnings.append(f"Event binding not rewritten: {binding.source_handler}")
             except Exception as e:
                 msg = f"Macro embedding failed: {e}"
                 logger.warning(msg)

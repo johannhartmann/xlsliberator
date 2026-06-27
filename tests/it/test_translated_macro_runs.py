@@ -1,5 +1,6 @@
 """Integration tests for translated VBA macros (Phase F8 - Gate G8)."""
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,13 @@ from xlsliberator.ir_models import CellIR, CellType, SheetIR, WorkbookIR
 from xlsliberator.uno_conn import UnoCtx, get_cell, get_sheet, open_calc
 from xlsliberator.vba2py_uno import create_event_handler_stub, translate_vba_to_python
 from xlsliberator.write_ods import write_ods_from_ir
+
+# Translation through translate_vba_to_python/create_event_handler_stub defaults to
+# the LLM; skip cleanly unless live LLM access is explicitly requested.
+requires_api_key = pytest.mark.skipif(
+    os.environ.get("XLSLIBERATOR_RUN_LLM_TESTS") != "1" or not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="Live LLM tests require XLSLIBERATOR_RUN_LLM_TESTS=1 and ANTHROPIC_API_KEY",
+)
 
 
 @pytest.fixture
@@ -33,6 +41,7 @@ End Sub
 """
 
 
+@requires_api_key
 def test_translate_simple_vba() -> None:
     """Test translating simple VBA code."""
     result = translate_vba_to_python(VBA_SIMPLE_MARKER)
@@ -45,6 +54,7 @@ def test_translate_simple_vba() -> None:
     assert "getCellRangeByName" in result.python_code or "sheet" in result.python_code
 
 
+@requires_api_key
 def test_translate_cells_api() -> None:
     """Test translating Cells() API."""
     result = translate_vba_to_python(VBA_WITH_CELLS)
@@ -54,6 +64,7 @@ def test_translate_cells_api() -> None:
     assert "getCellByPosition" in result.python_code or "Cells" in result.python_code
 
 
+@requires_api_key
 def test_create_event_handler() -> None:
     """Test creating event handler from VBA."""
     vba_code = """
@@ -74,6 +85,7 @@ End Sub
     assert "getCellRangeByName" in handler or "setString" in handler
 
 
+@requires_api_key
 @pytest.mark.integration
 def test_translated_macro_structure(skip_if_no_lo: None) -> None:
     """Test that translated macro has correct structure (Gate G8 - structure test).
@@ -102,6 +114,7 @@ End Sub
         pytest.fail(f"Translated code has syntax errors: {e}")
 
 
+@requires_api_key
 @pytest.mark.integration
 def test_embed_translated_handler(skip_if_no_lo: None) -> None:
     """Test embedding translated VBA handler (Gate G8 - embedding test)."""
@@ -148,6 +161,7 @@ End Sub
 
 
 # Gate G8 Validation Test
+@requires_api_key
 @pytest.mark.integration
 def test_gate_g8_translation_pipeline(skip_if_no_lo: None) -> None:
     """Gate G8: Verify translated macro pipeline works end-to-end.

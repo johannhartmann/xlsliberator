@@ -239,39 +239,40 @@ def fix_indirect_address_formulas(
     # Step 3: Repair formulas using AST transformation (deterministic, no LLM)
     logger.info("Applying AST-based INDIRECT/ADDRESS → OFFSET transformation...")
 
-    from xlsliberator.formula_ast_transformer import FormulaASTTransformer, FormulaTransformError
+    from xlsliberator.formula_rules import FormulaRuleRegistry
 
-    transformer = FormulaASTTransformer(sheet_mapping=sheet_name_mapping)
-
+    registry = FormulaRuleRegistry.with_default_rules(sheet_mapping=sheet_name_mapping)
     # Keep document open for applying fixes
     with UnoCtx() as ctx:
         doc = ctx.desktop.loadComponentFromURL(f"file://{ods_path.absolute()}", "_blank", 0, ())
         sheets = doc.getSheets()
 
         for sheet_name, cell_addr, ods_formula in formulas_to_fix:
-            try:
-                # Apply AST transformation
-                fixed_formula = transformer.transform_indirect_address_to_offset(ods_formula)
-
-                # Get UNO sheet and cell
-                sheet = sheets.getByName(sheet_name)
-                cell = sheet.getCellRangeByName(cell_addr)
-
-                # Set the fixed formula
-                cell.setFormula(fixed_formula)
-                stats["formulas_fixed"] += 1
-
-                if stats["formulas_fixed"] <= 5:
-                    logger.debug(
-                        f"Fixed {sheet_name}!{cell_addr}:\n"
-                        f"  FROM: {ods_formula[:80]}...\n"
-                        f"  TO:   {fixed_formula[:80]}..."
-                    )
-
-            except FormulaTransformError as e:
+            # A formula-transformation failure is an expected, per-formula soft
+            # failure: leave the original formula in place and continue.
+            repair_result = registry.apply_first(ods_formula)
+            if repair_result is None or not repair_result.success:
                 stats["formulas_failed"] += 1
-                logger.warning(f"Failed to transform {sheet_name}!{cell_addr}: {e}")
-                # Leave original formula unchanged
+                error = repair_result.error if repair_result else "No matching formula rule"
+                logger.warning(f"Failed to transform {sheet_name}!{cell_addr}: {error}")
+                continue
+            fixed_formula = repair_result.after
+
+            # UNO application failures (unknown sheet, invalid cell address,
+            # setFormula errors) indicate a structural mapping bug. Let them
+            # propagate so the conversion surfaces the failure instead of
+            # silently saving an unrepaired formula.
+            sheet = sheets.getByName(sheet_name)
+            cell = sheet.getCellRangeByName(cell_addr)
+            cell.setFormula(fixed_formula)
+            stats["formulas_fixed"] += 1
+
+            if stats["formulas_fixed"] <= 5:
+                logger.debug(
+                    f"Fixed {sheet_name}!{cell_addr}:\n"
+                    f"  FROM: {ods_formula[:80]}...\n"
+                    f"  TO:   {fixed_formula[:80]}..."
+                )
 
         # Recalculate and save
         logger.info("Recalculating formulas...")

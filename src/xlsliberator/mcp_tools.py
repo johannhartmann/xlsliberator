@@ -31,6 +31,7 @@ def _worker_tool_response(payload: dict[str, Any]) -> dict[str, Any]:
         "worker_error": response.error.to_dict() if response.error else None,
     }
 
+
 # ==============================================================================
 # Document Operations
 # ==============================================================================
@@ -86,6 +87,97 @@ async def convert_excel_to_ods(
             "success": False,
             "error": str(e),
         }
+
+
+async def inspect_workbook(excel_path: str) -> dict[str, Any]:
+    """Inspect source workbook parse inventory."""
+    try:
+        logger.info(f"MCP: Inspecting workbook {excel_path}")
+        from xlsliberator.inspect_workbook import (
+            inspect_workbook as inspect_workbook_api,
+        )
+        from xlsliberator.inspect_workbook import (
+            inventory_to_dict,
+        )
+
+        inventory = inspect_workbook_api(Path(excel_path))
+        return {
+            "success": True,
+            "inventory": inventory_to_dict(inventory),
+        }
+    except Exception as e:
+        logger.error(f"MCP: Inspect workbook failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+async def validate_transformation(
+    excel_path: str,
+    ods_path: str | None = None,
+    target: str = "both",
+) -> dict[str, Any]:
+    """Run validation gates for a workbook transformation."""
+    try:
+        logger.info(f"MCP: Validating transformation {excel_path} -> {ods_path}")
+        from xlsliberator.validation_runner import (
+            ValidationPlan,
+            ValidationRunner,
+            parse_target_kind,
+        )
+
+        report = ValidationRunner(
+            ValidationPlan(
+                input_path=Path(excel_path),
+                output_path=Path(ods_path) if ods_path else None,
+                target_kinds=parse_target_kind(target),
+            )
+        ).run_all()
+        return {
+            "success": True,
+            "certification": report.certification.model_dump(mode="json"),
+        }
+    except Exception as e:
+        logger.error(f"MCP: Validate transformation failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
+
+async def list_controls(ods_path: str) -> dict[str, Any]:
+    """List discovered ODS form controls."""
+    try:
+        from xlsliberator.control_inventory import extract_controls_from_ods
+
+        controls = extract_controls_from_ods(Path(ods_path))
+        return {
+            "success": True,
+            "controls": [control.model_dump(mode="json") for control in controls],
+            "count": len(controls),
+        }
+    except Exception as e:
+        logger.error(f"MCP: List controls failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+async def list_event_bindings(ods_path: str) -> dict[str, Any]:
+    """List discovered ODS event bindings."""
+    try:
+        from xlsliberator.control_inventory import extract_event_bindings_from_ods
+
+        event_bindings = extract_event_bindings_from_ods(Path(ods_path))
+        return {
+            "success": True,
+            "event_bindings": [
+                event_binding.model_dump(mode="json") for event_binding in event_bindings
+            ],
+            "count": len(event_bindings),
+        }
+    except Exception as e:
+        logger.error(f"MCP: List event bindings failed: {e}")
+        return {"success": False, "error": str(e)}
 
 
 async def recalculate_document(ods_path: str) -> dict[str, Any]:
@@ -416,6 +508,7 @@ async def list_embedded_macros(ods_path: str) -> dict[str, Any]:
                     "file_path": info.file_path,
                     "functions": info.functions,
                     "script_uris": info.script_uris,
+                    "source_map_markers": info.source_map_markers or [],
                 }
             )
             total_functions += len(info.functions)

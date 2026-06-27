@@ -210,9 +210,9 @@ def test_agent_rewriter_runtime_validation_integration(skip_if_no_lo: None) -> N
             )
 
             # Verify validation result includes runtime execution status
-            assert hasattr(
-                validation, "execution_successful"
-            ), "Validation should include execution_successful field"
+            assert hasattr(validation, "execution_successful"), (
+                "Validation should include execution_successful field"
+            )
 
             # Note: We can't assert execution_successful == True here because:
             # 1. The agent might classify this as "simple" and skip agent rewriting

@@ -1,0 +1,79 @@
+"""Tests for safe macro security defaults in conversion."""
+
+from pathlib import Path
+from typing import Any
+
+from xlsliberator import api
+from xlsliberator.ir_models import ExtractionStats, WorkbookIR
+
+
+class _DummyCtx:
+    def __enter__(self) -> "_DummyCtx":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
+
+
+def _patch_minimal_convert(monkeypatch: Any, output_path: Path) -> None:
+    monkeypatch.setattr(
+        api, "convert_native", lambda _input, _output: output_path.write_text("ods")
+    )
+    monkeypatch.setattr(
+        api,
+        "extract_workbook",
+        lambda path: (WorkbookIR(file_path=str(path), file_format="xlsx"), ExtractionStats()),
+    )
+
+
+def test_convert_default_does_not_set_global_macro_security(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Default conversion must not mutate global macro security."""
+    input_path = tmp_path / "input.xlsx"
+    output_path = tmp_path / "output.ods"
+    input_path.write_text("placeholder")
+    calls: list[int] = []
+
+    _patch_minimal_convert(monkeypatch, output_path)
+    import xlsliberator.uno_conn as uno_conn
+
+    monkeypatch.setattr(uno_conn, "UnoCtx", _DummyCtx)
+    monkeypatch.setattr(
+        uno_conn, "set_macro_security_level", lambda _ctx, level: calls.append(level)
+    )
+
+    report = api.convert(input_path, output_path, embed_macros=False)
+
+    assert report.success
+    assert calls == []
+
+
+def test_convert_explicit_opt_in_can_set_global_macro_security(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Legacy global macro security mutation is allowed only by explicit opt-in."""
+    input_path = tmp_path / "input.xlsx"
+    output_path = tmp_path / "output.ods"
+    input_path.write_text("placeholder")
+    calls: list[int] = []
+
+    _patch_minimal_convert(monkeypatch, output_path)
+    import xlsliberator.uno_conn as uno_conn
+
+    monkeypatch.setattr(uno_conn, "UnoCtx", _DummyCtx)
+    monkeypatch.setattr(
+        uno_conn, "set_macro_security_level", lambda _ctx, level: calls.append(level)
+    )
+
+    report = api.convert(
+        input_path,
+        output_path,
+        embed_macros=False,
+        allow_global_macro_security_change=True,
+    )
+
+    assert report.success
+    assert calls == [0]

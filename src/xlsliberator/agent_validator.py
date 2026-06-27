@@ -56,6 +56,38 @@ async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
 
         logger.info(f"Agent validation: {ods_path}")
 
+        # Step 0: Deterministic ODS control/event inventory
+        known_button_names: set[str] = set()
+        try:
+            from xlsliberator.control_inventory import (
+                extract_controls_from_ods,
+                extract_event_bindings_from_ods,
+            )
+
+            controls = extract_controls_from_ods(ods_path)
+            event_bindings = extract_event_bindings_from_ods(ods_path)
+            button_controls = [
+                control for control in controls if "button" in control.control_type.lower()
+            ]
+            known_button_names = {control.name for control in button_controls} | {
+                control.id for control in button_controls
+            }
+            result.buttons_found = len(button_controls)
+            result.buttons_with_handlers = len(
+                {
+                    binding.control_id
+                    for binding in event_bindings
+                    if binding.control_id and binding.target_script_uri
+                }
+            )
+            result.forms_found = len({control.sheet for control in controls if control.sheet})
+            logger.debug(
+                f"Agent: discovered {len(controls)} controls and "
+                f"{len(event_bindings)} event bindings"
+            )
+        except Exception as e:
+            result.warnings.append(f"Control inventory error: {e}")
+
         # Step 1: Validate macros
         try:
             macros_result = await validate_macros(str(ods_path))
@@ -75,13 +107,16 @@ async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
                 result.functions_found = macros_list["total_functions"]
                 logger.debug(f"Agent: Found {result.functions_found} functions")
 
-                # Check for button click handlers
+                # Check for button click handlers. This name heuristic only
+                # supplements the deterministic inventory count from Step 0 — it
+                # must not clobber handlers wired to functions whose names lack
+                # "Click"/"button" (e.g. StartGame, onPress).
                 button_handlers = 0
                 for script in macros_list["scripts"]:
                     for func in script["functions"]:
                         if "Click" in func or "click" in func or "button" in func.lower():
                             button_handlers += 1
-                result.buttons_with_handlers = button_handlers
+                result.buttons_with_handlers = max(result.buttons_with_handlers, button_handlers)
             else:
                 result.warnings.append(f"Function enumeration failed: {macros_list.get('error')}")
         except Exception as e:
@@ -124,36 +159,46 @@ async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
                 "ResetButton",
                 "Reset",
             ]
-            buttons_found = 0
-            buttons_with_handlers = 0
+            # Only count buttons the deterministic inventory did not already
+            # find, so a button present in both the inventory and this hardcoded
+            # name probe is not counted twice.
+            extra_buttons = 0
+            extra_handlers = 0
 
             for button_name in button_names:
+                if button_name in known_button_names:
+                    continue
                 try:
                     button_result = await click_form_button(str(ods_path), button_name)
                     if button_result.get("script_uri"):
-                        buttons_found += 1
-                        buttons_with_handlers += 1
+                        extra_buttons += 1
+                        extra_handlers += 1
                         logger.debug(f"Agent: Button '{button_name}' has event handler")
                     elif "not found" not in button_result.get("error", "").lower():
                         # Button exists but no handler
-                        buttons_found += 1
+                        extra_buttons += 1
                 except Exception:
                     pass
 
-            result.buttons_found = buttons_found
-            if buttons_found > 0:
+            result.buttons_found += extra_buttons
+            result.buttons_with_handlers += extra_handlers
+            if result.buttons_found > 0:
                 logger.debug(
-                    f"Agent: {buttons_with_handlers}/{buttons_found} buttons have handlers"
+                    f"Agent: {result.buttons_with_handlers}/{result.buttons_found} "
+                    "buttons have handlers"
                 )
         except Exception as e:
             result.warnings.append(f"Button detection error: {e}")
 
-        # Success criteria
+        # Success criteria. When macros were actually embedded they must all be
+        # syntactically valid; a workbook with no embedded macros is still fine
+        # (cross-checking against the source's VBA is the macro gate's job).
+        macros_ok = result.macros_validated == 0 or result.macros_valid == result.macros_validated
         result.success = (
-            result.macros_valid > 0  # At least some valid macros
-            and result.functions_found > 0  # Functions exist
-            and result.cells_readable > 0  # Document is readable
+            result.cells_readable > 0  # Document is readable
             and len(result.errors) == 0  # No critical errors
+            and macros_ok  # Embedded macros (if any) are all valid
+            and (result.buttons_found == 0 or result.buttons_with_handlers >= result.buttons_found)
         )
 
         if result.success:

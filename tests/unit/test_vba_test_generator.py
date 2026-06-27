@@ -7,16 +7,36 @@ import pytest
 from xlsliberator.vba_reference_analyzer import VBAReferences
 from xlsliberator.vba_test_generator import ValidationTest, VBATestGenerator
 
-# Skip tests requiring Anthropic API if key not set
+# Skip tests requiring live LLM access unless explicitly requested.
 requires_api_key = pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY not set"
+    os.environ.get("XLSLIBERATOR_RUN_LLM_TESTS") != "1" or not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="Live LLM tests require XLSLIBERATOR_RUN_LLM_TESTS=1 and ANTHROPIC_API_KEY",
 )
 
 
+class _DummyMessages:
+    def create(self, *_args: object, **_kwargs: object) -> object:
+        raise AssertionError("Live LLM calls are disabled in unit tests")
+
+
+class _DummyAnthropic:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.messages = _DummyMessages()
+
+    def close(self) -> None:
+        pass
+
+
 @pytest.fixture
-def generator() -> VBATestGenerator:
+def generator(monkeypatch: pytest.MonkeyPatch) -> VBATestGenerator:
     """Create test generator instance."""
-    return VBATestGenerator()
+    if os.environ.get("XLSLIBERATOR_RUN_LLM_TESTS") != "1":
+        monkeypatch.setattr("xlsliberator.vba_test_generator.Anthropic", _DummyAnthropic)
+    test_generator = VBATestGenerator()
+    yield test_generator
+    close = getattr(test_generator.client, "close", None)
+    if callable(close):
+        close()
 
 
 @pytest.fixture

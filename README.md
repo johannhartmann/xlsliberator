@@ -15,11 +15,12 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 - **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts with 4-phase quality pipeline
 - **Translation Quality Assurance**: Reference-aware translation, syntax validation, reflection loop, and automated test generation
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
-- **Automatic Macro Enabling**: Automatically configures LibreOffice to allow Python macros to run without security warnings
+- **Safe-by-Default Macros**: Embeds and validates Python macros in isolated LibreOffice profiles without changing your global macro security settings
+- **Validated Transformation**: Optional certification pipeline that evaluates the output in LibreOffice/Apache OpenOffice and emits JSON + Markdown reports
 - **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
 - **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
 - **High Performance**: Processes 27k+ cells in under 5 minutes
-- **🆕 MCP Server**: FastMCP 2.0 server for Claude Agent SDK integration with 8 tools
+- **🆕 MCP Server**: FastMCP 2.0 server for Claude Agent SDK integration with 19 tools
 
 ## Prerequisites
 
@@ -96,15 +97,22 @@ pip install -e ".[dev]"
 ### Command Line
 
 ```bash
-# Basic conversion
+# Basic conversion (VBA macros are translated and embedded automatically when present)
 xlsliberator convert input.xlsx output.ods
 
-# With VBA macro translation
+# VBA translation requires an Anthropic API key
 export ANTHROPIC_API_KEY="your-api-key"
-xlsliberator convert --translate-vba input.xlsm output.ods
+xlsliberator convert input.xlsm output.ods
 
-# Batch conversion
-xlsliberator batch input_folder/ output_folder/
+# Skip VBA macro translation
+xlsliberator convert --no-macros input.xlsm output.ods
+
+# Convert and run validation gates, producing a certification report
+xlsliberator transform-validated input.xlsm output.ods
+
+# Inspect a workbook, or validate an existing conversion, without converting
+xlsliberator inspect input.xlsm
+xlsliberator validate input.xlsm output.ods
 ```
 
 ### MCP Server (Claude Agent SDK)
@@ -142,13 +150,16 @@ for await (const message of query({
 
 **Available Tools:**
 - `convert_excel_to_ods` - Convert Excel to ODS with macro translation
+- `inspect_workbook` - Return parsed workbook inventory and unsupported artifacts
+- `validate_transformation` - Run validation gates and return certification data
 - `compare_formulas` - Test formula equivalence
 - `read_cell`, `list_sheets`, `get_sheet_data` - Read spreadsheet data
+- `list_controls`, `list_event_bindings` - Inspect ODS form controls and event bindings
 - `embed_macros`, `validate_macros`, `list_embedded_macros`, `test_macro_execution` - Manage and test Python-UNO macros
 - `recalculate_document` - Force recalculation of all formulas
+- `open_document_gui`, `click_form_button`, `send_keyboard_input`, `get_cell_colors`, `take_screenshot` - Drive GUI validation
 
-📚 See [Claude Agent SDK Integration Guide](docs/claude_agent_sdk_integration.md) for complete examples
-
+All tools are registered in `src/xlsliberator/mcp_server.py`.
 
 ### Browser Web App
 
@@ -179,46 +190,60 @@ See the [User Guide](user_guide.md) for the full workflow and the
 ### Python API
 
 ```python
-from xlsliberator import convert_excel_to_ods
+from xlsliberator.api import convert
 
 # Simple conversion
-result = convert_excel_to_ods("input.xlsx", "output.ods")
+result = convert("input.xlsx", "output.ods")
 
 # With options
-result = convert_excel_to_ods(
+result = convert(
     "input.xlsm",
     "output.ods",
-    translate_vba=True,
-    embed_macros=True,
-    repair_formulas=True
+    embed_macros=True,   # translate and embed VBA macros (default)
+    use_agent=True,      # multi-agent rewriting for complex VBA (default)
 )
 
 print(f"Conversion completed: {result.success}")
-print(f"Formulas translated: {result.formula_count}")
-print(f"VBA macros converted: {result.macro_count}")
+print(f"Total formulas: {result.total_formulas}")
+print(f"VBA procedures: {result.vba_procedures}")
+```
+
+For the validated transformation pipeline (convert + certify against real office runtimes):
+
+```python
+from xlsliberator.validated_api import transform_validated
+
+report = transform_validated("input.xlsm", "output.ods", targets=["both"])
+print(f"Certified: {report.certification.certified}")
+print(report.to_markdown())
 ```
 
 ## Python Macro Support
 
-XLSLiberator automatically enables Python macros in converted ODS files. When converting Excel files with VBA:
+When converting Excel files with VBA, XLSLiberator:
 
-1. **VBA Translation**: VBA macros are translated to Python-UNO equivalents
-2. **Event Handler Rewriting**: VBA event handlers are automatically updated to point to Python functions
-3. **Macro Security Configuration**: LibreOffice macro security is set to "Low" to allow Python macros to run without warnings
-
-This happens automatically during conversion - no manual configuration needed! The macro security setting persists across LibreOffice sessions.
+1. **VBA Translation**: Translates VBA macros to Python-UNO equivalents
+2. **Event Handler Rewriting**: Rewrites VBA event handlers to point to the generated Python functions
 
 ### How It Works
 
 During conversion, XLSLiberator:
 - Embeds Python-UNO macros into the ODS file's `Scripts/python/` directory
 - Rewrites event handlers in `content.xml` from `language=Basic` to `language=Python`
-- Sets LibreOffice's global macro security level to Low (value: 0)
-- Opens documents with `MacroExecutionMode=4` (ALWAYS_EXECUTE_NO_WARN)
+- Loads documents in-process with `MacroExecutionMode=4` (ALWAYS_EXECUTE_NO_WARN) so embedded macros run during conversion and validation
+- Runs runtime macro validation inside isolated, temporary LibreOffice profiles
 
-### Manual Configuration (Optional)
+**Your global LibreOffice macro security is not modified by default.** To actually run the embedded
+macros after opening the converted file in your own LibreOffice, configure macro security yourself (see
+below). The legacy behavior that lowers the *global* macro security level is opt-in only:
 
-If you prefer to manually control macro security:
+```python
+from xlsliberator.api import convert
+
+convert("input.xlsm", "output.ods", allow_global_macro_security_change=True)
+```
+
+### Configuring macro security in your LibreOffice
 
 **Option 1: GUI Configuration**
 - Open LibreOffice Calc
@@ -228,20 +253,6 @@ If you prefer to manually control macro security:
 **Option 2: Trusted File Locations**
 - Navigate to: `Tools → Options → LibreOffice → Security → Macro Security → Trusted Sources → Trusted File Locations`
 - Add the directory containing your converted ODS files
-
-**Option 3: Using the Utility Script**
-```bash
-# Set macro security to Low
-python tools/set_macro_security.py --level low
-
-# Set to Medium (prompt for approval)
-python tools/set_macro_security.py --level medium
-
-# Set to High (only signed macros)
-python tools/set_macro_security.py --level high
-```
-
-Note: The utility script requires the tools directory to be present in a development installation.
 
 ## Architecture
 
@@ -256,7 +267,7 @@ XLSLiberator uses a hybrid approach:
    - Phase 4: Runtime execution testing (UNO script execution validation)
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
 5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
-6. **Macro Security Configuration**: Automatically enables Python macros by setting LibreOffice security to Low
+6. **Isolated Runtime Validation**: Validates embedded macros in temporary LibreOffice profiles, leaving global macro security untouched
 7. **Formula Repair**: Deterministic AST transformations fix incompatibilities
 
 ## Development
@@ -285,26 +296,43 @@ make test     # Run test suite
 
 ```
 xlsliberator/
-├── src/xlsliberator/         # Main source code
-│   ├── api.py                # High-level API
-│   ├── cli.py                # Command-line interface
-│   ├── extract_vba.py        # VBA extraction
-│   ├── vba2py_uno.py         # VBA→Python translation
-│   ├── llm_vba_translator.py # LLM-based VBA translator
+├── src/xlsliberator/                # Main source code
+│   ├── api.py                       # Hybrid conversion pipeline (convert)
+│   ├── validated_api.py             # Validated transformation (transform_validated)
+│   ├── cli.py                       # Command-line interface
+│   ├── config.py                    # Environment-driven configuration
+│   ├── extract_excel.py             # Workbook metadata/IR extraction
+│   ├── extract_vba.py               # VBA extraction (oletools)
+│   ├── vba2py_uno.py                # VBA→Python-UNO translation entry point
+│   ├── llm_vba_translator.py        # LLM-based VBA translator
 │   ├── vba_reference_analyzer.py    # Phase 1: Reference-aware analysis
 │   ├── python_syntax_validator.py   # Phase 2: Syntax validation
 │   ├── vba_translation_validator.py # Phase 3: Quality evaluation
 │   ├── vba_test_generator.py        # Phase 4: Test generation
-│   ├── embed_macros.py       # Macro embedding
-│   ├── formula_ast_transformer.py  # Formula repair
-│   ├── fix_native_ods.py     # Post-conversion fixes
-│   └── uno_conn.py           # LibreOffice UNO connection
-├── tests/                    # Test suite
-│   ├── unit/                 # Unit tests
-│   ├── it/                   # Integration tests
-│   └── data/                 # Test fixtures
-├── rules/                    # Formula transformation rules
-└── docs/                     # Documentation
+│   ├── agent_rewriter.py            # Multi-agent rewriting for complex VBA
+│   ├── embed_macros.py              # Macro embedding + event binding
+│   ├── python_macro_manager.py      # Scripts/python/ management & validation
+│   ├── runtime/                     # Excel-compatibility runtime for translated macros
+│   ├── formula_ast_transformer.py   # Formula AST transforms
+│   ├── formula_engine.py            # Formula checks & rule registry
+│   ├── fix_native_ods.py            # Post-conversion ODS fixes
+│   ├── validation_runner.py         # Validation gate orchestration
+│   ├── certification_report.py      # Certification report writer
+│   ├── calc_backend.py              # Office backend discovery & isolated profiles
+│   ├── control_inventory.py         # ODS form/control/event inventory
+│   ├── uno_conn.py                  # In-process LibreOffice UNO connection
+│   ├── lo_worker.py                 # Out-of-process UNO worker (stdlib-only)
+│   ├── lo_worker_client.py          # Client for the UNO worker
+│   ├── mcp_server.py / mcp_tools.py # FastMCP server and tools
+│   └── web/                         # FastAPI web app
+├── tests/                           # Test suite
+│   ├── unit/                        # Unit tests
+│   ├── it/                          # LibreOffice/UNO integration tests
+│   ├── real/                        # Real-workbook fixtures
+│   ├── bench/                       # Performance benchmarks
+│   └── integration/                 # Docker web-app tests
+├── rules/                           # Formula/event mapping rules (YAML)
+└── docs/                            # Documentation
 ```
 
 ## Testing
@@ -314,9 +342,10 @@ xlsliberator/
 pytest
 
 # Run specific test categories
-pytest -m unit           # Unit tests only
-pytest -m integration    # Integration tests (requires LibreOffice)
-pytest -m benchmark      # Performance benchmarks
+pytest -m "not integration"   # Unit tests only (no LibreOffice required)
+pytest -m integration         # Integration tests (requires LibreOffice)
+pytest -m benchmark           # Performance benchmarks
+LO_SKIP_IT=1 pytest           # Force-disable LibreOffice integration tests
 
 # Run with coverage
 pytest --cov=xlsliberator --cov-report=html

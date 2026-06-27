@@ -169,6 +169,7 @@ REMAINING_ISSUES.md
 docs/
 !docs/
 docs/*
+!docs/validated_transformation_roadmap.md
 !docs/web_app.md
 !docs/production_hardening.md
 

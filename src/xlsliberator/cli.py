@@ -1,5 +1,6 @@
 """CLI interface for xlsliberator (Phase F12)."""
 
+import json
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -88,6 +89,134 @@ def convert_cmd(
         sys.exit(1)
 
 
+@cli.command(name="inspect")
+@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
+@click.option("--output", type=click.Path(path_type=Path), help="Write inventory JSON to file")
+def inspect_cmd(input_file: Path, json_output: bool, output: Path | None) -> None:
+    """Inspect workbook parse inventory."""
+    from xlsliberator.inspect_workbook import inspect_workbook, inventory_to_dict
+
+    try:
+        inventory = inspect_workbook(input_file)
+        inventory_dict = inventory_to_dict(inventory)
+        rendered = json.dumps(inventory_dict, indent=2)
+
+        if output:
+            output.write_text(rendered)
+
+        if json_output or not output:
+            click.echo(rendered)
+        else:
+            click.echo(f"Inventory saved to: {output}")
+
+        sys.exit(0)
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red")
+        sys.exit(1)
+
+
+@cli.command(name="validate")
+@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_ods", required=False, type=click.Path(path_type=Path))
+@click.option(
+    "--target",
+    type=click.Choice(["libreoffice", "openoffice", "both"]),
+    default="both",
+    help="Runtime target",
+)
+@click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
+@click.option(
+    "--non-strict", is_flag=True, help="Report errors without strict certification failure"
+)
+def validate_cmd(
+    input_file: Path,
+    output_ods: Path | None,
+    target: str,
+    json_output: bool,
+    non_strict: bool,
+) -> None:
+    """Validate workbook transformation gates."""
+    from xlsliberator.validation_runner import (
+        ValidationPlan,
+        ValidationRunner,
+        parse_target_kind,
+    )
+
+    try:
+        report = ValidationRunner(
+            ValidationPlan(
+                input_path=input_file,
+                output_path=output_ods,
+                target_kinds=parse_target_kind(target),
+                strict=not non_strict,
+            )
+        ).run_all()
+
+        if json_output:
+            click.echo(report.to_json())
+        else:
+            click.echo(report.to_markdown())
+
+        sys.exit(0 if report.certification.certified else 1)
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red")
+        sys.exit(1)
+
+
+@cli.command(name="transform-validated")
+@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("output_file", type=click.Path(path_type=Path))
+@click.option(
+    "--target",
+    multiple=True,
+    type=click.Choice(["libreoffice", "openoffice", "both"]),
+    default=["both"],
+    help="Runtime target; may be supplied multiple times",
+)
+@click.option("--strict/--non-strict", default=True, help="Fail on validation errors")
+@click.option(
+    "--max-repair-iterations", default=0, type=int, help="Deterministic repair iterations"
+)
+@click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
+@click.option("--no-agent", is_flag=True, help="Disable agent-based VBA rewriting")
+@click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
+def transform_validated_cmd(
+    input_file: Path,
+    output_file: Path,
+    target: tuple[str, ...],
+    strict: bool,
+    max_repair_iterations: int,
+    no_macros: bool,
+    no_agent: bool,
+    json_output: bool,
+) -> None:
+    """Convert a workbook and run validation gates."""
+    from xlsliberator.validated_api import (
+        ValidatedTransformationError,
+        transform_validated,
+    )
+
+    try:
+        report = transform_validated(
+            input_file,
+            output_file,
+            targets=list(target),
+            strict=strict,
+            max_repair_iterations=max_repair_iterations,
+            embed_macros=not no_macros,
+            use_agent=not no_agent,
+        )
+    except ValidatedTransformationError as e:
+        report = e.report
+    except Exception as e:
+        click.secho(f"Error: {e}", fg="red")
+        sys.exit(1)
+
+    click.echo(report.to_json() if json_output else report.to_markdown())
+    sys.exit(0 if report.certification.certified else 1)
+
+
 @cli.command(name="mcp-serve")
 @click.option("--host", default="0.0.0.0", help="Host address to bind to")  # nosec B104
 @click.option("--port", default=8000, help="Port number")
@@ -120,7 +249,6 @@ def mcp_serve_cmd(host: str, port: int) -> None:
     except Exception as e:
         click.secho(f"Error: {e}", fg="red")
         sys.exit(1)
-
 
 
 @cli.command(name="web-serve")
