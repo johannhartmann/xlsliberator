@@ -17,7 +17,19 @@ from xlsliberator.python_macro_manager import (
     validate_all_embedded_macros,
 )
 from xlsliberator.testing_lo import compare_excel_calc
-from xlsliberator.uno_conn import UnoCtx, get_cell, get_sheet, open_calc, recalc
+
+
+def _worker_tool_response(payload: dict[str, Any]) -> dict[str, Any]:
+    from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
+
+    response = LibreOfficeWorkerClient().request(payload)
+    if response.success:
+        return {"success": True, **response.data}
+    return {
+        "success": False,
+        "error": worker_unavailable_message(response),
+        "worker_error": response.error.to_dict() if response.error else None,
+    }
 
 # ==============================================================================
 # Document Operations
@@ -90,10 +102,11 @@ async def recalculate_document(ods_path: str) -> dict[str, Any]:
     """
     try:
         logger.info(f"MCP: Recalculating {ods_path}")
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-            recalc(ctx, doc)
-            doc.close(True)
+        result = _worker_tool_response(
+            {"op": "recalculate_document", "ods_path": ods_path, "timeout_seconds": 30}
+        )
+        if not result["success"]:
+            return result
 
         return {
             "success": True,
@@ -130,36 +143,15 @@ async def read_cell(ods_path: str, sheet_name: str, cell_address: str) -> dict[s
     """
     try:
         logger.debug(f"MCP: Reading {sheet_name}!{cell_address} from {ods_path}")
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-            sheet = get_sheet(ctx, doc, sheet_name)
-            cell = get_cell(ctx, sheet, cell_address)
-
-            cell_type = cell.getType().value
-            value = None
-            formula = None
-
-            if cell_type == "TEXT":
-                value = cell.getString()
-            elif cell_type in ("VALUE", "FORMULA"):
-                value = cell.getValue()
-                # Try to get string if value is 0
-                if value == 0.0:
-                    cell_str = cell.getString()
-                    if cell_str and cell_str.strip():
-                        value = cell_str
-
-            if cell_type == "FORMULA":
-                formula = cell.getFormula()
-
-            doc.close(True)
-
-        return {
-            "success": True,
-            "value": value,
-            "formula": formula,
-            "type": cell_type,
-        }
+        return _worker_tool_response(
+            {
+                "op": "read_cell",
+                "ods_path": ods_path,
+                "sheet_name": sheet_name,
+                "cell_address": cell_address,
+                "timeout_seconds": 30,
+            }
+        )
     except Exception as e:
         logger.error(f"MCP: Read cell failed: {e}")
         return {
@@ -183,17 +175,9 @@ async def list_sheets(ods_path: str) -> dict[str, Any]:
     """
     try:
         logger.debug(f"MCP: Listing sheets in {ods_path}")
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-            sheets = doc.getSheets()
-            sheet_names = [sheets.getByIndex(i).getName() for i in range(sheets.getCount())]
-            doc.close(True)
-
-        return {
-            "success": True,
-            "sheets": sheet_names,
-            "count": len(sheet_names),
-        }
+        return _worker_tool_response(
+            {"op": "list_sheets", "ods_path": ods_path, "timeout_seconds": 30}
+        )
     except Exception as e:
         logger.error(f"MCP: List sheets failed: {e}")
         return {
@@ -220,22 +204,15 @@ async def get_sheet_data(ods_path: str, sheet_name: str, range_address: str) -> 
     """
     try:
         logger.debug(f"MCP: Reading {sheet_name}!{range_address} from {ods_path}")
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-            sheet = get_sheet(ctx, doc, sheet_name)
-            cell_range = sheet.getCellRangeByName(range_address)
-            data = cell_range.getDataArray()
-            doc.close(True)
-
-        # Convert UNO tuples to lists for JSON serialization
-        data_list = [list(row) for row in data]
-
-        return {
-            "success": True,
-            "data": data_list,
-            "rows": len(data_list),
-            "cols": len(data_list[0]) if data_list else 0,
-        }
+        return _worker_tool_response(
+            {
+                "op": "get_sheet_data",
+                "ods_path": ods_path,
+                "sheet_name": sheet_name,
+                "range_address": range_address,
+                "timeout_seconds": 30,
+            }
+        )
     except Exception as e:
         logger.error(f"MCP: Get sheet data failed: {e}")
         return {
@@ -556,92 +533,23 @@ async def click_form_button(
     try:
         logger.info(f"MCP: Clicking button '{button_name}' in {ods_path}")
 
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-
-            # Get the forms container
-            sheets = doc.getSheets()
-            sheet = sheets.getByIndex(0)
-
-            # Access forms
-            forms = sheet.getDrawPage().getForms()
-
-            if forms.getCount() == 0:
-                doc.close(True)
-                return {
-                    "success": False,
-                    "error": "No forms found in document",
-                }
-
-            # Find button control and get its event listener
-            button_found = False
-            script_uri = None
-
-            for i in range(forms.getCount()):
-                form = forms.getByIndex(i)
-                for j in range(form.getCount()):
-                    control = form.getByIndex(j)
-                    if hasattr(control, "Name") and control.Name == button_name:
-                        button_found = True
-
-                        # Try to get script URI via multiple methods
-                        try:
-                            # Method 1: Check Events property
-                            if hasattr(control, "Events"):
-                                events = control.Events
-                                if events and events.hasByName("approveAction"):
-                                    event = events.getByName("approveAction")
-                                    for prop in event:
-                                        if prop.Name == "Script":
-                                            script_uri = prop.Value
-                                            break
-                        except Exception:
-                            pass
-
-                        # Method 2: Extract from content.xml directly
-                        if not script_uri:
-                            import re
-                            from zipfile import ZipFile
-
-                            with ZipFile(Path(ods_path), "r") as zipf:
-                                content = zipf.read("content.xml").decode("utf-8")
-                                # Find button event listener
-                                pattern = rf'form:name="{re.escape(button_name)}"[^>]*>.*?xlink:href="([^"]+)"'
-                                match = re.search(pattern, content, re.DOTALL)
-                                if match:
-                                    script_uri = match.group(1).replace("&amp;", "&")
-                                    logger.debug(
-                                        f"Button event script URI (from XML): {script_uri}"
-                                    )
-
-                        break
-                if button_found:
-                    break
-
-            doc.close(True)
-
-            if not button_found:
-                return {
-                    "success": False,
-                    "error": f"Button '{button_name}' not found",
-                }
-
-            if not script_uri:
-                return {
-                    "success": False,
-                    "error": f"Button '{button_name}' has no event handler",
-                }
-
-            # Execute the button's script
-            # Note: This triggers the macro associated with the button
-            result = test_script_execution(Path(ods_path), script_uri)
-
-            return {
-                "success": result.success,
-                "message": f"Clicked button '{button_name}'",
-                "script_uri": script_uri,
-                "script_result": result.return_value,
+        result = _worker_tool_response(
+            {
+                "op": "click_form_button",
+                "ods_path": ods_path,
+                "button_name": button_name,
+                "use_gui": True,
+                "timeout_seconds": 30,
             }
+        )
+        if not result["success"]:
+            return result
+        return {
+            "success": True,
+            "message": f"Clicked button '{button_name}'",
+            "script_uri": result.get("script_uri"),
+            "script_result": result.get("script_result"),
+        }
 
     except Exception as e:
         logger.error(f"MCP: Click button failed: {e}")
@@ -719,29 +627,15 @@ async def get_cell_colors(
     try:
         logger.debug(f"MCP: Getting cell colors {sheet_name}!{range_address} from {ods_path}")
 
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-            sheet = get_sheet(ctx, doc, sheet_name)
-            cell_range = sheet.getCellRangeByName(range_address)
-
-            # Get cell colors
-            colors = []
-            for row_idx in range(cell_range.getRows().getCount()):
-                row_colors = []
-                for col_idx in range(cell_range.getColumns().getCount()):
-                    cell = cell_range.getCellByPosition(col_idx, row_idx)
-                    bg_color = cell.getPropertyValue("CellBackColor")
-                    row_colors.append(bg_color)
-                colors.append(row_colors)
-
-            doc.close(True)
-
-        return {
-            "success": True,
-            "colors": colors,
-            "rows": len(colors),
-            "cols": len(colors[0]) if colors else 0,
-        }
+        return _worker_tool_response(
+            {
+                "op": "get_cell_colors",
+                "ods_path": ods_path,
+                "sheet_name": sheet_name,
+                "range_address": range_address,
+                "timeout_seconds": 30,
+            }
+        )
 
     except Exception as e:
         logger.error(f"MCP: Get cell colors failed: {e}")

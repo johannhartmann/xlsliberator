@@ -149,65 +149,28 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
     Returns:
         ScriptExecutionResult with execution details
     """
-    import signal
-
-    from xlsliberator.uno_conn import UnoCtx, open_calc
-
     ods_path = Path(ods_path)
     if not ods_path.exists():
         return ScriptExecutionResult(False, f"File not found: {ods_path}", None)
 
-    def timeout_handler(_signum: int, _frame: Any) -> None:
-        raise TimeoutError("Script execution timed out")
+    from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
 
-    try:
-        with UnoCtx(use_gui=True) as ctx:
-            # Open document
-            doc = open_calc(ctx, ods_path)
+    response = LibreOfficeWorkerClient(timeout_seconds=30).request(
+        {
+            "op": "execute_script",
+            "ods_path": str(ods_path),
+            "script_uri": script_uri,
+            "use_gui": True,
+            "timeout_seconds": 30,
+        }
+    )
+    if response.success:
+        logger.debug(f"Script executed successfully: {script_uri}")
+        return ScriptExecutionResult(True, None, response.data.get("return_value"))
 
-            try:
-                # Set timeout for script execution (5 seconds)
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(5)
-
-                try:
-                    # Get MasterScriptProvider
-                    msp_factory = ctx.component_context.ServiceManager.createInstanceWithContext(
-                        "com.sun.star.script.provider.MasterScriptProviderFactory",
-                        ctx.component_context,
-                    )
-                    script_provider = msp_factory.createScriptProvider(doc)
-
-                    # Get script (this may hang if XScriptProvider unavailable)
-                    script = script_provider.getScript(script_uri)
-
-                    # Execute script (with empty parameters)
-                    result = script.invoke((), (), ())
-
-                    logger.debug(f"Script executed successfully: {script_uri}")
-                    return ScriptExecutionResult(True, None, result)
-
-                finally:
-                    # Cancel alarm
-                    signal.alarm(0)
-
-            except TimeoutError:
-                error_msg = "Script execution timed out (XScriptProvider likely unavailable)"
-                logger.warning(error_msg)
-                return ScriptExecutionResult(False, error_msg, None)
-
-            except Exception as e:
-                error_msg = f"Script execution failed: {e}"
-                logger.warning(error_msg)
-                return ScriptExecutionResult(False, error_msg, None)
-
-            finally:
-                doc.close(True)
-
-    except Exception as e:
-        error_msg = f"Failed to open document: {e}"
-        logger.error(error_msg)
-        return ScriptExecutionResult(False, error_msg, None)
+    error_msg = worker_unavailable_message(response)
+    logger.warning(error_msg)
+    return ScriptExecutionResult(False, error_msg, None)
 
 
 def test_all_scripts(ods_path: str | Path) -> dict[str, ScriptExecutionResult]:
@@ -331,6 +294,15 @@ def list_python_scripts(ods_path: str | Path) -> list[str]:
     """
     script_infos = enumerate_python_scripts(ods_path)
     return [info.module_name for info in script_infos]
+
+
+def collect_source_map_markers(script_code: str) -> list[str]:
+    """Collect xlsliberator source-map markers from generated Python."""
+    return [
+        line.strip()
+        for line in script_code.splitlines()
+        if line.strip().startswith("# xlsliberator-source:")
+    ]
 
 
 def get_script_functions(ods_path: str | Path, module_name: str) -> list[str]:
