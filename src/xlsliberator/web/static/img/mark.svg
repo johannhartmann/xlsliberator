@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40" role="img" aria-label="XLSLiberator">
+  <rect width="40" height="40" rx="9" fill="#15315C"/>
+  <path d="M11 13.5h7M11 20h5M11 26.5h7" stroke="rgba(255,255,255,0.42)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M20.5 20h7.5m0 0-3.2-3.2M28 20l-3.2 3.2" stroke="#2EA45F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

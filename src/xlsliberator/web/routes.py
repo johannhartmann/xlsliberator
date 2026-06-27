@@ -24,6 +24,8 @@ from xlsliberator.web.security import (
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+GITHUB_URL = "https://github.com/johannhartmann/xlsliberator"
+
 
 def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) -> APIRouter:
     """Create routes bound to the provided job store and runner."""
@@ -33,8 +35,12 @@ def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) 
     def index(request: Request) -> Response:
         return templates.TemplateResponse(
             request,
-            "index.html",
-            {"max_upload_mb": settings.max_upload_mb},
+            "landing.html",
+            {
+                "max_upload_mb": settings.max_upload_mb,
+                "github_url": GITHUB_URL,
+                "demo_host": "127.0.0.1:8080",
+            },
         )
 
     @router.post("/jobs")
@@ -80,6 +86,14 @@ def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) 
         if public is None:
             raise HTTPException(status_code=404, detail="Unknown job")
         return public
+
+    @router.get("/api/jobs/{job_id}/report")
+    def api_job_report(job_id: str) -> dict[str, Any]:
+        job = _get_job_or_404(store, job_id)
+        summary = _load_report_summary(job)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="Report not available")
+        return summary
 
     @router.get("/api/jobs/{job_id}/events")
     def job_events(job_id: str, since: int = 0) -> dict[str, Any]:

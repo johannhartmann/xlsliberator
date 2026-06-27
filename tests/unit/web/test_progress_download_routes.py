@@ -56,6 +56,38 @@ def test_events_endpoint_returns_ordered_events(tmp_path: Path) -> None:
     assert payload["next"] == len(payload["events"])
 
 
+def test_report_api_returns_summary_for_completed_job(tmp_path: Path) -> None:
+    client, job_id = _completed_client(tmp_path)
+
+    response = client.get(f"/api/jobs/{job_id}/report")
+
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary["sheet_count"] == 3
+    assert summary["total_formulas"] == 4
+    assert summary["formula_match_rate"] == 100
+    assert summary["warnings"] == ["minor"]
+
+
+def test_report_api_404_when_no_report(tmp_path: Path) -> None:
+    app = create_app(WebSettings(data_dir=tmp_path))
+    store = app.state.job_store
+    job_id = "55555555-5555-4555-8555-555555555555"
+    store.create_job(
+        job_id=job_id,
+        original_filename="book.xlsx",
+        input_path=tmp_path / "input.xlsx",
+        output_path=tmp_path / "output.ods",
+        report_json_path=tmp_path / "missing-report.json",
+        report_md_path=tmp_path / "report.md",
+        log_bundle_path=tmp_path / "logs.zip",
+        profile_dir=tmp_path / "profile",
+    )
+    store.add_event(job_id, phase=JobPhase.QUEUED, step="queued", message="queued")
+
+    assert TestClient(app).get(f"/api/jobs/{job_id}/report").status_code == 404
+
+
 def test_downloads_for_completed_job(tmp_path: Path) -> None:
     client, job_id = _completed_client(tmp_path)
 

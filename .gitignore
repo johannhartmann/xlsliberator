@@ -139,6 +139,8 @@ Thumbs.db
 *.xlsm
 *.xlsb
 *.xls
+# Exception: demo sample workbooks shipped with the web app must be tracked.
+!src/xlsliberator/web/static/samples/*.xlsx
 .formula_cache.json
 .formula_cache.json.*
 .vba_cache.json

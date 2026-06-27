@@ -1,6 +1,10 @@
 # XLSLiberator Web App
 
-The web app lets a user upload an Excel workbook, watch job progress, and download the converted `.ods` file plus JSON and Markdown reports.
+The web app serves a marketing landing page (`GET /`) with an embedded **live demo**:
+visitors pick a bundled example workbook or upload their own, start a real conversion,
+watch the pipeline progress inline, and download the converted `.ods` file plus JSON and
+Markdown reports — without leaving the page. The standalone job page (`/jobs/{job_id}`)
+remains available as a permalink and as the no-JavaScript fallback target.
 
 ## Local Development
 
@@ -43,11 +47,12 @@ docker run --rm xlsliberator-web soffice --version
 
 ## API
 
-- `GET /`: upload form
-- `POST /jobs`: browser upload, redirects to `/jobs/{job_id}`
-- `POST /api/jobs`: JSON upload, returns job status
+- `GET /`: marketing landing page with the embedded live demo
+- `POST /jobs`: browser upload, redirects to `/jobs/{job_id}` (no-JS fallback)
+- `POST /api/jobs`: JSON upload, returns job status (used by the inline demo)
 - `GET /api/jobs/{job_id}`: status JSON
 - `GET /api/jobs/{job_id}/events?since=0`: polling progress events
+- `GET /api/jobs/{job_id}/report`: conversion report summary JSON (for the inline demo)
 - `POST /api/jobs/{job_id}/cancel`: best-effort cancellation
 - `GET /jobs/{job_id}/download`: converted `.ods`
 - `GET /jobs/{job_id}/report.json`: conversion report JSON

@@ -19,10 +19,16 @@ def test_app_health_and_readyz_without_soffice(tmp_path: Path, monkeypatch: Any)
     assert ready["version"] is None
 
 
-def test_index_page_renders_upload_form(tmp_path: Path) -> None:
+def test_index_page_renders_marketing_landing_and_demo(tmp_path: Path) -> None:
     client = TestClient(create_app(WebSettings(data_dir=tmp_path)))
 
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Convert workbook" in response.text
+    # Marketing content is present alongside the live demo.
+    assert "XLSLiberator" in response.text
+    assert "Digitale Souveränität" in response.text
+    # The demo widget and its real upload form are wired up.
+    assert 'id="demo-form"' in response.text
+    assert 'action="/jobs"' in response.text
+    assert "/static/demo.js" in response.text

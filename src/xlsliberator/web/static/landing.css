@@ -1,0 +1,134 @@
+/* XLSLiberator landing page — base resets, animations and responsive layout.
+   Section markup keeps the design's inline styles; this file only carries the
+   pieces that inline styles cannot express (keyframes, scrollbars, hover and
+   drag states, and the responsive grid/typography overrides). */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+}
+
+::selection {
+  background: oklch(0.52 0.13 145 / 0.25);
+}
+
+@keyframes xlsSweep {
+  0% { transform: translateX(-110%); }
+  55% { transform: translateX(210%); }
+  100% { transform: translateX(210%); }
+}
+
+@keyframes xlsReveal {
+  0%, 8% { opacity: 0; transform: translateY(4px); }
+  22%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes xlsPulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.56 0.16 145 / 0.5); }
+  50% { box-shadow: 0 0 0 5px oklch(0.56 0.16 145 / 0); }
+}
+
+@keyframes xlsBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes xlsSpin {
+  to { transform: rotate(360deg); }
+}
+
+.xls-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.xls-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Demo upload affordances. */
+.l-drop {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.l-drop.dragover {
+  border-color: oklch(0.56 0.16 145) !important;
+  background: oklch(0.56 0.16 145 / 0.07) !important;
+}
+
+.l-sample {
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.l-sample:hover {
+  border-color: rgba(25, 27, 30, 0.3) !important;
+}
+
+.l-sample.selected {
+  border-color: oklch(0.56 0.16 145) !important;
+  box-shadow: inset 0 0 0 1px oklch(0.56 0.16 145);
+}
+
+.l-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: xlsSpin 0.7s linear infinite;
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Tablet / small-desktop: collapse the two-pane and dense grids. */
+@media (max-width: 980px) {
+  .l-nav-links { display: none !important; }
+  .l-hero { grid-template-columns: 1fr !important; gap: 40px !important; }
+  .l-demo { grid-template-columns: 1fr !important; gap: 36px !important; }
+  .l-sov { grid-template-columns: 1fr !important; gap: 36px !important; }
+  .l-split { grid-template-columns: 1fr !important; gap: 28px !important; }
+  .l-demo-info { position: static !important; }
+  .l-grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
+  .l-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+/* Phone: single column everywhere and smaller display type. */
+@media (max-width: 640px) {
+  .l-wrap { padding-left: 20px !important; padding-right: 20px !important; }
+  .l-grid-2 { grid-template-columns: 1fr !important; }
+  .l-grid-3 { grid-template-columns: 1fr !important; }
+  .l-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+  .l-value-span { grid-column: auto !important; }
+  .l-h1 { font-size: 38px !important; }
+  .l-h2 { font-size: 28px !important; }
+  .l-hero-actions a { flex: 1 1 auto; text-align: center; }
+}

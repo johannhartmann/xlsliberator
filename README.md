@@ -169,8 +169,9 @@ Run the Docker web app for the closest production-like setup:
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:8080/`, upload an Excel workbook, watch the job progress page,
-and download the converted `.ods` file plus JSON and Markdown reports.
+Open `http://127.0.0.1:8080/` for the landing page and its embedded live demo: pick a
+bundled example workbook (or upload your own), start a real conversion, watch the pipeline
+progress inline, and download the converted `.ods` file plus JSON and Markdown reports.
 
 For local development without Docker, install the optional web dependencies and run the
 FastAPI app:
