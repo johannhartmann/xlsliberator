@@ -5,6 +5,12 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      docker-smoke:
+        description: Run Docker web smoke build
+        required: false
+        default: "false"
 
 jobs:
   lint:
@@ -71,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[web,dev]"
           pip install pytest-cov
 
       - name: Run unit tests
@@ -118,3 +124,25 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  docker-web:
+    name: Docker Web Smoke
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.docker-smoke == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[web,dev]"
+
+      - name: Build Docker image through smoke test
+        run: pytest -v tests/integration/test_docker_web.py
+        env:
+          DOCKER_TESTS: "1"

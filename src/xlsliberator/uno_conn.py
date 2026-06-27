@@ -23,6 +23,7 @@ class UnoCtx:
         timeout: int = 10,
         manage_libreoffice: bool = True,
         use_gui: bool = False,
+        user_installation_dir: str | Path | None = None,
     ) -> None:
         """Initialize UNO connection context.
 
@@ -32,12 +33,14 @@ class UnoCtx:
             timeout: Connection timeout in seconds
             manage_libreoffice: If True, start/stop LibreOffice process automatically
             use_gui: If True, use GUI mode with xvfb (enables XScriptProvider for macros)
+            user_installation_dir: Optional isolated LibreOffice profile directory
         """
         self.host = host
         self.port = port
         self.timeout = timeout
         self.manage_libreoffice = manage_libreoffice
         self.use_gui = use_gui
+        self.user_installation_dir = Path(user_installation_dir) if user_installation_dir else None
         self.local_context: Any = None
         self.resolver: Any = None
         self.component_context: Any = None
@@ -63,13 +66,6 @@ class UnoCtx:
 
         mode = "GUI mode with xvfb" if self.use_gui else "headless"
         logger.info(f"Starting LibreOffice in {mode} on port {self.port}")
-
-        # Kill any existing LibreOffice processes
-        try:
-            subprocess.run(["pkill", "-9", "soffice"], check=False, capture_output=True)
-            time.sleep(1)
-        except Exception:
-            pass
 
         # Start Xvfb if GUI mode requested
         if self.use_gui:
@@ -131,6 +127,9 @@ class UnoCtx:
                 "--nofirststartwizard",
             ]
         )
+        if self.user_installation_dir is not None:
+            self.user_installation_dir.mkdir(parents=True, exist_ok=True)
+            cmd.append(f"-env:UserInstallation={self.user_installation_dir.resolve().as_uri()}")
 
         try:
             self._libreoffice_process = subprocess.Popen(

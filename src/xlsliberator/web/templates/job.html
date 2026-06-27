@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Conversion Job{% endblock %}
+{% block content %}
+<section class="panel" id="job" data-job-id="{{ job.id }}">
+  <h1>{{ job.original_filename }}</h1>
+  <p>Status: <strong id="status">{{ job.status.value }}</strong></p>
+  {% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+  <div id="downloads" class="{% if job.status.value != 'completed' %}hidden{% endif %}">
+    <a href="/jobs/{{ job.id }}/download">Download ODS</a>
+    <a href="/jobs/{{ job.id }}/report.json">Report JSON</a>
+    <a href="/jobs/{{ job.id }}/report.md">Report Markdown</a>
+  </div>
+  {% if report_summary %}
+  <section class="summary">
+    <h2>Report</h2>
+    <dl>
+      <dt>Duration</dt><dd>{{ "%.2f"|format(report_summary.duration_seconds) }}s</dd>
+      <dt>Sheets</dt><dd>{{ report_summary.sheet_count }}</dd>
+      <dt>Cells</dt><dd>{{ report_summary.total_cells }}</dd>
+      <dt>Formulas</dt><dd>{{ report_summary.total_formulas }}</dd>
+      <dt>Formula match rate</dt><dd>{{ "%.2f"|format(report_summary.formula_match_rate) }}%</dd>
+      <dt>Warnings</dt><dd>{{ report_summary.warnings_count }}</dd>
+      <dt>Errors</dt><dd>{{ report_summary.errors_count }}</dd>
+      <dt>Macro modules</dt><dd>{{ report_summary.vba_modules }}</dd>
+      <dt>Macro procedures</dt><dd>{{ report_summary.vba_procedures }}</dd>
+    </dl>
+    {% if report_summary.warnings %}
+    <h3>Warnings</h3>
+    <ul>{% for warning in report_summary.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if report_summary.errors %}
+    <h3>Errors</h3>
+    <ul>{% for error in report_summary.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+  {% endif %}
+  <ol id="events" class="events">
+    {% for event in job.events %}
+    <li class="{{ event.level }}"><span>{{ event.phase.value }}</span>{{ event.message }}</li>
+    {% endfor %}
+  </ol>
+  <noscript><p class="meta">Refresh this page to update progress.</p></noscript>
+</section>
+{% endblock %}
+{% block scripts %}
+<script id="initial-job" type="application/json">{{ public_job_json | safe }}</script>
+<script src="/static/app.js"></script>
+{% endblock %}

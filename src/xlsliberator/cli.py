@@ -1,6 +1,7 @@
 """CLI interface for xlsliberator (Phase F12)."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import click
@@ -119,6 +120,46 @@ def mcp_serve_cmd(host: str, port: int) -> None:
     except Exception as e:
         click.secho(f"Error: {e}", fg="red")
         sys.exit(1)
+
+
+
+@cli.command(name="web-serve")
+@click.option("--host", default="0.0.0.0", help="Host address to bind to")  # nosec B104
+@click.option("--port", default=8080, help="Port number")
+@click.option("--reload", is_flag=True, help="Reload on code changes")
+def web_serve_cmd(host: str, port: int, reload: bool) -> None:
+    """Start the browser web app."""
+    try:
+        import uvicorn
+    except ImportError as e:
+        raise click.ClickException('Install web extras first: pip install -e ".[web]"') from e
+
+    uvicorn.run(
+        "xlsliberator.web.app:create_app",
+        host=host,
+        port=port,
+        reload=reload,
+        factory=True,
+    )
+
+
+@cli.command(name="cleanup-jobs")
+@click.option(
+    "--data-dir",
+    type=click.Path(path_type=Path),
+    default=Path("/data"),
+    help="Web data directory",
+)
+@click.option("--older-than-hours", type=int, default=24, help="Delete jobs older than this")
+def cleanup_jobs_cmd(data_dir: Path, older_than_hours: int) -> None:
+    """Delete old web job artifacts."""
+    from xlsliberator.web.cleanup import cleanup_old_jobs
+
+    try:
+        deleted = cleanup_old_jobs(data_dir, timedelta(hours=older_than_hours))
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Deleted {len(deleted)} job director{'y' if len(deleted) == 1 else 'ies'}")
 
 
 if __name__ == "__main__":

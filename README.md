@@ -149,6 +149,33 @@ for await (const message of query({
 
 📚 See [Claude Agent SDK Integration Guide](docs/claude_agent_sdk_integration.md) for complete examples
 
+
+### Browser Web App
+
+Run the Docker web app for the closest production-like setup:
+
+```bash
+docker compose up --build
+```
+
+Open `http://127.0.0.1:8080/`, upload an Excel workbook, watch the job progress page,
+and download the converted `.ods` file plus JSON and Markdown reports.
+
+For local development without Docker, install the optional web dependencies and run the
+FastAPI app:
+
+```bash
+pip install -e ".[web,dev]"
+xlsliberator web-serve --host 0.0.0.0 --port 8080 --reload
+```
+
+The web app accepts `.xls`, `.xlsx`, `.xlsm`, and `.xlsb` uploads. It stores each job
+under a server-generated ID, uses isolated LibreOffice profiles for web conversions,
+and avoids exposing internal filesystem paths in API responses.
+
+See the [User Guide](user_guide.md) for the full workflow and the
+[Web App Guide](docs/web_app.md) for development, API, and Docker details.
+
 ### Python API
 
 ```python

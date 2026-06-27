@@ -1,0 +1,16 @@
+.git
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+build
+dist
+htmlcov
+*.egg-info
+*.ods
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+.env
+docs/_build

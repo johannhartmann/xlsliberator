@@ -167,6 +167,10 @@ CLAUDE.md
 AI_FORMULA_REPAIR_STATUS.md
 REMAINING_ISSUES.md
 docs/
+!docs/
+docs/*
+!docs/web_app.md
+!docs/production_hardening.md
 
 # Temporary files
 *.tmp

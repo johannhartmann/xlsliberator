@@ -47,6 +47,12 @@ Changelog = "https://github.com/johannhartmann/xlsliberator/blob/main/CHANGELOG.
 xlsliberator = "xlsliberator.cli:cli"
 
 [project.optional-dependencies]
+web = [
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-xdist>=3.3.0",
@@ -54,6 +60,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "mypy>=1.5.0",
     "ruff>=0.1.0",
+    "httpx2>=0.28.0",
     "types-openpyxl",
     "types-PyYAML",
 ]
@@ -117,6 +124,9 @@ module = [
     "click",
     "fastmcp",
     "fastmcp.*",
+    "uvicorn",
+    "fastapi",
+    "fastapi.*",
 ]
 ignore_missing_imports = true
 
@@ -135,6 +145,7 @@ markers = [
     "integration: marks tests requiring LibreOffice UNO",
     "benchmark: marks performance benchmarks",
     "real: marks tests using real datasets",
+    "docker: marks tests requiring Docker",
     "asyncio: marks tests as async",
 ]
 filterwarnings = [

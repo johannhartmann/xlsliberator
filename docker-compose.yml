@@ -1,0 +1,17 @@
+services:
+  xlsliberator-web:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      XLSLIBERATOR_DATA_DIR: /data
+      XLSLIBERATOR_MAX_UPLOAD_MB: "100"
+      XLSLIBERATOR_WEB_WORKERS: "1"
+      XLSLIBERATOR_JOB_RETENTION_HOURS: "24"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    volumes:
+      - xlsliberator-data:/data
+    restart: unless-stopped
+
+volumes:
+  xlsliberator-data:
