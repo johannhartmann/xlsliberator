@@ -10,26 +10,99 @@ from typing import Any
 from loguru import logger
 
 from xlsliberator.api import convert as convert_api
+from xlsliberator.boundary_models import (
+    BoundaryError,
+    BoundaryResponse,
+    EvidenceRecord,
+    RuntimeToolOptions,
+)
+from xlsliberator.docker_runtime import LibreOfficeDockerRuntime
 from xlsliberator.embed_macros import embed_python_macros
+from xlsliberator.execution_sandbox import WorkspacePathPolicy
 from xlsliberator.python_macro_manager import (
     enumerate_python_scripts,
-    test_script_execution,
     validate_all_embedded_macros,
 )
 from xlsliberator.testing_lo import compare_excel_calc
+from xlsliberator.validation_models import GateExecutionStatus
+from xlsliberator.workbook_security import validate_untrusted_workbook
 
 
-def _worker_tool_response(payload: dict[str, Any]) -> dict[str, Any]:
+def _tool_response(
+    status: GateExecutionStatus,
+    *,
+    data: dict[str, Any] | None = None,
+    transport_success: bool = True,
+    implemented: bool = True,
+    capability_available: bool = True,
+    evidence: list[EvidenceRecord] | None = None,
+    error: BoundaryError | None = None,
+) -> dict[str, Any]:
+    """Build one canonical typed response and preserve legacy top-level data."""
+    return BoundaryResponse(
+        transport_success=transport_success,
+        operation_status=status,
+        implemented=implemented,
+        capability_available=capability_available,
+        evidence=evidence or [],
+        error=error,
+        data=data or {},
+    ).to_payload()
+
+
+def _operation_error(exc: BaseException) -> dict[str, Any]:
+    """Return a truthful operation failure after a successful MCP call transport."""
+    return _tool_response(
+        GateExecutionStatus.FAILED,
+        error=BoundaryError(type=type(exc).__name__, message=str(exc)),
+    )
+
+
+def _worker_tool_response(
+    payload: dict[str, Any], runtime_options: RuntimeToolOptions | None = None
+) -> dict[str, Any]:
     from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
 
-    response = LibreOfficeWorkerClient().request(payload)
+    options = runtime_options or RuntimeToolOptions()
+    workspace = WorkspacePathPolicy()
+    payload = dict(payload)
+    for key in ("input_path", "ods_path", "excel_path"):
+        if payload.get(key):
+            payload[key] = str(workspace.input_file(str(payload[key])))
+    if payload.get("output_path"):
+        payload["output_path"] = str(workspace.output_file(str(payload["output_path"])))
+    payload = {**payload, "timeout_seconds": options.timeout_seconds}
+    runtime = LibreOfficeDockerRuntime(
+        image=options.target_runtime_image,
+        timeout_seconds=options.timeout_seconds,
+        workspace_roots=list(workspace.roots),
+    )
+    response = LibreOfficeWorkerClient(
+        timeout_seconds=options.timeout_seconds,
+        runtime=runtime,
+    ).request(payload)
     if response.success:
-        return {"success": True, **response.data}
-    return {
-        "success": False,
-        "error": worker_unavailable_message(response),
-        "worker_error": response.error.to_dict() if response.error else None,
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data=response.data,
+            evidence=[EvidenceRecord(kind="worker_response", data=response.to_dict())],
+        )
+    error_type = response.error.type if response.error else "WorkerError"
+    transport_failure = error_type in {
+        "DockerRuntimeUnavailable",
+        "DockerRuntimeTimeout",
+        "MalformedWorkerJSON",
+        "MalformedWorkerResponse",
     }
+    unavailable = error_type == "DockerRuntimeUnavailable"
+    return _tool_response(
+        GateExecutionStatus.UNAVAILABLE if unavailable else GateExecutionStatus.FAILED,
+        transport_success=not transport_failure,
+        capability_available=not unavailable,
+        data={"worker_error": response.error.to_dict() if response.error else None},
+        evidence=[EvidenceRecord(kind="worker_response", data=response.to_dict())],
+        error=BoundaryError(type=error_type, message=worker_unavailable_message(response)),
+    )
 
 
 # ==============================================================================
@@ -60,16 +133,19 @@ async def convert_excel_to_ods(
     """
     try:
         logger.info(f"MCP: Converting {excel_path} to {output_path}")
+        workspace = WorkspacePathPolicy()
+        source = workspace.input_file(excel_path)
+        destination = workspace.output_file(output_path)
+        validate_untrusted_workbook(source)
         report = convert_api(
-            input_path=Path(excel_path),
-            output_path=Path(output_path),
+            input_path=source,
+            output_path=destination,
             embed_macros=embed_macros,
             use_agent=use_agent,
         )
 
-        return {
-            "success": True,
-            "output_path": str(output_path),
+        report_data = {
+            "output_path": str(destination),
             "report": {
                 "sheet_count": report.sheet_count,
                 "total_cells": report.total_cells,
@@ -81,12 +157,24 @@ async def convert_excel_to_ods(
                 "warnings": len(report.warnings),
             },
         }
+        return _tool_response(
+            GateExecutionStatus.PASSED if report.success else GateExecutionStatus.FAILED,
+            data=report_data,
+            evidence=[
+                EvidenceRecord(
+                    kind="conversion_report",
+                    data={"success": report.success, "errors": report.errors},
+                )
+            ],
+            error=(
+                BoundaryError(type="ConversionFailed", message="; ".join(report.errors))
+                if report.errors
+                else None
+            ),
+        )
     except Exception as e:
         logger.error(f"MCP: Conversion failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def inspect_workbook(excel_path: str) -> dict[str, Any]:
@@ -100,23 +188,24 @@ async def inspect_workbook(excel_path: str) -> dict[str, Any]:
             inventory_to_dict,
         )
 
-        inventory = inspect_workbook_api(Path(excel_path))
-        return {
-            "success": True,
-            "inventory": inventory_to_dict(inventory),
-        }
+        source = WorkspacePathPolicy().input_file(excel_path)
+        validate_untrusted_workbook(source)
+        inventory = inspect_workbook_api(source)
+        inventory_data = inventory_to_dict(inventory)
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data={"inventory": inventory_data},
+            evidence=[EvidenceRecord(kind="source_inventory", data=inventory_data)],
+        )
     except Exception as e:
         logger.error(f"MCP: Inspect workbook failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def validate_transformation(
     excel_path: str,
     ods_path: str | None = None,
-    target: str = "both",
+    target: str = "libreoffice",
 ) -> dict[str, Any]:
     """Run validation gates for a workbook transformation."""
     try:
@@ -127,23 +216,32 @@ async def validate_transformation(
             parse_target_kind,
         )
 
+        workspace = WorkspacePathPolicy()
         report = ValidationRunner(
             ValidationPlan(
-                input_path=Path(excel_path),
-                output_path=Path(ods_path) if ods_path else None,
+                input_path=workspace.input_file(excel_path),
+                output_path=workspace.input_file(ods_path) if ods_path else None,
                 target_kinds=parse_target_kind(target),
             )
         ).run_all()
-        return {
-            "success": True,
-            "certification": report.certification.model_dump(mode="json"),
-        }
+        certified = report.certification.certified
+        certification = report.certification.model_dump(mode="json")
+        return _tool_response(
+            GateExecutionStatus.PASSED if certified else GateExecutionStatus.FAILED,
+            data={"certification": certification},
+            evidence=[EvidenceRecord(kind="certification", data=certification)],
+            error=(
+                None
+                if certified
+                else BoundaryError(
+                    type="CertificationFailed",
+                    message="Required validation gates did not all pass",
+                )
+            ),
+        )
     except Exception as e:
         logger.error(f"MCP: Validate transformation failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def list_controls(ods_path: str) -> dict[str, Any]:
@@ -151,15 +249,16 @@ async def list_controls(ods_path: str) -> dict[str, Any]:
     try:
         from xlsliberator.control_inventory import extract_controls_from_ods
 
-        controls = extract_controls_from_ods(Path(ods_path))
-        return {
-            "success": True,
-            "controls": [control.model_dump(mode="json") for control in controls],
-            "count": len(controls),
-        }
+        controls = extract_controls_from_ods(WorkspacePathPolicy().input_file(ods_path))
+        serialized = [control.model_dump(mode="json") for control in controls]
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data={"controls": serialized, "count": len(controls)},
+            evidence=[EvidenceRecord(kind="control_inventory", data={"controls": serialized})],
+        )
     except Exception as e:
         logger.error(f"MCP: List controls failed: {e}")
-        return {"success": False, "error": str(e)}
+        return _operation_error(e)
 
 
 async def list_event_bindings(ods_path: str) -> dict[str, Any]:
@@ -167,20 +266,21 @@ async def list_event_bindings(ods_path: str) -> dict[str, Any]:
     try:
         from xlsliberator.control_inventory import extract_event_bindings_from_ods
 
-        event_bindings = extract_event_bindings_from_ods(Path(ods_path))
-        return {
-            "success": True,
-            "event_bindings": [
-                event_binding.model_dump(mode="json") for event_binding in event_bindings
-            ],
-            "count": len(event_bindings),
-        }
+        event_bindings = extract_event_bindings_from_ods(WorkspacePathPolicy().input_file(ods_path))
+        serialized = [event_binding.model_dump(mode="json") for event_binding in event_bindings]
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data={"event_bindings": serialized, "count": len(event_bindings)},
+            evidence=[EvidenceRecord(kind="event_binding_inventory", data={"items": serialized})],
+        )
     except Exception as e:
         logger.error(f"MCP: List event bindings failed: {e}")
-        return {"success": False, "error": str(e)}
+        return _operation_error(e)
 
 
-async def recalculate_document(ods_path: str) -> dict[str, Any]:
+async def recalculate_document(
+    ods_path: str, runtime_options: RuntimeToolOptions | None = None
+) -> dict[str, Any]:
     """Force recalculation of all formulas in an ODS document.
 
     Args:
@@ -195,21 +295,16 @@ async def recalculate_document(ods_path: str) -> dict[str, Any]:
     try:
         logger.info(f"MCP: Recalculating {ods_path}")
         result = _worker_tool_response(
-            {"op": "recalculate_document", "ods_path": ods_path, "timeout_seconds": 30}
+            {"op": "recalculate_document", "ods_path": ods_path}, runtime_options
         )
         if not result["success"]:
             return result
 
-        return {
-            "success": True,
-            "message": f"Recalculated {ods_path}",
-        }
+        result["message"] = f"Recalculated {ods_path}"
+        return result
     except Exception as e:
         logger.error(f"MCP: Recalculation failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 # ==============================================================================
@@ -217,7 +312,12 @@ async def recalculate_document(ods_path: str) -> dict[str, Any]:
 # ==============================================================================
 
 
-async def read_cell(ods_path: str, sheet_name: str, cell_address: str) -> dict[str, Any]:
+async def read_cell(
+    ods_path: str,
+    sheet_name: str,
+    cell_address: str,
+    runtime_options: RuntimeToolOptions | None = None,
+) -> dict[str, Any]:
     """Read cell value, formula, and type from an ODS document.
 
     Args:
@@ -242,17 +342,17 @@ async def read_cell(ods_path: str, sheet_name: str, cell_address: str) -> dict[s
                 "sheet_name": sheet_name,
                 "cell_address": cell_address,
                 "timeout_seconds": 30,
-            }
+            },
+            runtime_options,
         )
     except Exception as e:
         logger.error(f"MCP: Read cell failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
-async def list_sheets(ods_path: str) -> dict[str, Any]:
+async def list_sheets(
+    ods_path: str, runtime_options: RuntimeToolOptions | None = None
+) -> dict[str, Any]:
     """List all sheet names in an ODS document.
 
     Args:
@@ -267,18 +367,18 @@ async def list_sheets(ods_path: str) -> dict[str, Any]:
     """
     try:
         logger.debug(f"MCP: Listing sheets in {ods_path}")
-        return _worker_tool_response(
-            {"op": "list_sheets", "ods_path": ods_path, "timeout_seconds": 30}
-        )
+        return _worker_tool_response({"op": "list_sheets", "ods_path": ods_path}, runtime_options)
     except Exception as e:
         logger.error(f"MCP: List sheets failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
-async def get_sheet_data(ods_path: str, sheet_name: str, range_address: str) -> dict[str, Any]:
+async def get_sheet_data(
+    ods_path: str,
+    sheet_name: str,
+    range_address: str,
+    runtime_options: RuntimeToolOptions | None = None,
+) -> dict[str, Any]:
     """Read data from a range in an ODS document.
 
     Args:
@@ -303,14 +403,12 @@ async def get_sheet_data(ods_path: str, sheet_name: str, range_address: str) -> 
                 "sheet_name": sheet_name,
                 "range_address": range_address,
                 "timeout_seconds": 30,
-            }
+            },
+            runtime_options,
         )
     except Exception as e:
         logger.error(f"MCP: Get sheet data failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 # ==============================================================================
@@ -341,10 +439,12 @@ async def compare_formulas(
     """
     try:
         logger.info(f"MCP: Comparing formulas: {excel_path} vs {ods_path}")
-        result = compare_excel_calc(Path(excel_path), Path(ods_path), tolerance)
+        workspace = WorkspacePathPolicy()
+        result = compare_excel_calc(
+            workspace.input_file(excel_path), workspace.input_file(ods_path), tolerance
+        )
 
-        return {
-            "success": True,
+        data = {
             "total_cells": result.total_cells,
             "formula_cells": result.formula_cells,
             "matching": result.matching,
@@ -353,12 +453,23 @@ async def compare_formulas(
             "tolerance": result.tolerance,
             "mismatches": result.mismatches[:10],  # First 10 mismatches
         }
+        equivalent = result.mismatching == 0
+        return _tool_response(
+            GateExecutionStatus.PASSED if equivalent else GateExecutionStatus.FAILED,
+            data=data,
+            evidence=[EvidenceRecord(kind="formula_comparison", data=data)],
+            error=(
+                None
+                if equivalent
+                else BoundaryError(
+                    type="FormulaMismatch",
+                    message=f"{result.mismatching} formula result(s) differ",
+                )
+            ),
+        )
     except Exception as e:
         logger.error(f"MCP: Formula comparison failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 # ==============================================================================
@@ -382,19 +493,17 @@ async def embed_macros(ods_path: str, macros: dict[str, str]) -> dict[str, Any]:
     """
     try:
         logger.info(f"MCP: Embedding {len(macros)} macros into {ods_path}")
-        embed_python_macros(Path(ods_path), macros)
+        embed_python_macros(WorkspacePathPolicy().input_file(ods_path), macros)
 
-        return {
-            "success": True,
-            "modules_embedded": len(macros),
-            "module_names": list(macros.keys()),
-        }
+        data = {"modules_embedded": len(macros), "module_names": list(macros)}
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data=data,
+            evidence=[EvidenceRecord(kind="embedded_modules", data=data)],
+        )
     except Exception as e:
         logger.error(f"MCP: Embed macros failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def validate_macros(ods_path: str) -> dict[str, Any]:
@@ -415,7 +524,7 @@ async def validate_macros(ods_path: str) -> dict[str, Any]:
     """
     try:
         logger.info(f"MCP: Validating macros in {ods_path}")
-        summary = validate_all_embedded_macros(Path(ods_path))
+        summary = validate_all_embedded_macros(WorkspacePathPolicy().input_file(ods_path))
 
         # Convert validation details to serializable format
         details = {}
@@ -427,8 +536,7 @@ async def validate_macros(ods_path: str) -> dict[str, Any]:
                 "functions_found": result.functions_found,
             }
 
-        return {
-            "success": True,
+        data = {
             "total_modules": summary.total_modules,
             "valid_syntax": summary.valid_syntax,
             "syntax_errors": summary.syntax_errors,
@@ -436,15 +544,30 @@ async def validate_macros(ods_path: str) -> dict[str, Any]:
             "missing_exported_scripts": summary.missing_exported_scripts,
             "validation_details": details,
         }
+        valid = summary.syntax_errors == 0 and summary.missing_exported_scripts == 0
+        return _tool_response(
+            GateExecutionStatus.PASSED if valid else GateExecutionStatus.FAILED,
+            data=data,
+            evidence=[EvidenceRecord(kind="macro_validation", data=data)],
+            error=(
+                None
+                if valid
+                else BoundaryError(
+                    type="MacroValidationFailed",
+                    message="One or more embedded macros failed validation",
+                )
+            ),
+        )
     except Exception as e:
         logger.error(f"MCP: Validate macros failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
-async def test_macro_execution(ods_path: str, script_uri: str) -> dict[str, Any]:
+async def test_macro_execution(
+    ods_path: str,
+    script_uri: str,
+    runtime_options: RuntimeToolOptions | None = None,
+) -> dict[str, Any]:
     """Test runtime execution of an embedded Python-UNO macro.
 
     Args:
@@ -460,21 +583,13 @@ async def test_macro_execution(ods_path: str, script_uri: str) -> dict[str, Any]
     """
     try:
         logger.info(f"MCP: Testing macro execution in {ods_path}: {script_uri}")
-        execution_result = test_script_execution(Path(ods_path), script_uri)
-
-        return {
-            "success": True,
-            "executed": execution_result.success,
-            "result": execution_result.return_value,
-            "error": execution_result.error,
-        }
+        return _worker_tool_response(
+            {"op": "execute_script", "ods_path": ods_path, "script_uri": script_uri},
+            runtime_options,
+        )
     except Exception as e:
         logger.error(f"MCP: Test macro execution failed: {e}")
-        return {
-            "success": False,
-            "executed": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def list_embedded_macros(ods_path: str) -> dict[str, Any]:
@@ -496,7 +611,7 @@ async def list_embedded_macros(ods_path: str) -> dict[str, Any]:
     """
     try:
         logger.info(f"MCP: Listing embedded macros in {ods_path}")
-        script_infos = enumerate_python_scripts(Path(ods_path))
+        script_infos = enumerate_python_scripts(WorkspacePathPolicy().input_file(ods_path))
 
         # Convert to serializable format
         scripts = []
@@ -513,18 +628,19 @@ async def list_embedded_macros(ods_path: str) -> dict[str, Any]:
             )
             total_functions += len(info.functions)
 
-        return {
-            "success": True,
+        data = {
             "scripts": scripts,
             "total_scripts": len(scripts),
             "total_functions": total_functions,
         }
+        return _tool_response(
+            GateExecutionStatus.PASSED,
+            data=data,
+            evidence=[EvidenceRecord(kind="embedded_macro_inventory", data=data)],
+        )
     except Exception as e:
         logger.error(f"MCP: List embedded macros failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 # ==============================================================================
@@ -537,7 +653,7 @@ async def open_document_gui(
     use_xvfb: bool = True,
     keep_open: bool = True,
 ) -> dict[str, Any]:
-    """Open ODS document in LibreOffice GUI for interactive testing.
+    """Report GUI opening as unavailable across the Docker-only boundary.
 
     Args:
         ods_path: Path to ODS file
@@ -551,67 +667,26 @@ async def open_document_gui(
         - display: str (if xvfb used)
         - error: str (if failed)
     """
-    import shutil
-    import subprocess
-
-    try:
-        logger.info(f"MCP: Opening {ods_path} in GUI mode")
-
-        # Check if LibreOffice is installed
-        if not shutil.which("libreoffice"):
-            return {
-                "success": False,
-                "error": "LibreOffice not found in PATH",
-            }
-
-        # Check if xvfb is available
-        if use_xvfb and not shutil.which("xvfb-run"):
-            logger.warning("xvfb-run not found, opening without virtual display")
-            use_xvfb = False
-
-        # Build command
-        cmd = []
-        if use_xvfb:
-            cmd.extend(["xvfb-run", "-a"])
-
-        cmd.extend(["libreoffice", "--calc", str(Path(ods_path).resolve())])
-
-        # Open document
-        if keep_open:
-            # Start in background and return immediately
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return {
-                "success": True,
-                "message": f"Opened {ods_path} in GUI mode (PID: {process.pid})",
-                "display": "xvfb" if use_xvfb else "native",
-                "pid": process.pid,
-            }
-        else:
-            # Wait for completion
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return {
-                "success": result.returncode == 0,
-                "message": f"Opened {ods_path} in GUI mode",
-                "display": "xvfb" if use_xvfb else "native",
-            }
-
-    except Exception as e:
-        logger.error(f"MCP: Open document GUI failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+    del use_xvfb, keep_open
+    return _tool_response(
+        GateExecutionStatus.UNAVAILABLE,
+        implemented=False,
+        capability_available=False,
+        error=BoundaryError(
+            type="CapabilityUnavailable",
+            message=(
+                f"Opening {Path(ods_path).name} on a host GUI is outside the "
+                "Docker-only LibreOffice runtime"
+            ),
+        ),
+    )
 
 
 async def click_form_button(
     ods_path: str,
     button_name: str,
 ) -> dict[str, Any]:
-    """Click a form button in an ODS document using UNO.
+    """Report real GUI/control clicking as unavailable.
 
     Args:
         ods_path: Path to ODS file
@@ -623,33 +698,66 @@ async def click_form_button(
         - message: str
         - error: str (if failed)
     """
-    try:
-        logger.info(f"MCP: Clicking button '{button_name}' in {ods_path}")
+    del ods_path, button_name
+    return _tool_response(
+        GateExecutionStatus.UNAVAILABLE,
+        implemented=False,
+        capability_available=False,
+        error=BoundaryError(
+            type="CapabilityUnavailable",
+            message="Real GUI/control event dispatch is not implemented",
+        ),
+    )
 
-        result = _worker_tool_response(
+
+async def execute_button_handler(
+    ods_path: str,
+    button_name: str,
+    runtime_options: RuntimeToolOptions | None = None,
+) -> dict[str, Any]:
+    """Resolve a discovered button handler and invoke that script directly in Docker."""
+    try:
+        logger.info(f"MCP: Executing handler for button '{button_name}' in {ods_path}")
+        return _worker_tool_response(
             {
-                "op": "click_form_button",
+                "op": "execute_button_handler",
                 "ods_path": ods_path,
                 "button_name": button_name,
-                "use_gui": True,
-                "timeout_seconds": 30,
-            }
+                "use_gui": False,
+            },
+            runtime_options,
+        )
+    except Exception as exc:
+        logger.error(f"MCP: Execute button handler failed: {exc}")
+        return _operation_error(exc)
+
+
+async def validate_document_runtime(
+    ods_path: str, runtime_options: RuntimeToolOptions | None = None
+) -> dict[str, Any]:
+    """Run open/recalculate/save/close/reopen/package stages in the Docker target."""
+    try:
+        result = _worker_tool_response(
+            {"op": "validate_document", "ods_path": ods_path}, runtime_options
         )
         if not result["success"]:
             return result
-        return {
-            "success": True,
-            "message": f"Clicked button '{button_name}'",
-            "script_uri": result.get("script_uri"),
-            "script_result": result.get("script_result"),
-        }
-
-    except Exception as e:
-        logger.error(f"MCP: Click button failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        stages = result.get("stages") or {}
+        all_passed = bool(stages) and all(
+            isinstance(stage, dict) and stage.get("status") == "passed" for stage in stages.values()
+        )
+        source_unchanged = not bool(result.get("source_mutated"))
+        if all_passed and source_unchanged:
+            return result
+        result["success"] = False
+        result["operation_status"] = GateExecutionStatus.FAILED.value
+        result["error"] = BoundaryError(
+            type="RuntimeValidationFailed",
+            message="Not every required runtime stage passed or the source was mutated",
+        ).model_dump(mode="json")
+        return result
+    except Exception as exc:
+        return _operation_error(exc)
 
 
 async def send_keyboard_input(
@@ -673,34 +781,23 @@ async def send_keyboard_input(
         This is a placeholder implementation. Full keyboard simulation requires
         active document window and XKeyHandler implementation.
     """
-    try:
-        logger.info(f"MCP: Sending {len(key_sequence)} key events to {ods_path}")
-
-        # This is a simplified implementation
-        # Full implementation would require:
-        # 1. Active document window
-        # 2. XKeyHandler or XKeyListener implementation
-        # 3. awt.KeyEvent construction and dispatch
-
-        return {
-            "success": True,
-            "message": f"Keyboard simulation prepared for {len(key_sequence)} keys",
-            "keys_sent": len(key_sequence),
-            "note": "Full keyboard simulation requires active GUI window",
-        }
-
-    except Exception as e:
-        logger.error(f"MCP: Send keyboard input failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+    logger.info(f"MCP: Keyboard input requested for {ods_path}")
+    return _tool_response(
+        GateExecutionStatus.UNAVAILABLE,
+        implemented=False,
+        capability_available=False,
+        data={"keys_requested": len(key_sequence), "keys_sent": 0},
+        error=BoundaryError(
+            type="CapabilityUnavailable", message="Keyboard input is not implemented"
+        ),
+    )
 
 
 async def get_cell_colors(
     ods_path: str,
     sheet_name: str,
     range_address: str,
+    runtime_options: RuntimeToolOptions | None = None,
 ) -> dict[str, Any]:
     """Get background colors of cells in a range (useful for game state detection).
 
@@ -727,15 +824,13 @@ async def get_cell_colors(
                 "sheet_name": sheet_name,
                 "range_address": range_address,
                 "timeout_seconds": 30,
-            }
+            },
+            runtime_options,
         )
 
     except Exception as e:
         logger.error(f"MCP: Get cell colors failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+        return _operation_error(e)
 
 
 async def take_screenshot(
@@ -743,7 +838,7 @@ async def take_screenshot(
     output_path: str,
     delay_seconds: float = 2.0,
 ) -> dict[str, Any]:
-    """Capture screenshot of LibreOffice document.
+    """Report screenshot capture as unavailable until container capture exists.
 
     Args:
         ods_path: Path to ODS file
@@ -759,46 +854,13 @@ async def take_screenshot(
     Note:
         Requires xvfb with imagemagick's import command or similar tool.
     """
-    import shutil
-    import subprocess
-    import time
-
-    try:
-        logger.info(f"MCP: Taking screenshot of {ods_path}")
-
-        # Check if import command is available (from imagemagick)
-        if not shutil.which("import"):
-            return {
-                "success": False,
-                "error": "ImageMagick 'import' command not found. Install with: apt-get install imagemagick",
-            }
-
-        # Wait for UI to stabilize
-        time.sleep(delay_seconds)
-
-        # Take screenshot of entire screen
-        result = subprocess.run(
-            ["import", "-window", "root", str(output_path)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0:
-            return {
-                "success": True,
-                "output_path": str(output_path),
-                "message": f"Screenshot saved to {output_path}",
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"Screenshot failed: {result.stderr}",
-            }
-
-    except Exception as e:
-        logger.error(f"MCP: Take screenshot failed: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-        }
+    del ods_path, output_path, delay_seconds
+    return _tool_response(
+        GateExecutionStatus.UNAVAILABLE,
+        implemented=False,
+        capability_available=False,
+        error=BoundaryError(
+            type="CapabilityUnavailable",
+            message="Screenshot capture is not implemented in the Docker runtime",
+        ),
+    )

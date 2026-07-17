@@ -1,10 +1,16 @@
-"""Python macro embedding into ODS files (Phase F6)."""
+"""Transactional Python macro upserts for ODS packages."""
 
-import xml.etree.ElementTree as ET
+import ast
+import os
+import tempfile
+
+# Used only for construction/serialization; all untrusted parsing uses defusedxml.
+import xml.etree.ElementTree as ET  # nosec B405
 import zipfile
 from pathlib import Path
 from typing import Any
 
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from loguru import logger
 
 from xlsliberator.validation_models import EventBindingIR
@@ -36,10 +42,8 @@ def embed_python_macros(
     Raises:
         MacroEmbedError: If embedding fails
 
-    Note:
-        Phase F6 implementation - embeds Python scripts into Scripts/python/
-        and updates META-INF/manifest.xml. Also rewrites VBA event handlers
-        to point to Python-UNO equivalents.
+    Only the named modules are replaced. Existing scripts, unknown package
+    members, and manifest entries remain untouched.
     """
     ods_path = Path(ods_path)
 
@@ -52,61 +56,134 @@ def embed_python_macros(
 
     logger.info(f"Embedding {len(py_modules)} Python modules into {ods_path}")
 
+    normalized_modules = _normalize_modules(py_modules)
     unresolved: list[EventBindingIR] = []
+    temp_path: Path | None = None
     try:
-        # Create temporary copy to work with
-        temp_path = ods_path.with_suffix(".ods.tmp")
+        descriptor, raw_temp_path = tempfile.mkstemp(
+            prefix=f".{ods_path.name}.", suffix=".tmp", dir=ods_path.parent
+        )
+        os.close(descriptor)
+        temp_path = Path(raw_temp_path)
 
-        # Open original ODS as ZIP and create new ZIP with embedded macros
         with (
             zipfile.ZipFile(ods_path, "r") as zip_in,
-            zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zip_out,
+            zipfile.ZipFile(temp_path, "w") as zip_out,
         ):
-            # Copy existing files
+            owned_paths = {f"Scripts/python/{name}" for name in normalized_modules}
             for item in zip_in.infolist():
-                # Skip META-INF/manifest.xml - we'll recreate it
                 if item.filename == "META-INF/manifest.xml":
                     continue
-                # Skip any existing Scripts/python/ files
-                if item.filename.startswith("Scripts/python/"):
+                if item.filename in owned_paths:
                     continue
-                # Process content.xml to rewrite VBA event handlers
                 if item.filename == "content.xml":
                     from xlsliberator.event_binding_writer import rewrite_event_bindings
 
                     data = zip_in.read(item.filename)
                     updated_content, unresolved = rewrite_event_bindings(
-                        data.decode("utf-8"), py_modules, event_bindings
+                        data.decode("utf-8"), normalized_modules, event_bindings
                     )
                     if unresolved:
-                        logger.warning(f"{len(unresolved)} event binding(s) could not be rewritten")
+                        raise MacroEmbedError(
+                            f"{len(unresolved)} event binding(s) could not be rewritten"
+                        )
                     zip_out.writestr(item, updated_content.encode("utf-8"))
                     continue
+                zip_out.writestr(item, zip_in.read(item.filename))
 
-                data = zip_in.read(item.filename)
-                zip_out.writestr(item, data)
-
-            # Add Python modules
-            for module_name, module_code in py_modules.items():
+            for module_name, module_code in normalized_modules.items():
                 script_path = f"Scripts/python/{module_name}"
-                zip_out.writestr(script_path, module_code)
+                zip_out.writestr(script_path, module_code.encode("utf-8"))
                 logger.debug(f"Added Python module: {script_path}")
 
-            # Update manifest.xml
-            manifest_content = _create_manifest_with_scripts(zip_in, list(py_modules.keys()))
+            manifest_content = _create_manifest_with_scripts(
+                zip_in, list(normalized_modules), remove_modules=[]
+            )
             zip_out.writestr("META-INF/manifest.xml", manifest_content)
 
-        # Replace original with updated file
-        temp_path.replace(ods_path)
-        logger.success(f"Embedded {len(py_modules)} Python modules successfully")
+        _fsync_file(temp_path)
+        _validate_embedded_package(temp_path, normalized_modules, event_bindings)
+        os.replace(temp_path, ods_path)
+        _fsync_directory(ods_path.parent)
+        temp_path = None
+        logger.success(f"Embedded {len(normalized_modules)} Python modules successfully")
 
-    except Exception as e:
-        raise MacroEmbedError(f"Failed to embed macros: {e}") from e
+    except Exception as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        if isinstance(exc, MacroEmbedError):
+            raise
+        raise MacroEmbedError(f"Failed to embed macros: {exc}") from exc
 
     return unresolved
 
 
-def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[str]) -> str:
+def remove_python_macros(ods_path: str | Path, module_names: list[str]) -> None:
+    """Remove only explicitly named Python modules in one atomic transaction."""
+    path = Path(ods_path)
+    removal = _normalize_module_names(module_names)
+    if not removal:
+        return
+    descriptor, raw_temp_path = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    os.close(descriptor)
+    temp_path = Path(raw_temp_path)
+    try:
+        removed_paths = {f"Scripts/python/{name}" for name in removal}
+        with zipfile.ZipFile(path, "r") as zip_in, zipfile.ZipFile(temp_path, "w") as zip_out:
+            for item in zip_in.infolist():
+                if item.filename == "META-INF/manifest.xml" or item.filename in removed_paths:
+                    continue
+                zip_out.writestr(item, zip_in.read(item.filename))
+            manifest = _create_manifest_with_scripts(
+                zip_in, module_names=[], remove_modules=removal
+            )
+            zip_out.writestr("META-INF/manifest.xml", manifest)
+        _fsync_file(temp_path)
+        _validate_embedded_package(temp_path, {}, None)
+        os.replace(temp_path, path)
+        _fsync_directory(path.parent)
+    except Exception as exc:
+        temp_path.unlink(missing_ok=True)
+        if isinstance(exc, MacroEmbedError):
+            raise
+        raise MacroEmbedError(f"Failed to remove macros: {exc}") from exc
+
+
+def _normalize_modules(py_modules: dict[str, str]) -> dict[str, str]:
+    names = _normalize_module_names(list(py_modules))
+    normalized: dict[str, str] = {}
+    for original, name in zip(py_modules, names, strict=True):
+        source = py_modules[original]
+        try:
+            compile(source, name, "exec")
+        except (SyntaxError, ValueError) as exc:
+            raise MacroEmbedError(f"Invalid Python module {name}: {exc}") from exc
+        normalized[name] = source
+    return normalized
+
+
+def _normalize_module_names(module_names: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_name in module_names:
+        name = raw_name if raw_name.endswith(".py") else f"{raw_name}.py"
+        if not name or Path(name).name != name or "/" in name or "\\" in name:
+            raise MacroEmbedError(f"Invalid Python module name: {raw_name!r}")
+        collision_key = name.casefold()
+        if collision_key in seen:
+            raise MacroEmbedError(f"Duplicate Python module name: {name}")
+        seen.add(collision_key)
+        normalized.append(name)
+    return normalized
+
+
+def _create_manifest_with_scripts(
+    zip_in: zipfile.ZipFile,
+    module_names: list[str],
+    remove_modules: list[str],
+) -> str:
     """Create updated manifest.xml with Python script entries.
 
     Args:
@@ -128,7 +205,7 @@ def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[st
     try:
         manifest_data = zip_in.read("META-INF/manifest.xml")
         # Safe: parsing manifest from ODS file we control
-        root = ET.fromstring(manifest_data)  # nosec B314
+        root = safe_fromstring(manifest_data)
     except KeyError:
         # No existing manifest - create new one
         root = ET.Element(f"{{{NS['manifest']}}}manifest")
@@ -141,10 +218,13 @@ def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[st
         _add_manifest_entry(root, "meta.xml", "text/xml")
         _add_manifest_entry(root, "settings.xml", "text/xml")
 
-    # Remove any existing Scripts/python/ entries
+    owned_paths = {
+        *(f"Scripts/python/{name}" for name in module_names),
+        *(f"Scripts/python/{name}" for name in remove_modules),
+    }
     for entry in root.findall(f".//{{{NS['manifest']}}}file-entry"):
         path = entry.get(f"{{{NS['manifest']}}}full-path", "")
-        if path.startswith("Scripts/python/"):
+        if path in owned_paths:
             root.remove(entry)
 
     # Add Scripts/python/ directory entry
@@ -172,10 +252,105 @@ def _create_manifest_with_scripts(zip_in: zipfile.ZipFile, module_names: list[st
         buffer,
         encoding="UTF-8",
         xml_declaration=True,
-        default_namespace=NS["manifest"],
     )
 
     return buffer.getvalue().decode("UTF-8")
+
+
+def _validate_embedded_package(
+    path: Path,
+    expected_modules: dict[str, str],
+    event_bindings: list[EventBindingIR] | None,
+) -> None:
+    """Fail before replacement unless package, scripts, manifest, and bindings agree."""
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            if archive.testzip() is not None:
+                raise MacroEmbedError("ODS ZIP contains a corrupt member")
+            infos = archive.infolist()
+            if not infos or infos[0].filename != "mimetype":
+                raise MacroEmbedError("ODS mimetype must be the first package member")
+            if infos[0].compress_type != zipfile.ZIP_STORED:
+                raise MacroEmbedError("ODS mimetype must be stored without compression")
+            expected_mimetype = b"application/vnd.oasis.opendocument.spreadsheet"
+            if archive.read("mimetype") != expected_mimetype:
+                raise MacroEmbedError("ODS mimetype is invalid")
+            names = set(archive.namelist())
+            for required in ("content.xml", "META-INF/manifest.xml"):
+                if required not in names:
+                    raise MacroEmbedError(f"ODS package is missing {required}")
+
+            manifest_root = safe_fromstring(archive.read("META-INF/manifest.xml"))
+            namespace = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
+            manifest_paths = {
+                entry.get(f"{{{namespace}}}full-path", "")
+                for entry in manifest_root.findall(f".//{{{namespace}}}file-entry")
+            }
+            scripts: dict[str, set[str]] = {}
+            for member in sorted(name for name in names if name.startswith("Scripts/python/")):
+                if member.endswith("/"):
+                    continue
+                if member not in manifest_paths:
+                    raise MacroEmbedError(f"Manifest omits embedded script {member}")
+                source = archive.read(member).decode("utf-8")
+                tree = ast.parse(source, filename=member)
+                scripts[Path(member).name] = {
+                    node.name
+                    for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                }
+            dangling_scripts = {
+                name
+                for name in manifest_paths
+                if name.startswith("Scripts/python/")
+                and not name.endswith("/")
+                and name not in names
+            }
+            if dangling_scripts:
+                raise MacroEmbedError(
+                    f"Manifest references missing scripts: {sorted(dangling_scripts)}"
+                )
+            for module_name, source in expected_modules.items():
+                member = f"Scripts/python/{module_name}"
+                if archive.read(member).decode("utf-8") != source:
+                    raise MacroEmbedError(
+                        f"Embedded module differs from requested source: {module_name}"
+                    )
+            _validate_event_targets(event_bindings, scripts)
+    except (KeyError, UnicodeDecodeError, zipfile.BadZipFile, ET.ParseError) as exc:
+        raise MacroEmbedError(f"Invalid ODS package: {exc}") from exc
+
+
+def _validate_event_targets(
+    event_bindings: list[EventBindingIR] | None,
+    scripts: dict[str, set[str]],
+) -> None:
+    for binding in event_bindings or []:
+        target = binding.target_script_uri
+        if not target:
+            raise MacroEmbedError(f"Event binding {binding.id} has no target")
+        marker = "vnd.sun.star.script:"
+        if not target.startswith(marker) or "$" not in target:
+            raise MacroEmbedError(f"Event binding {binding.id} has an invalid target URI")
+        module, procedure = target[len(marker) :].split("$", 1)
+        procedure = procedure.split("?", 1)[0]
+        if module not in scripts or procedure not in scripts[module]:
+            raise MacroEmbedError(
+                f"Event binding {binding.id} targets missing {module}${procedure}"
+            )
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _add_manifest_entry(root: ET.Element, full_path: str, media_type: str) -> None:

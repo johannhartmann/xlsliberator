@@ -1,0 +1,47 @@
+From: Xisco Fauli <xiscofauli@libreoffice.org>
+Date: Wed, 17 Jun 2026 12:15:14 +0200
+Subject: [PATCH] tdf#172479: fix TEXTBEFORE/TEXTAFTER match_end behavior
+Origin: upstream, https://git.libreoffice.org/core/+/537c8555b74bc892185e138485db6146fa36cd09
+Upstream-Commit: 537c8555b74bc892185e138485db6146fa36cd09
+Change-Id: If8bd48310791e44ba32a7d0f83f1c4aabd42cd89
+License: MPL-2.0
+
+When match_end is true, the virtual delimiter belongs at the end for a
+positive instance number and at the beginning for a negative instance number.
+This is a minimized backport of the upstream source hunk; XLSLiberator keeps a
+separate end-to-end regression fixture and evidence bundle.
+---
+ sc/source/core/tool/interpr1.cxx | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/sc/source/core/tool/interpr1.cxx b/sc/source/core/tool/interpr1.cxx
+index df16f0bc..79b54d2d 100644
+--- a/sc/source/core/tool/interpr1.cxx
++++ b/sc/source/core/tool/interpr1.cxx
+@@ -9413,8 +9413,6 @@ void ScInterpreter::ScTextBeforeOrAfter(bool bBefore)
+     }
+ 
+     std::vector<sal_Int32> aDelimiterPositions;
+-    if (bMatchEnd && !bBefore)
+-        aDelimiterPositions.push_back(0);
+ 
+     OUString sStr(sText.getString());
+     const sal_Int32 nLength (sStr.getLength());
+@@ -9460,8 +9458,13 @@ void ScInterpreter::ScTextBeforeOrAfter(bool bBefore)
+         nStart = nIndex + nDelLength;
+     }
+ 
+-    if (bMatchEnd && bBefore)
+-        aDelimiterPositions.push_back(nLength);
++    if (bMatchEnd)
++    {
++        if (nInstanceNum < 0)
++            aDelimiterPositions.insert(aDelimiterPositions.begin(), 0);
++        else
++            aDelimiterPositions.push_back(nLength);
++    }
+ 
+     sal_Int32 nSize(aDelimiterPositions.size());
+     if (nSize == 0 || std::abs(nInstanceNum) > nSize)
+-- 
+2.47.3

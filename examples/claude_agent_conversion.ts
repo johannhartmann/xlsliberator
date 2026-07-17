@@ -5,12 +5,12 @@
  * with Claude Agent SDK to perform intelligent Excel-to-ODS conversions.
  *
  * Prerequisites:
- * 1. Start MCP server: xlsliberator mcp-serve
- * 2. Install SDK: npm install @anthropic-ai/claude-agent-sdk
- * 3. Set API key: export ANTHROPIC_API_KEY="your-key"
+ * 1. Start the Docker platform: docker compose up -d xlsliberator-mcp
+ * 2. Install the SDK inside a disposable Node container (see examples/README.md)
+ * 3. Put ANTHROPIC_API_KEY in the untracked Compose .env file
  *
  * Usage:
- *   npx tsx examples/claude_agent_conversion.ts
+ *   Run this file from the disposable Node container described in examples/README.md
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -84,8 +84,8 @@ async function batchConversion() {
 
 For each file:
 - Convert with macro translation enabled
-- Validate formula equivalence (must be >95%)
-- If validation fails, recalculate and retry
+- Require the formula comparison operation to pass with no mismatches
+- If validation fails, preserve the evidence and report the failure
 - Report results in a summary table
 
 Continue processing all files even if one fails.`
@@ -254,14 +254,15 @@ async function errorRecovery() {
 
 1. Attempt conversion with all features enabled
 2. If conversion fails:
-   - Retry without macro translation
-   - If still fails, try without agent rewriting
+   - Preserve the failure evidence
+   - Retry only as a separately labelled reduced-capability conversion
 3. After successful conversion:
-   - Validate formulas
-   - If match rate < 90%, try recalculation
-4. Report final status and any limitations
+   - Run all required validation scenarios
+   - Recalculate once if a formula scenario fails, then validate again
+4. Report PASSED only when every required gate passed; otherwise report FAILED,
+   UNAVAILABLE, or UNSUPPORTED with the evidence and limitations
 
-Use a defensive approach - succeed even if some features fail.`
+Never turn a partial or reduced-capability result into a successful certification.`
       }
     };
   }

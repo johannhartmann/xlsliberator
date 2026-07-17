@@ -7,7 +7,7 @@ from typing import Any
 from loguru import logger
 from openpyxl import load_workbook
 
-from xlsliberator.uno_conn import UnoCtx, open_calc
+from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
 
 
 class FormulaComparisonResult:
@@ -54,21 +54,18 @@ def values_equal(val1: Any, val2: Any, tolerance: float = 1e-9) -> bool:
         True if values are considered equal
     """
 
-    # Handle empty values: Excel returns None for empty, Calc returns 0.0
-    # Special case: formulas like =IFERROR(MATCH(...), "") return None in Excel, 0.0 in Calc
-    if val1 is None and val2 == 0.0:
-        return True
-    if val1 == 0.0 and val2 is None:
-        return True
+    # Empty, zero, and empty-string results are distinct semantic outcomes.
     if val1 is None and val2 is None:
         return True
-
-    # If one is None (and other is not 0.0), they're not equal
     if val1 is None or val2 is None:
         return False
 
+    # Python bool is an int subclass; reject cross-kind comparison before numbers.
+    if isinstance(val1, bool) or isinstance(val2, bool):
+        return isinstance(val1, bool) and isinstance(val2, bool) and val1 == val2
+
     # Handle numeric values
-    if isinstance(val1, int | float) and isinstance(val2, int | float):
+    if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
         # Check for NaN
         if math.isnan(val1) and math.isnan(val2):
             return True
@@ -84,10 +81,6 @@ def values_equal(val1: Any, val2: Any, tolerance: float = 1e-9) -> bool:
 
     # Handle string values
     if isinstance(val1, str) and isinstance(val2, str):
-        return val1.strip() == val2.strip()
-
-    # Handle boolean values
-    if isinstance(val1, bool) and isinstance(val2, bool):
         return val1 == val2
 
     # Type mismatch
@@ -119,83 +112,65 @@ def compare_excel_calc(
     wb_excel_formulas = load_workbook(excel_path, data_only=False)  # For formulas
     wb_excel_values = load_workbook(excel_path, data_only=True)  # For calculated values
 
-    # Connect to LibreOffice and open ODS
-    logger.debug(f"Opening ODS file in LibreOffice: {ods_path}")
-    with UnoCtx() as uno_ctx:
-        doc = open_calc(uno_ctx, str(ods_path))
-
-        # Force recalculation to ensure all formulas have current values
-        logger.debug("Recalculating formulas in opened document...")
-        doc.calculateAll()
-
-        sheets = doc.getSheets()
-
-        # Compare each sheet
+    requested: list[dict[str, str]] = []
+    source_cells: dict[tuple[str, str], tuple[Any, Any]] = {}
+    try:
         for sheet_name in wb_excel_formulas.sheetnames:
-            if not sheets.hasByName(sheet_name):
-                logger.warning(f"Sheet '{sheet_name}' not found in ODS file")
-                continue
-
-            logger.debug(f"Comparing sheet: {sheet_name}")
-            ws_formulas = wb_excel_formulas[sheet_name]
-            ws_values = wb_excel_values[sheet_name]
-            sheet_calc = sheets.getByName(sheet_name)
-
-            # Iterate through all cells in Excel sheet
-            for _row_idx, row in enumerate(ws_formulas.iter_rows(), start=1):
+            formula_sheet = wb_excel_formulas[sheet_name]
+            value_sheet = wb_excel_values[sheet_name]
+            for row in formula_sheet.iter_rows():
                 for cell in row:
                     result.total_cells += 1
-
-                    # Skip non-formula cells
-                    if (
-                        cell.value is None
-                        or not hasattr(cell, "data_type")
-                        or cell.data_type != "f"
-                    ):
+                    if cell.data_type != "f":
                         continue
-
                     result.formula_cells += 1
+                    requested.append({"sheet": sheet_name, "address": cell.coordinate})
+                    row_index = cell.row
+                    column_index = cell.column
+                    if not isinstance(row_index, int) or not isinstance(column_index, int):
+                        raise TypeError("OpenPyXL returned a formula cell without coordinates")
+                    source_cells[(sheet_name, cell.coordinate)] = (
+                        cell.value,
+                        value_sheet.cell(row=row_index, column=column_index).value,
+                    )
+    finally:
+        wb_excel_formulas.close()
+        wb_excel_values.close()
 
-                    # Get Excel calculated value from data_only workbook
-                    value_cell = ws_values.cell(row=cell.row, column=cell.column)
-                    excel_val = value_cell.value
+    response = LibreOfficeWorkerClient(timeout_seconds=60).request(
+        {
+            "op": "inspect_document_cells",
+            "ods_path": str(ods_path),
+            "cells": requested,
+            "timeout_seconds": 60,
+        }
+    )
+    if not response.success:
+        raise RuntimeError(worker_unavailable_message(response))
 
-                    # Get Calc value (zero-indexed)
-                    calc_cell = sheet_calc.getCellByPosition(cell.column - 1, cell.row - 1)
-
-                    # Check cell type to determine if we need string or numeric value
-                    cell_type = calc_cell.getType().value  # TEXT, VALUE, FORMULA, EMPTY
-                    if cell_type == "TEXT":
-                        calc_val = calc_cell.getString()
-                    else:
-                        # For FORMULA and VALUE types, try numeric first, fallback to string
-                        calc_val = calc_cell.getValue()
-                        # If getValue returns 0 and cell has text, use text instead
-                        if calc_val == 0.0:
-                            calc_str = calc_cell.getString()
-                            if calc_str and calc_str.strip():
-                                calc_val = calc_str
-
-                    # Compare values
-                    if values_equal(excel_val, calc_val, tolerance):
-                        result.matching += 1
-                    else:
-                        result.mismatching += 1
-                        result.mismatches.append(
-                            {
-                                "sheet": sheet_name,
-                                "cell": cell.coordinate,
-                                "excel_value": excel_val,
-                                "calc_value": calc_val,
-                                "formula": cell.value if hasattr(cell, "value") else None,
-                            }
-                        )
-
-                        if len(result.mismatches) <= 10:  # Log first 10 mismatches
-                            logger.warning(
-                                f"Mismatch at {sheet_name}!{cell.coordinate}: "
-                                f"Excel={excel_val}, Calc={calc_val}"
-                            )
+    observed = {
+        (str(item["sheet"]), str(item["address"])): item
+        for item in response.data.get("cells") or []
+    }
+    for key, (formula, excel_value) in source_cells.items():
+        item = observed.get(key)
+        calc_value = item.get("value") if item and item.get("found") else None
+        if item and item.get("found") and values_equal(excel_value, calc_value, tolerance):
+            result.matching += 1
+            continue
+        result.mismatching += 1
+        if item and int(item.get("error") or 0):
+            result.errors += 1
+        result.mismatches.append(
+            {
+                "sheet": key[0],
+                "cell": key[1],
+                "excel_value": excel_value,
+                "calc_value": calc_value,
+                "formula": formula,
+                "target_error": item.get("error") if item else "cell_not_found",
+            }
+        )
 
     logger.success(result.summary())
     return result

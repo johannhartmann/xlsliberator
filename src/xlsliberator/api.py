@@ -1,31 +1,19 @@
-"""API module for Excel to ODS conversion (Phase 6.2 - Hybrid Approach).
+"""Docker-only Excel to LibreOffice Calc conversion API."""
 
-Strategic Decision (2025-11-07): Use LibreOffice native conversion + VBA translation.
-Architecture: Excel → soffice native → ODS + VBA extraction → LLM translation → Embed macros
-"""
-
-import os
-import shutil
-import subprocess
-import tempfile
 import time
 from collections.abc import Callable
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-from xlsliberator.calc_backend import (
-    RuntimeProfile,
-    create_isolated_user_profile,
-    discover_backends,
-)
+from xlsliberator.container_boundary import require_application_container
+from xlsliberator.docker_runtime import DockerRuntimeUnavailable, LibreOfficeDockerRuntime
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
 from xlsliberator.extract_vba import extract_vba_modules
 from xlsliberator.report import ConversionReport
-from xlsliberator.vba2py_uno import translate_vba_to_python
+from xlsliberator.vba2py_uno import translate_vba_project
 
 
 class ConversionError(Exception):
@@ -51,15 +39,6 @@ def _emit_progress(
         logger.warning(f"Progress callback failed: {e}")
 
 
-def _find_free_local_port() -> int:
-    """Reserve and release a random local TCP port for LibreOffice startup."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def convert_native(
     input_path: Path,
     output_path: Path,
@@ -67,7 +46,7 @@ def convert_native(
     user_installation_dir: str | Path | None = None,
     uno_port: int | None = None,
 ) -> None:
-    """Convert Excel to ODS using LibreOffice native conversion via UNO.
+    """Convert Excel to ODS in the authoritative LibreOffice Docker runtime.
 
     Args:
         input_path: Path to input Excel file
@@ -76,137 +55,21 @@ def convert_native(
     Raises:
         ConversionError: If native conversion fails
 
-    Note:
-        Uses UNO bridge for conversion to enable interactive document manipulation.
-        This allows complex operations like formula repair, macro embedding, etc.
+    ``user_installation_dir`` and ``uno_port`` remain accepted for API compatibility,
+    but are intentionally ignored: host office profiles and host UNO sockets are
+    outside the supported runtime boundary.
     """
-    from xlsliberator.uno_conn import UnoCtx
-
-    logger.info(f"Running LibreOffice native conversion: {input_path.name}")
-
+    require_application_container()
+    del user_installation_dir, uno_port
+    logger.info(f"Running Docker-only LibreOffice conversion: {input_path.name}")
     try:
-        try:
-            import uno  # noqa: F401
-        except ImportError:
-            logger.info("UNO Python bridge unavailable; using soffice CLI conversion")
-            _convert_native_with_soffice_cli(
-                input_path, output_path, user_installation_dir=user_installation_dir
-            )
-            return
-
-        # Ensure output directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Remove output file if it exists (UNO Overwrite flag doesn't always work)
-        if output_path.exists():
-            output_path.unlink()
-
-        # Convert using UNO (enables interactive document manipulation)
-        with UnoCtx(
-            port=uno_port or (_find_free_local_port() if user_installation_dir else 2002),
-            user_installation_dir=user_installation_dir,
-        ) as ctx:
-            # Load Excel file
-            input_url = f"file://{input_path.absolute()}"
-
-            # LoadComponentFromURL with import filter
-            doc = ctx.desktop.loadComponentFromURL(input_url, "_blank", 0, ())
-
-            # Store as ODS
-            output_url = f"file://{output_path.absolute()}"
-
-            # Store filter for ODS format
-            from com.sun.star.beans import PropertyValue
-
-            store_props = (PropertyValue(Name="FilterName", Value="calc8"),)  # ODS format
-
-            doc.storeToURL(output_url, store_props)
-            doc.close(True)
-
-        if not output_path.exists():
-            raise ConversionError(
-                f"Native conversion succeeded but output not found: {output_path}"
-            )
-
-        logger.success(f"Native conversion complete: {output_path}")
-
-    except Exception as e:
-        raise ConversionError(f"Native conversion error: {e}") from e
-
-
-def _convert_native_with_soffice_cli(
-    input_path: Path,
-    output_path: Path,
-    *,
-    user_installation_dir: str | Path | None = None,
-) -> None:
-    """Convert Excel to ODS using the office CLI.
-
-    Runs in the caller-supplied ``user_installation_dir`` profile when provided
-    (so a runner-managed, lifecycle-tracked profile is honoured), otherwise in a
-    throwaway isolated profile. Either way the user's global office profile is
-    never touched.
-    """
-    backends = discover_backends()
-    if not backends:
-        raise ConversionError("No LibreOffice/OpenOffice executable discovered for conversion")
-
-    backend = backends[0]
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists():
-        output_path.unlink()
-
-    with ExitStack() as stack:
-        if user_installation_dir is not None:
-            profile_dir = Path(user_installation_dir)
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            profile = RuntimeProfile(
-                user_installation_dir=profile_dir,
-                env=dict(os.environ),
-                cleanup=False,
-            )
-        else:
-            profile = stack.enter_context(create_isolated_user_profile("xlsliberator-convert-"))
-        tmpdir = stack.enter_context(
-            tempfile.TemporaryDirectory(prefix="xlsliberator-native-output-")
-        )
-        tmp_output_dir = Path(tmpdir)
-        command = [
-            backend.info.executable,
-            "--headless",
-            "--nologo",
-            "--nodefault",
-            "--norestore",
-            "--nofirststartwizard",
-            "--nolockcheck",
-            profile.user_installation_arg,
-            "--convert-to",
-            "ods",
-            "--outdir",
-            str(tmp_output_dir),
-            str(input_path),
-        ]
-        result = subprocess.run(
-            command,
-            env=profile.env,
-            capture_output=True,
-            text=True,
-            timeout=NATIVE_CONVERSION_TIMEOUT_SECONDS,
-            check=False,
-        )
-        converted = tmp_output_dir / f"{input_path.stem}.ods"
-        if result.returncode != 0 or not converted.exists():
-            raise ConversionError(
-                "soffice CLI conversion failed "
-                f"(exit={result.returncode}, stdout={result.stdout.strip()}, "
-                f"stderr={result.stderr.strip()})"
-            )
-        shutil.move(str(converted), output_path)
-
-    if not output_path.exists():
-        raise ConversionError(f"Native conversion succeeded but output not found: {output_path}")
-
-    logger.success(f"Native CLI conversion complete: {output_path}")
+        response = LibreOfficeDockerRuntime(
+            timeout_seconds=NATIVE_CONVERSION_TIMEOUT_SECONDS
+        ).convert(input_path, output_path)
+    except DockerRuntimeUnavailable as exc:
+        raise ConversionError(f"LibreOffice Docker runtime unavailable: {exc}") from exc
+    image_id = str((response.get("data") or {}).get("container_image_id", "unknown"))
+    logger.success(f"Docker LibreOffice conversion complete: {output_path} ({image_id})")
 
 
 def convert(
@@ -222,7 +85,7 @@ def convert(
     progress_callback: ProgressCallback | None = None,
     user_installation_dir: str | Path | None = None,
 ) -> ConversionReport:
-    """Convert Excel file to LibreOffice Calc ODS format (Hybrid Approach).
+    """Convert an Excel file to LibreOffice Calc ODS format.
 
     Args:
         input_path: Path to input Excel file (.xlsx, .xlsm, .xlsb, .xls)
@@ -242,20 +105,13 @@ def convert(
     Raises:
         ConversionError: If conversion fails (in strict mode)
 
-    Note:
-        Hybrid approach with intelligent VBA translation:
-        1. LibreOffice native conversion (100% formula equivalence)
-        2. VBA extraction from original Excel
-        3. Complexity detection (semantic analysis)
-        4. VBA→Python-UNO translation (auto-selects simple or agent-based)
-        5. Embed Python macros into native ODS
-
-        The system automatically detects VBA complexity and uses:
-        - Simple LLM translation for basic macros
-        - Multi-agent rewriting for games and complex event-driven code
+    LibreOffice and PyUNO execution is confined to the pinned Docker runtime.
+    Runtime validation and differential equivalence are separate certification
+    gates and are never inferred from conversion success.
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
+    del use_agent
 
     start_time = time.time()
 
@@ -266,9 +122,6 @@ def convert(
         success=False,
         locale=locale,
     )
-
-    # Track agent architecture for self-healing
-    agent_architecture = None
 
     logger.info(f"Starting hybrid conversion: {input_path} → {output_path}")
 
@@ -285,22 +138,21 @@ def convert(
                 user_installation_dir=user_installation_dir,
             )
 
-        # Step 1.5: Post-process native ODS to fix known bugs
-        # Skip for old .xls files (openpyxl doesn't support them)
+        # Pure package post-processing; this does not import or start UNO/LibreOffice.
         if input_path.suffix.lower() != ".xls":
-            logger.info("Step 1.5: Post-processing native ODS (fix formulas & ranges)...")
+            logger.info("Step 1.5: Post-processing native ODS formulas and ranges...")
             _emit_progress(progress_callback, "repairing", "Repairing formulas and named ranges")
             try:
                 from xlsliberator.fix_native_ods import post_process_native_ods
 
                 post_stats = post_process_native_ods(input_path, output_path)
                 report.formulas_fixed = post_stats.get("formulas_fixed", 0)
-            except Exception as e:
-                msg = f"Post-processing failed: {e}"
+            except Exception as exc:
+                msg = f"Post-processing failed: {exc}"
                 logger.warning(msg)
                 report.warnings.append(msg)
         else:
-            logger.info("Skipping post-processing for .xls file (openpyxl limitation)")
+            logger.info("Skipping package post-processing for legacy .xls input")
 
         # Extract metadata for reporting (from original Excel)
         logger.info("Extracting metadata for report...")
@@ -344,112 +196,41 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
-        # Step 3: Translate VBA to Python-UNO (if VBA found). LLM-only — when no
-        # ANTHROPIC_API_KEY is configured, translation is skipped (no macros
-        # embedded) rather than producing a degraded rule-based result.
-        python_modules = {}
-        if vba_modules and not os.environ.get("ANTHROPIC_API_KEY"):
-            msg = (
-                "ANTHROPIC_API_KEY not set - skipping VBA translation; macros will not be embedded"
+        # Step 3: Translate the complete VBA project with one provider context
+        # and one Docker-runtime provenance record. ``use_agent`` remains a
+        # compatibility argument; coding-agent repair is a separate bounded
+        # workflow and never bypasses deterministic translation validation.
+        python_modules: dict[str, str] = {}
+        if vba_modules:
+            logger.info("Step 3: Translating and validating the complete VBA project...")
+            _emit_progress(progress_callback, "translating", "Translating VBA project")
+            evidence_dir = output_path.parent / f"{output_path.name}.evidence" / "translation"
+            project = translate_vba_project(
+                {module.name: module.source_code for module in vba_modules},
+                cache_path=Path(".vba_cache.v2.json"),
+                evidence_dir=evidence_dir,
             )
-            logger.warning(msg)
-            report.warnings.append(msg)
-        elif vba_modules:
-            complexity = None
-            if use_agent:
-                # Step 3a: Detect complexity to choose the translation approach.
-                logger.info("Step 3a: Detecting VBA complexity...")
-                _emit_progress(progress_callback, "translating", "Analyzing VBA complexity")
-                try:
-                    from xlsliberator.pattern_detector import VBAPatternDetector
-
-                    detector = VBAPatternDetector()
-                    complexity = detector.analyze_modules(vba_modules, str(input_path))
-
-                    logger.info(
-                        f"Detected complexity: {complexity.complexity_level} "
-                        f"(confidence: {complexity.confidence:.0%})"
-                    )
-                    report.warnings.append(
-                        f"VBA complexity: {complexity.complexity_level} "
-                        f"({complexity.confidence:.0%} confidence)"
-                    )
-                except Exception as e:
-                    msg = f"Complexity detection failed: {e}"
-                    logger.warning(msg)
-                    report.warnings.append(msg)
-                    complexity = None
-
-            if use_agent and complexity and complexity.complexity_level in ["game", "advanced"]:
-                # Step 3b: Use the multi-agent system for complex VBA.
-                logger.info(
-                    f"Step 3b: Using agent rewriting for {complexity.complexity_level} VBA..."
-                )
-                _emit_progress(
-                    progress_callback, "translating", "Translating VBA with agent rewriting"
-                )
-
-                try:
-                    from xlsliberator.agent_rewriter import AgentRewriter
-
-                    agent = AgentRewriter()
-                    generated_code, validation = agent.rewrite_vba_project(
-                        modules=vba_modules,
-                        source_file=str(input_path),
-                        output_path=output_path,
-                        max_iterations=5,
-                    )
-
-                    # Use generated modules
-                    python_modules = generated_code.modules
-
-                    # Store architecture for self-healing (if available)
-                    agent_architecture = generated_code.architecture
-
-                    # Add validation info to report
-                    if not validation.syntax_valid:
-                        for error in validation.errors:
-                            report.errors.append(f"Agent validation: {error}")
-                    for warning in validation.warnings:
-                        report.warnings.append(f"Agent validation: {warning}")
-
-                    logger.success(
-                        f"Agent rewriting complete: {len(python_modules)} modules "
-                        f"({validation.iterations_used} iteration(s))"
-                    )
-
-                except Exception as e:
-                    msg = f"Agent-based rewriting failed: {e}"
-                    logger.warning(msg)
-                    report.warnings.append(msg)
-                    if strict:
-                        raise ConversionError(msg) from e
+            report.translation_status = project.status.value
+            report.translation_provenance = {
+                name: module.provenance.model_dump(mode="json")
+                for name, module in project.modules.items()
+            }
+            if project.evidence_manifest:
+                report.translation_evidence.append(project.evidence_manifest)
+            for warning in project.warnings:
+                report.warnings.append(f"VBA translation: {warning}")
+            if project.accepted:
+                python_modules = {
+                    f"{name}.py": module.python_code
+                    for name, module in project.modules.items()
+                    if module.python_code is not None
+                }
+                logger.success(f"Accepted {len(python_modules)} translated Python modules")
             else:
-                # Step 3b: Use simple LLM translation.
-                logger.info("Step 3b: Translating VBA modules...")
-                _emit_progress(progress_callback, "translating", "Translating VBA modules")
-
-                try:
-                    for vba_module in vba_modules:
-                        module_name = f"{vba_module.name}.py"
-                        result = translate_vba_to_python(
-                            vba_module.source_code,
-                            module_name=vba_module.name,
-                        )
-
-                        if result.python_code:
-                            python_modules[module_name] = result.python_code
-                            logger.debug(f"Translated: {module_name}")
-
-                        for warning in result.warnings:
-                            report.warnings.append(f"VBA translation: {warning}")
-
-                    logger.success(f"Translated {len(python_modules)} Python modules")
-
-                except Exception as e:
-                    msg = f"VBA translation failed: {e}"
-                    logger.warning(msg)
-                    report.warnings.append(msg)
+                details = "; ".join(project.errors) or project.status.value
+                report.errors.append(
+                    f"VBA translation did not produce an accepted project: {details}"
+                )
 
         # Step 4: Embed Python macros into native ODS
         if python_modules:
@@ -463,21 +244,13 @@ def convert(
             except Exception as e:
                 msg = f"Macro embedding failed: {e}"
                 logger.warning(msg)
-                report.warnings.append(msg)
+                report.errors.append(msg)
 
         # Step 4.5: Global macro security changes are disabled by default.
         if allow_global_macro_security_change:
-            logger.info("Step 4.5: Setting macro security to Low by explicit opt-in...")
-            try:
-                from xlsliberator.uno_conn import UnoCtx, set_macro_security_level
-
-                with UnoCtx() as ctx:
-                    set_macro_security_level(ctx, level=0)  # 0 = Low
-                logger.success("Macro security set to Low by explicit opt-in")
-            except Exception as e:
-                msg = f"Failed to set macro security: {e}"
-                logger.warning(msg)
-                report.warnings.append(msg)
+            msg = "Global macro security mutation is unsupported in the Docker-only runtime"
+            logger.warning(msg)
+            report.warnings.append(msg)
         elif python_modules:
             msg = (
                 "Skipped global macro security change; runtime macro execution validation "
@@ -512,7 +285,7 @@ def convert(
                     if not val_result.valid:
                         for error in val_result.errors:
                             msg = f"Macro validation error in {module_name}: {error}"
-                            report.warnings.append(msg)
+                            report.errors.append(msg)
                     for warning in val_result.warnings:
                         msg = f"Macro validation warning in {module_name}: {warning}"
                         report.warnings.append(msg)
@@ -520,7 +293,7 @@ def convert(
             except Exception as e:
                 msg = f"Macro validation failed: {e}"
                 logger.warning(msg)
-                report.warnings.append(msg)
+                report.errors.append(msg)
 
             # Step 4.7: Test macro execution (with self-healing if agent-generated)
             if not validate_macro_execution and not allow_global_macro_security_change:
@@ -534,68 +307,28 @@ def convert(
                 logger.info("Step 4.7: Testing macro execution...")
                 _emit_progress(progress_callback, "verifying_macros", "Testing macro execution")
                 try:
-                    if agent_architecture:
-                        # Use self-healing for agent-generated code
-                        from xlsliberator.python_macro_manager import test_macros_with_self_healing
+                    from xlsliberator.python_macro_manager import test_all_macros_safe
 
-                        logger.info("Using self-healing macro testing for agent-generated code...")
-                        healing_summary = test_macros_with_self_healing(
-                            output_path,
-                            agent_architecture,
-                            max_retries=3,
-                        )
+                    execution_summary = test_all_macros_safe(output_path)
+                    report.macro_functions_tested = execution_summary.total_functions
+                    report.macro_functions_passed = execution_summary.successful
+                    report.macro_functions_failed = execution_summary.failed
+                    report.macro_functions_skipped = execution_summary.skipped
 
-                        report.macro_functions_tested = healing_summary["total_functions"]
-                        report.macro_functions_passed = healing_summary["passed"]
-                        report.macro_functions_failed = healing_summary["failed"]
+                    logger.success(
+                        f"Macro execution: {execution_summary.successful}/"
+                        f"{execution_summary.total_functions} passed"
+                    )
 
-                        logger.success(
-                            f"Self-healing complete: {healing_summary['passed']}/"
-                            f"{healing_summary['total_functions']} passed, "
-                            f"{healing_summary['fixed']} modules fixed "
-                            f"({healing_summary['fix_attempts']} attempts)"
-                        )
-
-                        # Log fix history
-                        for fix in healing_summary["fix_history"]:
-                            if fix["success"]:
-                                msg = (
-                                    f"Self-healing: Fixed {fix['module']} "
-                                    f"(attempt {fix['attempt']})"
-                                )
-                                report.warnings.append(msg)
-                            else:
-                                msg = (
-                                    "Self-healing: Failed to fix "
-                                    f"{fix['module']}: {fix['error'][:200]}"
-                                )
-                                report.warnings.append(msg)
-
-                    else:
-                        # Use regular testing for simple-translated code
-                        from xlsliberator.python_macro_manager import test_all_macros_safe
-
-                        execution_summary = test_all_macros_safe(output_path)
-                        report.macro_functions_tested = execution_summary.total_functions
-                        report.macro_functions_passed = execution_summary.successful
-                        report.macro_functions_failed = execution_summary.failed
-                        report.macro_functions_skipped = execution_summary.skipped
-
-                        logger.success(
-                            f"Macro execution: {execution_summary.successful}/"
-                            f"{execution_summary.total_functions} passed"
-                        )
-
-                        # Log execution failures
-                        for uri, exec_result in execution_summary.execution_details.items():
-                            if not exec_result.success:
-                                msg = f"Macro execution failed: {uri}: {exec_result.error}"
-                                report.warnings.append(msg)
+                    for uri, exec_result in execution_summary.execution_details.items():
+                        if not exec_result.success:
+                            msg = f"Macro execution failed: {uri}: {exec_result.error}"
+                            report.errors.append(msg)
 
                 except Exception as e:
                     msg = f"Macro execution testing failed: {e}"
                     logger.warning(msg)
-                    report.warnings.append(msg)
+                    report.errors.append(msg)
 
             # Step 4.8: Agent-based GUI validation
             logger.info("Step 4.8: Running agent-based GUI validation...")
@@ -636,75 +369,24 @@ def convert(
                 logger.warning(msg)
                 report.warnings.append(msg)
 
-        # Step 5: Test formula equivalence
-        logger.info("Step 5: Testing formula equivalence...")
-        _emit_progress(progress_callback, "verifying_formulas", "Testing formula equivalence")
-        try:
-            from xlsliberator.testing_lo import compare_excel_calc
-
-            test_result = compare_excel_calc(input_path, output_path)
-            report.formulas_matching = test_result.matching
-            report.formulas_mismatching = test_result.mismatching
-            report.formula_match_rate = test_result.match_rate
-
-            logger.success(
-                f"Formula equivalence: {test_result.matching}/{test_result.formula_cells} "
-                f"({test_result.match_rate:.2f}%)"
-            )
-
-            # Log first few mismatches as warnings
-            for mismatch in test_result.mismatches[:5]:
-                msg = (
-                    f"Formula mismatch at {mismatch['sheet']}!{mismatch['cell']}: "
-                    f"Excel={mismatch['excel_value']} vs Calc={mismatch['calc_value']}"
-                )
-                report.warnings.append(msg)
-
-        except Exception as e:
-            msg = f"Formula equivalence testing failed: {e}"
-            logger.warning(msg)
-            report.warnings.append(msg)
-
-        # Step 5.5: Validate formulas using FunctionAccess
-        logger.info("Step 5.5: Validating formulas with FunctionAccess...")
-        _emit_progress(progress_callback, "verifying_formulas", "Validating formulas")
-        try:
-            from xlsliberator.python_macro_manager import validate_all_formulas
-
-            formula_summary = validate_all_formulas(output_path)
-            report.formulas_validated = formula_summary.total_formulas
-            report.formulas_valid = formula_summary.valid_formulas
-            report.formulas_invalid = formula_summary.invalid_formulas
-
-            logger.success(
-                f"Formula validation: {formula_summary.valid_formulas}/"
-                f"{formula_summary.total_formulas} valid"
-            )
-
-            # Log validation failures (first 10)
-            invalid_count = 0
-            for cell_ref, form_result in formula_summary.validation_details.items():
-                if not form_result.valid and invalid_count < 10:
-                    msg = f"Formula validation failed at {cell_ref}: {form_result.error}"
-                    report.warnings.append(msg)
-                    invalid_count += 1
-
-        except Exception as e:
-            msg = f"Formula validation failed: {e}"
-            logger.warning(msg)
-            report.warnings.append(msg)
-
-        # Conversion successful
-        report.success = True
+        if not output_path.is_file():
+            report.errors.append("Conversion did not produce an output file")
+        report.success = output_path.is_file() and not report.errors
         report.duration_seconds = time.time() - start_time
-        _emit_progress(
-            progress_callback,
-            "completed",
-            "Conversion complete",
-            {"output": str(output_path)},
-        )
-
-        logger.success(f"Hybrid conversion completed in {report.duration_seconds:.2f}s")
+        if report.success:
+            _emit_progress(
+                progress_callback,
+                "completed",
+                "Conversion complete",
+                {"output": str(output_path)},
+            )
+            logger.success(f"Hybrid conversion completed in {report.duration_seconds:.2f}s")
+        else:
+            message = "; ".join(report.errors)
+            _emit_progress(progress_callback, "failed", message)
+            logger.error(f"Hybrid conversion failed: {message}")
+            if strict:
+                raise ConversionError(message)
 
         return report
 

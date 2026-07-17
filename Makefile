@@ -1,5 +1,9 @@
 .PHONY: help fmt lint typecheck test test-unit test-integration test-cov security audit bandit all clean install pre-commit
 
+DOCKER_TEST := docker compose run --rm test
+DOCKER_ORCHESTRATOR := docker compose --profile ci-orchestrator run --rm test-orchestrator
+DOCKER_SECURITY := docker compose --profile ci-orchestrator run --rm security-audit
+
 help:
 	@echo "XLSLiberator Development Commands"
 	@echo "=================================="
@@ -27,59 +31,55 @@ help:
 	@echo "  make clean        - Clean generated files"
 
 install:
-	pip install -e ".[dev]"
-	pip install pip-audit bandit pre-commit pytest-cov
+	docker compose build test
 
 fmt:
 	@echo "==> Formatting code with ruff..."
-	ruff format .
+	$(DOCKER_TEST) ruff format .
 
 lint:
 	@echo "==> Linting code with ruff..."
-	ruff check .
+	$(DOCKER_TEST) ruff check .
 
 typecheck:
 	@echo "==> Type checking with mypy..."
-	mypy src/
+	$(DOCKER_TEST) mypy src/
 
 test:
 	@echo "==> Running all tests..."
-	pytest -v
+	$(DOCKER_TEST) pytest -v
 
 test-unit:
 	@echo "==> Running unit tests..."
-	pytest -v -m "not integration"
+	$(DOCKER_TEST) pytest -v -m "not integration"
 
 test-integration:
 	@echo "==> Running integration tests..."
-	pytest -v -m integration
+	@echo "Integration tests are orchestrated from Docker against disposable office containers."
+	mkdir -p artifacts/runtime-tmp artifacts/pytest-tmp artifacts/ci
+	$(DOCKER_ORCHESTRATOR) python tools/ci_check.py office
 
 test-cov:
 	@echo "==> Running tests with coverage..."
-	pytest -v --cov=xlsliberator --cov-report=term --cov-report=html
+	$(DOCKER_TEST) pytest -v --cov=xlsliberator --cov-report=term --cov-report=html
 	@echo ""
 	@echo "Coverage report generated in htmlcov/index.html"
 
 audit:
 	@echo "==> Auditing dependencies for vulnerabilities..."
-	pip-audit --desc
+	$(DOCKER_SECURITY) pip-audit --desc
 
 bandit:
 	@echo "==> Running Bandit security scanner..."
-	bandit -r src/ -f screen -c pyproject.toml || true
-	@echo ""
-	@echo "Note: Some findings (B110: try-except-pass, B314: XML parsing) are real issues"
-	@echo "      Others (subprocess usage) are legitimate for LibreOffice integration"
+	$(DOCKER_TEST) bandit -r src/ -f screen -c pyproject.toml
 
 security: audit bandit
 	@echo ""
 	@echo "==> Security checks completed"
 
 pre-commit:
-	@echo "==> Installing pre-commit hooks..."
-	pre-commit install
-	@echo "==> Running pre-commit on all files..."
-	pre-commit run --all-files
+	@echo "Pre-commit execution is containerized; host hook installation is intentionally disabled."
+	$(DOCKER_TEST) pre-commit run --all-files
 
 all: fmt lint typecheck test-unit security
 	@echo ""
@@ -90,5 +90,5 @@ all: fmt lint typecheck test-unit security
 clean:
 	@echo "==> Cleaning generated files..."
 	rm -rf build/ dist/ *.egg-info .pytest_cache .mypy_cache .ruff_cache htmlcov/ .coverage
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete

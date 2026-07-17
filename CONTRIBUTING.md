@@ -16,24 +16,20 @@ Please be respectful and constructive in all interactions. We're here to build g
    cd xlsliberator
    ```
 
-2. **Install dependencies**
+2. **Build the Docker development image**
    ```bash
-   pip install -e ".[dev]"
+   docker compose build test
    ```
 
-3. **Install LibreOffice** (for integration tests)
+3. **Build the pinned LibreOffice Docker runtime** (for integration tests)
    ```bash
-   # Ubuntu/Debian
-   sudo apt-get install libreoffice libreoffice-calc python3-uno
-
-   # macOS
-   brew install --cask libreoffice
+   docker compose build libreoffice-runtime
+   docker compose run --rm libreoffice-runtime runtime-probe
    ```
 
-4. **Set up pre-commit hooks** (optional but recommended)
+4. **Run pre-commit in Docker**
    ```bash
-   pip install pre-commit
-   pre-commit install
+   docker compose run --rm test pre-commit run --all-files
    ```
 
 ## Development Workflow
@@ -51,16 +47,16 @@ git checkout -b feature/your-feature-name
 ### 3. Run quality checks
 ```bash
 # Format code
-ruff format .
+docker compose run --rm test ruff format .
 
 # Lint
-ruff check .
+docker compose run --rm test ruff check .
 
 # Type check
-mypy src/
+docker compose run --rm test mypy src/
 
 # Run tests
-pytest
+docker compose run --rm test pytest
 ```
 
 ### 4. Commit your changes
@@ -126,16 +122,16 @@ def convert_excel_to_ods(
 ### Running Tests
 ```bash
 # All tests
-pytest
+docker compose run --rm test pytest
 
 # Unit tests only
-pytest -m "not integration"
+docker compose run --rm test pytest -m "not integration"
 
 # Integration tests (requires LibreOffice)
-pytest -m integration
+make test-integration
 
 # With coverage
-pytest --cov=xlsliberator --cov-report=html
+docker compose run --rm test pytest --cov=xlsliberator --cov-report=html
 ```
 
 ### Writing Tests
@@ -168,6 +164,18 @@ def test_feature_name():
 - ✅ Type checking passes (`mypy src/`)
 - ✅ Documentation is updated
 - ✅ CHANGELOG.md is updated (for notable changes)
+
+### Evidence checklist
+
+Changes to conversion, validation, formulas, macros, controls, or the LibreOffice
+backend must include:
+
+- [ ] a regression fixture or deterministic unit fixture;
+- [ ] required gates with explicit passed, failed, skipped, unavailable, or not-run status;
+- [ ] Docker runtime identity and evidence references for runtime claims;
+- [ ] source-artifact disposition and loss accounting where applicable;
+- [ ] updated capability data without manually invented percentages;
+- [ ] exact local commands and outcomes in `docs/implementation_status.md`.
 
 ### PR Description Template
 ```markdown

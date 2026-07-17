@@ -7,7 +7,7 @@
 
 **Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation**
 
-XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files with full formula translation and VBA-to-Python-UNO macro conversion.
+XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files. Formula, VBA, control, and runtime support varies by artifact and must be read from the [evidence-backed capability matrix](docs/capability_matrix.md).
 
 ## Features
 
@@ -16,9 +16,9 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 - **Translation Quality Assurance**: Reference-aware translation, syntax validation, reflection loop, and automated test generation
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
 - **Safe-by-Default Macros**: Embeds and validates Python macros in isolated LibreOffice profiles without changing your global macro security settings
-- **Validated Transformation**: Optional certification pipeline that evaluates the output in LibreOffice/Apache OpenOffice and emits JSON + Markdown reports
-- **Native LibreOffice Conversion**: Uses LibreOffice's native conversion engine for 100% formula equivalence
-- **Comprehensive Support**: Handles tables, charts, forms, and complex workbook structures
+- **Validated Transformation**: Experimental certification pipeline for the pinned LibreOffice Docker runtime; current measured capabilities are listed in the [capability matrix](docs/capability_matrix.md)
+- **Native LibreOffice Conversion**: Uses LibreOffice as the base converter; semantic equivalence requires scenario evidence
+- **Artifact Inventory**: Detects supported and unsupported workbook structures without claiming universal coverage
 - **High Performance**: Processes 27k+ cells in under 5 minutes
 - **🆕 MCP Server**: FastMCP 2.0 server for Claude Agent SDK integration with 19 tools
 
@@ -26,42 +26,9 @@ XLSLiberator converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOf
 
 ### System Requirements
 
-**LibreOffice 7.x+ with Python UNO bridge**
-
-Ubuntu/Debian:
-```bash
-sudo apt-get update
-sudo apt-get install libreoffice libreoffice-script-provider-python
-```
-
-Fedora/RHEL:
-```bash
-sudo dnf install libreoffice libreoffice-pyuno
-```
-
-macOS (Homebrew):
-```bash
-brew install --cask libreoffice
-```
-
-Windows:
-- Download from [libreoffice.org](https://www.libreoffice.org/download/download/)
-- Ensure Python support is included during installation
-
-**Verify LibreOffice installation:**
-```bash
-soffice --version
-```
-
-**Python 3.11+**
-
-Ubuntu/Debian:
-```bash
-sudo apt-get install python3.11 python3.11-venv python3-pip
-```
-
-macOS/Windows:
-- Download from [python.org](https://www.python.org/downloads/)
+**Docker with the pinned LibreOffice 26.2.4.2 runtime image.** A host Python or
+host office installation is neither required nor supported, including for
+diagnostics.
 
 ### Optional Requirements
 
@@ -69,27 +36,21 @@ macOS/Windows:
 
 1. Sign up at [anthropic.com](https://www.anthropic.com/)
 2. Generate API key from console
-3. Set environment variable:
-```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
-```
+3. Put `ANTHROPIC_API_KEY=your-api-key-here` in the untracked Compose `.env`
+   file or supply it through the container platform's secret mechanism.
 
-Without the API key, XLSLiberator can still convert Excel to ODS with full formula preservation, but VBA macros will not be translated.
+Without the API key, XLSLiberator can still attempt Excel-to-ODS conversion, but
+VBA macros are not translated and formula preservation is not certified without
+the required runtime and differential evidence.
 
 ## Installation
 
-### From Git
-
-```bash
-pip install git+https://github.com/johannhartmann/xlsliberator.git
-```
-
-### Development Installation
+XLSLiberator is Docker-only. Do not install or run its Python package on the host.
 
 ```bash
 git clone https://github.com/johannhartmann/xlsliberator.git
 cd xlsliberator
-pip install -e ".[dev]"
+docker compose build test libreoffice-runtime
 ```
 
 ## Quick Start
@@ -97,22 +58,27 @@ pip install -e ".[dev]"
 ### Command Line
 
 ```bash
-# Basic conversion (VBA macros are translated and embedded automatically when present)
-xlsliberator convert input.xlsx output.ods
+# Basic conversion from the Docker application orchestrator
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator convert "$PWD/input.xlsx" "$PWD/output.ods"
 
-# VBA translation requires an Anthropic API key
-export ANTHROPIC_API_KEY="your-api-key"
-xlsliberator convert input.xlsm output.ods
+# VBA translation requires ANTHROPIC_API_KEY in the Docker Compose environment
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator convert "$PWD/input.xlsm" "$PWD/output.ods"
 
 # Skip VBA macro translation
-xlsliberator convert --no-macros input.xlsm output.ods
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator convert --no-macros "$PWD/input.xlsm" "$PWD/output.ods"
 
 # Convert and run validation gates, producing a certification report
-xlsliberator transform-validated input.xlsm output.ods
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator transform-validated "$PWD/input.xlsm" "$PWD/output.ods"
 
 # Inspect a workbook, or validate an existing conversion, without converting
-xlsliberator inspect input.xlsm
-xlsliberator validate input.xlsm output.ods
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator inspect "$PWD/input.xlsm"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsliberator validate "$PWD/input.xlsm" "$PWD/output.ods"
 ```
 
 ### MCP Server (Claude Agent SDK)
@@ -120,10 +86,12 @@ xlsliberator validate input.xlsm output.ods
 Start the MCP server for Claude Agent SDK integration:
 
 ```bash
-# Start server with defaults (0.0.0.0:8000)
-xlsliberator mcp-serve
+# Build the exact office worker, then start the loopback-only MCP orchestrator
+mkdir -p artifacts/runtime-tmp artifacts/mcp-workspace
+docker compose build libreoffice-runtime xlsliberator-mcp
+docker compose up -d xlsliberator-mcp
 
-# Client connects to: http://localhost:8000/mcp
+# Client connects to: http://localhost:8080/mcp
 ```
 
 Use with Claude Agent SDK:
@@ -133,7 +101,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 
 const mcpServers = {
   "libreoffice-uno": {
-    url: "http://localhost:8000/mcp"
+    url: "http://localhost:8080/mcp"
   }
 };
 
@@ -156,30 +124,31 @@ for await (const message of query({
 - `read_cell`, `list_sheets`, `get_sheet_data` - Read spreadsheet data
 - `list_controls`, `list_event_bindings` - Inspect ODS form controls and event bindings
 - `embed_macros`, `validate_macros`, `list_embedded_macros`, `test_macro_execution` - Manage and test Python-UNO macros
-- `recalculate_document` - Force recalculation of all formulas
-- `open_document_gui`, `click_form_button`, `send_keyboard_input`, `get_cell_colors`, `take_screenshot` - Drive GUI validation
+- `recalculate_document`, `validate_document_runtime` - Run target operations in a disposable pinned Docker runtime
+- `execute_button_handler` - Resolve an inventoried button and invoke its handler directly; this is not a GUI click
+- `open_document_gui`, `click_form_button`, `send_keyboard_input`, `take_screenshot` - Explicitly unavailable until real container capabilities exist
+- `get_cell_colors` - Inspect cell background state through the Docker worker
 
-All tools are registered in `src/xlsliberator/mcp_server.py`.
+All tools are registered in `src/xlsliberator/mcp_server.py`. Their canonical
+response and runtime-selection contracts are documented in
+[`docs/mcp_tools.md`](docs/mcp_tools.md).
 
 ### Browser Web App
 
 Run the Docker web app for the closest production-like setup:
 
 ```bash
-docker compose up --build
+mkdir -p artifacts/runtime-tmp
+docker compose build libreoffice-runtime xlsliberator-web
+docker compose up -d xlsliberator-web
 ```
 
 Open `http://127.0.0.1:8080/` for the landing page and its embedded live demo: pick a
 bundled example workbook (or upload your own), start a real conversion, watch the pipeline
 progress inline, and download the converted `.ods` file plus JSON and Markdown reports.
 
-For local development without Docker, install the optional web dependencies and run the
-FastAPI app:
-
-```bash
-pip install -e ".[web,dev]"
-xlsliberator web-serve --host 0.0.0.0 --port 8080 --reload
-```
+The supported development path is entirely Docker-based. The host shell is limited to Docker,
+Git, and file operations; it must not start Python, `uv`, LibreOffice, UNO, or PyUNO.
 
 The web app accepts `.xls`, `.xlsx`, `.xlsm`, and `.xlsb` uploads. It stores each job
 under a server-generated ID, uses isolated LibreOffice profiles for web conversions,
@@ -189,6 +158,10 @@ See the [User Guide](user_guide.md) for the full workflow and the
 [Web App Guide](docs/web_app.md) for development, API, and Docker details.
 
 ### Python API
+
+The Python API is an in-container API. These examples run inside the application
+Docker container; direct host invocation is rejected before any office runtime
+can be constructed.
 
 ```python
 from xlsliberator.api import convert
@@ -214,7 +187,7 @@ For the validated transformation pipeline (convert + certify against real office
 ```python
 from xlsliberator.validated_api import transform_validated
 
-report = transform_validated("input.xlsm", "output.ods", targets=["both"])
+report = transform_validated("input.xlsm", "output.ods", targets=["libreoffice"])
 print(f"Certified: {report.certification.certified}")
 print(report.to_markdown())
 ```
@@ -231,7 +204,8 @@ When converting Excel files with VBA, XLSLiberator:
 During conversion, XLSLiberator:
 - Embeds Python-UNO macros into the ODS file's `Scripts/python/` directory
 - Rewrites event handlers in `content.xml` from `language=Basic` to `language=Python`
-- Loads documents in-process with `MacroExecutionMode=4` (ALWAYS_EXECUTE_NO_WARN) so embedded macros run during conversion and validation
+- Loads documents only in the disposable pinned office worker container, where
+  `MacroExecutionMode=4` is scoped to that isolated job profile
 - Runs runtime macro validation inside isolated, temporary LibreOffice profiles
 
 **Your global LibreOffice macro security is not modified by default.** To actually run the embedded
@@ -259,7 +233,7 @@ convert("input.xlsm", "output.ods", allow_global_macro_security_change=True)
 
 XLSLiberator uses a hybrid approach:
 
-1. **Native Conversion**: LibreOffice's native `--convert-to ods` provides the base conversion with 100% formula equivalence
+1. **Native Conversion**: the pinned LibreOffice Docker runtime provides the base conversion; equivalence is evaluated separately
 2. **VBA Extraction**: Extracts VBA code from Excel files using oletools
 3. **LLM Translation**: Translates VBA to Python-UNO using Claude API with 4-phase quality pipeline:
    - Phase 1: Reference-aware translation (hybrid LLM + regex pattern detection)
@@ -268,7 +242,7 @@ XLSLiberator uses a hybrid approach:
    - Phase 4: Runtime execution testing (UNO script execution validation)
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
 5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
-6. **Isolated Runtime Validation**: Validates embedded macros in temporary LibreOffice profiles, leaving global macro security untouched
+6. **Isolated Runtime Validation**: Runs required validation in disposable, resource-limited LibreOffice containers and profiles
 7. **Formula Repair**: Deterministic AST transformations fix incompatibilities
 
 ## Development
@@ -280,11 +254,11 @@ XLSLiberator uses a hybrid approach:
 git clone https://github.com/yourusername/xlsliberator.git
 cd xlsliberator
 
-# Install dependencies
-pip install -e ".[dev]"
+# Build the development and exact LibreOffice images
+docker compose build test libreoffice-runtime
 
 # Run tests
-pytest
+docker compose run --rm test pytest
 
 # Code quality checks
 make fmt      # Format code with ruff
@@ -339,27 +313,28 @@ xlsliberator/
 ## Testing
 
 ```bash
-# Run all tests
-pytest
+# Run all tests in the development container
+docker compose run --rm test pytest
 
 # Run specific test categories
-pytest -m "not integration"   # Unit tests only (no LibreOffice required)
-pytest -m integration         # Integration tests (requires LibreOffice)
-pytest -m benchmark           # Performance benchmarks
-LO_SKIP_IT=1 pytest           # Force-disable LibreOffice integration tests
+docker compose run --rm test pytest -m "not integration"
+make test-integration
+docker compose run --rm test pytest -m benchmark
 
 # Run with coverage
-pytest --cov=xlsliberator --cov-report=html
+docker compose run --rm test pytest --cov=xlsliberator --cov-report=html
 ```
 
-## Performance
+## Measured capabilities
 
-Benchmark on real-world Excel file (27k cells, complex formulas):
-
-- **Conversion time**: 264 seconds (< 5 minutes)
-- **Formula equivalence**: 100% (using native conversion)
-- **VBA translation**: 90%+ success rate
-- **Memory usage**: < 500MB peak
+No repository-wide equivalence or VBA-success percentage is currently certified.
+Measured results are generated from the conformance corpus and published in the
+[capability matrix](docs/capability_matrix.md) and generated
+[release-readiness report](docs/release_readiness.md); unavailable, skipped,
+unsupported, waived, and failed runs remain distinct from passing results.
+The current generated release decision is **NO**: three target-runtime cases are
+validated, while required XLSX/XLSM/security cases and all Excel source
+differentials are not yet green.
 
 ## Known Limitations
 

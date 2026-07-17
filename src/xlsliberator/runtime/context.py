@@ -1,8 +1,9 @@
-"""Excel runtime context."""
+"""Excel runtime context over the shared fake/UNO backend interface."""
 
 from dataclasses import dataclass, field
 
-from xlsliberator.runtime.workbook import WorkbookAdapter, WorksheetAdapter
+from xlsliberator.runtime.backend import CompatibilityBackend, FakeExcelBackend
+from xlsliberator.runtime.object_model import Application, Workbook, Worksheet
 from xlsliberator.runtime.worksheet_function import WorksheetFunctionAdapter
 
 
@@ -10,9 +11,20 @@ from xlsliberator.runtime.worksheet_function import WorksheetFunctionAdapter
 class ExcelContext:
     """Context object passed to translated VBA code."""
 
-    workbook: WorkbookAdapter = field(default_factory=WorkbookAdapter)
-    worksheet_function: WorksheetFunctionAdapter = field(default_factory=WorksheetFunctionAdapter)
+    backend: CompatibilityBackend = field(default_factory=FakeExcelBackend)
+    application: Application = field(init=False)
 
-    def active_sheet(self) -> WorksheetAdapter:
+    def __post_init__(self) -> None:
+        self.application = Application(self.backend)
+
+    @property
+    def workbook(self) -> Workbook:
+        return self.application.active_workbook
+
+    @property
+    def worksheet_function(self) -> WorksheetFunctionAdapter:
+        return self.application.worksheet_function
+
+    def active_sheet(self) -> Worksheet:
         """Return the workbook's active sheet (VBA ``ActiveSheet``)."""
-        return self.workbook.active_sheet()
+        return self.application.active_sheet

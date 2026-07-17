@@ -154,10 +154,20 @@ Thumbs.db
 output_*.ods
 *_repaired.ods
 *_fixed.ods
+/artifacts/pytest-tmp/
+/artifacts/runtime-tmp/
 
 # Development tools
 /kill
 /tools/
+!/tools/
+/tools/*
+!/tools/office
+!/tools/office.py
+!/tools/ci_check.py
+!/tools/generate_certification_samples.py
+!/tools/windows_excel_oracle.py
+!/tools/write_release_inputs.py
 prompts/
 rules/calc_transforms/
 run_convert.sh
@@ -174,6 +184,17 @@ docs/*
 !docs/validated_transformation_roadmap.md
 !docs/web_app.md
 !docs/production_hardening.md
+!docs/implementation_status.md
+!docs/capability_matrix.md
+!docs/capability_matrix.json
+!docs/corpus_statistics.json
+!docs/agent_repair.md
+!docs/excel_oracle.md
+!docs/mcp_tools.md
+!docs/security_threat_model.md
+!docs/office_source_integration.md
+!docs/release_readiness.md
+!docs/vba_execution_architecture.md
 
 # Temporary files
 *.tmp

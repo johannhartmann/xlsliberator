@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "tdf-172479-textafter-positive-match-end",
+  "status": "passed",
+  "reason": "The pinned stock source build reproduces the defect and the same source commit with the declared patch passes the identical Docker-only conformance case.",
+  "stock": {
+    "disposition": "failed-as-expected",
+    "executed_at": "2026-07-14T14:55:27.849040+00:00",
+    "runtime_image": "xlsliberator-libreoffice:26.2.4.2-stock-source",
+    "runtime_image_digest": "sha256:1ac987bff191964e8f82db47fafb0ec9b07f311071e34a6e7d31a422bc235d5b",
+    "runtime_variant": "stock-source",
+    "architecture": "aarch64",
+    "libreoffice_build": "26.2.4.2",
+    "source_build_id": "0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+    "source_archive_sha256": "b9f9655442432998af2cd1034aeee802641aba4d0be6b6ce4fc10bec78ce4b9b",
+    "python_version": "3.12.13",
+    "calc_core_sha256": "918bd41c0bb2f641555bae568b32b94bbabe7d9896e7fc47032b424223aa4be5",
+    "office_sha256": "adf468b45764b2abce53a7d91bbf3056b33f2734c5d5f628c075753e73903c43",
+    "uno_module_sha256": "6374b68bc6d38374857c0d8050ef5e6c1d1f10ae71d8c49bc5249e1366d9194a",
+    "pyuno_native_sha256": "428adcd3022b5d9c59c8cb28f81cc366c6317f9929f92ac6cb3e09b5223e5c7f",
+    "identity_evidence": "artifacts/office-build/libreoffice/stock-source/identity.json",
+    "conformance_evidence": "artifacts/office-build/libreoffice/stock-source/conformance.json",
+    "observed": {
+      "formula_after": "=TEXTAFTER(\"Brown, Lucas\";\"xxx\";1;0;1)",
+      "error_code": 0,
+      "string": "Brown, Lucas",
+      "numeric_value": 0.0,
+      "cell_type": "FORMULA"
+    },
+    "expected": {
+      "error_code": 0,
+      "string": ""
+    }
+  },
+  "patched": {
+    "disposition": "passed",
+    "executed_at": "2026-07-14T15:18:23.517032+00:00",
+    "runtime_image": "xlsliberator-libreoffice:26.2.4.2-text-functions-v1",
+    "runtime_image_digest": "sha256:b0fd4dd05234bc7b2b631bba6adf0de258561e933d0133e8758918abea931ee1",
+    "runtime_variant": "xlsliberator-text-functions-v1",
+    "architecture": "aarch64",
+    "libreoffice_build": "26.2.4.2",
+    "source_build_id": "0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+    "source_archive_sha256": "b9f9655442432998af2cd1034aeee802641aba4d0be6b6ce4fc10bec78ce4b9b",
+    "patch_set_sha256": "7211ee90e1fefe803317ef80c75f2397682219c24ce6d8321bbd4f3bb914ed7b",
+    "python_version": "3.12.13",
+    "calc_core_sha256": "b844213f18f2406de356ce93ae11ac575f1f649f485b6baaba1496fcfe41312e",
+    "office_sha256": "adf468b45764b2abce53a7d91bbf3056b33f2734c5d5f628c075753e73903c43",
+    "uno_module_sha256": "6374b68bc6d38374857c0d8050ef5e6c1d1f10ae71d8c49bc5249e1366d9194a",
+    "pyuno_native_sha256": "428adcd3022b5d9c59c8cb28f81cc366c6317f9929f92ac6cb3e09b5223e5c7f",
+    "identity_evidence": "artifacts/office-build/libreoffice/xlsliberator-text-functions-v1/identity.json",
+    "conformance_evidence": "artifacts/office-build/libreoffice/xlsliberator-text-functions-v1/conformance.json",
+    "observed": {
+      "formula_after": "=TEXTAFTER(\"Brown, Lucas\";\"xxx\";1;0;1)",
+      "error_code": 0,
+      "string": "",
+      "numeric_value": 0.0,
+      "cell_type": "FORMULA"
+    },
+    "expected": {
+      "error_code": 0,
+      "string": ""
+    }
+  }
+}

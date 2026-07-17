@@ -1,24 +1,24 @@
-FROM python:3.11-slim
+ARG PYTHON_BASE=python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3
+FROM ${PYTHON_BASE}
+
+ARG SETUPTOOLS_VERSION=83.0.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends docker-cli \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    XLSLIBERATOR_APPLICATION_CONTAINER=1 \
     XLSLIBERATOR_DATA_DIR=/data
-
-# Debian package versions intentionally follow the python:3.11-slim security stream.
-# hadolint ignore=DL3008
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        libreoffice \
-        libreoffice-calc \
-        libreoffice-script-provider-python \
-        python3-uno \
-        fonts-dejavu \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir -e ".[web]"
+RUN python -m pip install --no-cache-dir --upgrade "setuptools==${SETUPTOOLS_VERSION}" \
+    && python -m pip install --no-cache-dir -e ".[web]"
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
     && mkdir -p /data \

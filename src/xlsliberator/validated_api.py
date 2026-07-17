@@ -4,6 +4,8 @@ from pathlib import Path
 
 from xlsliberator.api import convert
 from xlsliberator.certification_report import CertificationReport
+from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+from xlsliberator.scenarios.models import RuntimeTrace, Scenario
 from xlsliberator.validation_runner import ValidationPlan, ValidationRunner, parse_target_kind
 
 
@@ -23,12 +25,15 @@ def transform_validated(
     max_repair_iterations: int = 0,
     embed_macros: bool = True,
     use_agent: bool = True,
+    scenario: Scenario | None = None,
+    source_trace: RuntimeTrace | None = None,
+    target_trace: RuntimeTrace | None = None,
 ) -> CertificationReport:
     """Convert a workbook and run validation gates."""
     input_file = Path(input_path)
     output_file = Path(output_path)
 
-    convert(
+    conversion_report = convert(
         input_file,
         output_file,
         strict=False,
@@ -37,8 +42,15 @@ def transform_validated(
     )
 
     target_kinds = []
-    for target in targets or ["both"]:
+    for target in targets or ["libreoffice"]:
         target_kinds.extend(parse_target_kind(target))
+
+    if target_trace is None and scenario is not None and source_trace is not None:
+        target_trace = LibreOfficeScenarioRunner().run(
+            output_file,
+            source_trace.environment,
+            scenario,
+        )
 
     report = ValidationRunner(
         ValidationPlan(
@@ -48,6 +60,26 @@ def transform_validated(
             strict=strict,
             repair=max_repair_iterations > 0,
             max_repair_iterations=max_repair_iterations,
+            conversion_report=conversion_report,
+            scenario=scenario,
+            source_trace=source_trace,
+            target_trace=target_trace,
+            enabled_gates=[
+                "conversion",
+                "inventory",
+                "formula",
+                "macro",
+                "control",
+                "runtime_identity",
+                "backend",
+                "target_open",
+                "target_recalculate",
+                "target_save",
+                "target_close",
+                "target_reopen",
+                "target_package",
+                *(["target_scenario"] if target_trace is not None else []),
+            ],
         )
     ).run_all()
 

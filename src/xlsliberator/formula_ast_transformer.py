@@ -136,14 +136,16 @@ class IndirectAddressTransformer(Transformer):
         # ADDRESS(row, col, abs, a1) - only first 4 parameters
         address_no_sheet = Tree("function_call", address_children[:5])
 
-        # Build string for sheet reference: "Sheet."
-        sheet_prefix = Tree("string", [Token("STRING", f'"{sheet_ref}."')])
+        # Calc 26.2 resolves Excel-style ``Sheet!A1`` strings through INDIRECT.
+        # Its native ``Sheet.A1`` notation is valid for direct references but
+        # produces #REF! when supplied as an INDIRECT string.
+        sheet_prefix = Tree("string", [Token("STRING", f'"{sheet_ref}!"')])
 
-        # Build concatenation: "Sheet." & ADDRESS(row, col, abs, a1)
+        # Build concatenation: "Sheet!" & ADDRESS(row, col, abs, a1)
         concat_tree = Tree("concat", [sheet_prefix, address_no_sheet])
 
         logger.debug(
-            f'Transformed INDIRECT(ADDRESS(..., {sheet_name})) → INDIRECT("{sheet_ref}." & ADDRESS(...))'
+            f'Transformed INDIRECT(ADDRESS(..., {sheet_name})) → INDIRECT("{sheet_ref}!" & ADDRESS(...))'
         )
 
         # Return INDIRECT(concatenation)

@@ -3,19 +3,25 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from xlsliberator.docker_runtime import DockerRuntimeUnavailable
 from xlsliberator.web.app import create_app
 from xlsliberator.web.schemas import WebSettings
 
 
-def test_app_health_and_readyz_without_soffice(tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setattr("xlsliberator.web.app.shutil.which", lambda _name: None)
+def test_app_health_and_readyz_without_docker_runtime(tmp_path: Path, monkeypatch: Any) -> None:
+    def unavailable(_self: object) -> None:
+        raise DockerRuntimeUnavailable("docker missing")
+
+    monkeypatch.setattr(
+        "xlsliberator.web.app.LibreOfficeDockerRuntime.resolve_identity", unavailable
+    )
     app = create_app(WebSettings(data_dir=tmp_path))
     client = TestClient(app)
 
     assert client.get("/healthz").json() == {"status": "ok"}
     ready = client.get("/readyz").json()
     assert ready["data_dir_writable"] is True
-    assert ready["soffice_available"] is False
+    assert ready["docker_runtime_available"] is False
     assert ready["version"] is None
 
 

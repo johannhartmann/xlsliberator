@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0.0",
+  "id": "libreoffice-basic-recalculation",
+  "description": "Open, inspect, edit, recalculate, save, and reopen a checked-in ODS fixture.",
+  "steps": [
+    {
+      "id": "open",
+      "action": {"kind": "open"},
+      "observations_after": [
+        {"id": "initial_formula", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A3"}},
+        {"id": "initial_sheets", "kind": "sheets"},
+        {"id": "initial_package", "kind": "artifact_inventory"}
+      ]
+    },
+    {
+      "id": "activate",
+      "action": {"kind": "activate_sheet", "parameters": {"sheet": "Sheet1"}},
+      "observations_after": [
+        {"id": "activated_sheets", "kind": "sheets"}
+      ]
+    },
+    {
+      "id": "edit",
+      "action": {"kind": "set_cell", "parameters": {"sheet": "Sheet1", "address": "A1", "value": 7}},
+      "observations_before": [
+        {"id": "before_edit", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A1"}}
+      ],
+      "observations_after": [
+        {"id": "after_edit", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A1"}}
+      ]
+    },
+    {
+      "id": "set-range",
+      "action": {"kind": "set_range", "parameters": {"sheet": "Sheet1", "range": "B1:B2", "values": [["changed"], ["range"]]}},
+      "observations_after": [
+        {"id": "range_value", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "B2"}}
+      ]
+    },
+    {
+      "id": "recalculate",
+      "action": {"kind": "recalculate"},
+      "observations_after": [
+        {"id": "recalculated_formula", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A3"}}
+      ]
+    },
+    {
+      "id": "refresh",
+      "action": {"kind": "refresh_data"},
+      "observations_after": [
+        {"id": "refreshed_formula", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A3"}}
+      ]
+    },
+    {
+      "id": "save",
+      "action": {"kind": "save"},
+      "observations_after": [
+        {"id": "saved_hash", "kind": "package_hash"},
+        {"id": "saved_scripts", "kind": "embedded_scripts"},
+        {"id": "saved_controls", "kind": "controls_events"},
+        {"id": "saved_names", "kind": "named_ranges"}
+      ]
+    },
+    {
+      "id": "reopen",
+      "action": {"kind": "reopen"},
+      "observations_after": [
+        {"id": "reopened_formula", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A3"}}
+      ]
+    },
+    {
+      "id": "save-as",
+      "action": {"kind": "save_as", "parameters": {"filename": "alternate.ods"}},
+      "observations_after": [
+        {"id": "save_as_hash", "kind": "package_hash"}
+      ]
+    },
+    {
+      "id": "export",
+      "action": {"kind": "export", "parameters": {"format": "pdf"}},
+      "observations_after": [
+        {"id": "post_export_formula", "kind": "cell", "selector": {"sheet": "Sheet1", "address": "A3"}}
+      ]
+    }
+  ]
+}

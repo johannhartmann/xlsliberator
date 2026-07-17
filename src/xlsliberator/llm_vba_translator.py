@@ -113,19 +113,14 @@ Replace VBA's "On Error Resume Next" with try-except:
 try:
     # ... risky operation ...
 except Exception as e:
-    logger.warning(f"Operation failed: {e}")
+    # Preserve the failure in a returned result or deterministic trace.
+    pass
     # ... handle error ...
 ```
 
 ### LOGGING
-Replace MsgBox/Debug.Print with logger:
-```python
-from loguru import logger
-
-logger.info("Information message")
-logger.warning("Warning message")
-logger.error("Error message")
-```
+Do not import third-party logging packages. Record declared observations through
+the XLSLiberator runtime trace or use Python's standard-library logging module.
 """
 
 
@@ -277,7 +272,14 @@ class LLMVBATranslator:
             if not validation_result.uno_compatible:
                 logger.warning("Translated code may not be compatible with LibreOffice Python")
 
-            # Cache the result
+            if not validation_result.is_valid or not validation_result.uno_compatible:
+                raise ValueError("generated candidate failed deterministic validation")
+            if "g_exportedScripts" not in translated:
+                raise ValueError("generated candidate does not declare g_exportedScripts")
+
+            # This legacy cache is retained only for backward compatibility.
+            # Production translation uses the versioned provenance cache in
+            # translation_service.py.
             self.cache[cache_key] = translated
             self._save_cache()
 
@@ -290,8 +292,7 @@ class LLMVBATranslator:
 
         except Exception as e:
             logger.error(f"LLM VBA translation failed: {e}")
-            # Fallback: return comment with original VBA
-            return f"# VBA translation failed\n# Original VBA:\n# {vba_code}"
+            raise RuntimeError(f"VBA translation failed: {e}") from e
 
     def _build_translation_prompt(
         self, vba_code: str, _is_event_handler: bool, references: "VBAReferences | None" = None
@@ -395,7 +396,8 @@ Requirements:
 7. Convert VBA string literals to Python strings
 8. Handle 1-based indexing → 0-based indexing for arrays/ranges
 9. Add docstrings for functions/methods
-10. Use logger.info() instead of MsgBox
+10. Replace MsgBox with a safe no-op or a UNO message service; do not import
+    third-party logging packages
 
 Output ONLY the translated Python code, no explanations or markdown code blocks.
 
@@ -413,7 +415,6 @@ End Sub
 Python:
 ```python
 import uno
-from loguru import logger
 
 def UpdateCell(*args):
     '''Auto-translated VBA procedure.'''
@@ -427,7 +428,7 @@ def UpdateCell(*args):
     ws = None
     ws = sheet
     sheet.getCellRangeByName("A1").setString("Hello")
-    logger.info("Done")
+    # MsgBox side effect requires an explicitly declared UI capability.
 ```
 
 Now translate the VBA code above:"""
@@ -519,7 +520,6 @@ Now translate the VBA code above:"""
     {description}
     """
     import uno
-    from loguru import logger
 
 {self._indent_code(translated_body, 1)}
 '''

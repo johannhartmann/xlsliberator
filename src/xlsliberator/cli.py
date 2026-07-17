@@ -4,17 +4,46 @@ import json
 import sys
 from datetime import timedelta
 from pathlib import Path
+from typing import Literal
 
 import click
 
 from xlsliberator.api import convert
+from xlsliberator.container_boundary import ContainerBoundaryError, require_application_container
+from xlsliberator.scenarios.models import RuntimeTrace, Scenario
 
 
 @click.group()
 @click.version_option(version="0.1.0")
 def cli() -> None:
     """XLSLiberator - Excel to LibreOffice Calc converter."""
-    pass
+    try:
+        require_application_container()
+    except ContainerBoundaryError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _load_formula_evidence(
+    scenario_file: Path | None,
+    source_trace_file: Path | None,
+    target_trace_file: Path | None,
+) -> tuple[Scenario | None, RuntimeTrace | None, RuntimeTrace | None]:
+    """Load an exact scenario and its typed runtime traces for certification."""
+    supplied = (scenario_file, source_trace_file, target_trace_file)
+    if not any(supplied):
+        return None, None, None
+    if scenario_file is None or source_trace_file is None:
+        raise click.ClickException(
+            "--scenario-file and --source-trace-file must be supplied together"
+        )
+    scenario = Scenario.model_validate_json(scenario_file.read_text(encoding="utf-8"))
+    source_trace = RuntimeTrace.model_validate_json(source_trace_file.read_text(encoding="utf-8"))
+    target_trace = (
+        RuntimeTrace.model_validate_json(target_trace_file.read_text(encoding="utf-8"))
+        if target_trace_file is not None
+        else None
+    )
+    return scenario, source_trace, target_trace
 
 
 @cli.command()
@@ -93,12 +122,18 @@ def convert_cmd(
 @click.argument("input_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
 @click.option("--output", type=click.Path(path_type=Path), help="Write inventory JSON to file")
-def inspect_cmd(input_file: Path, json_output: bool, output: Path | None) -> None:
+@click.option("--role", type=click.Choice(["source", "target"]), default="source")
+def inspect_cmd(
+    input_file: Path,
+    json_output: bool,
+    output: Path | None,
+    role: Literal["source", "target"],
+) -> None:
     """Inspect workbook parse inventory."""
     from xlsliberator.inspect_workbook import inspect_workbook, inventory_to_dict
 
     try:
-        inventory = inspect_workbook(input_file)
+        inventory = inspect_workbook(input_file, role=role)
         inventory_dict = inventory_to_dict(inventory)
         rendered = json.dumps(inventory_dict, indent=2)
 
@@ -116,18 +151,247 @@ def inspect_cmd(input_file: Path, json_output: bool, output: Path | None) -> Non
         sys.exit(1)
 
 
+@cli.command(name="inventory-diff")
+@click.argument("source_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("target_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
+def inventory_diff_cmd(source_file: Path, target_file: Path, output: Path | None) -> None:
+    """Generate canonical source/target inventories and explicit dispositions."""
+    from xlsliberator.artifact_inventory import (
+        diff_inventories,
+        disposition_coverage_errors,
+    )
+    from xlsliberator.inspect_workbook import inspect_workbook
+
+    try:
+        source = inspect_workbook(source_file, role="source")
+        target = inspect_workbook(target_file, role="target")
+        difference = diff_inventories(source, target)
+        source.dispositions = list(difference.dispositions)
+        errors = disposition_coverage_errors(source)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered = json.dumps(
+        {
+            "source_inventory": source.model_dump(mode="json"),
+            "target_inventory": target.model_dump(mode="json"),
+            "diff": difference.model_dump(mode="json"),
+            "coverage_errors": errors,
+        },
+        indent=2,
+    )
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+    click.echo(rendered)
+    if errors:
+        raise click.exceptions.Exit(1)
+
+
+@cli.command(name="scenario-validate")
+@click.argument("scenario_file", type=click.Path(exists=True, path_type=Path))
+def scenario_validate_cmd(scenario_file: Path) -> None:
+    """Validate and normalize a versioned scenario JSON file."""
+    from xlsliberator.scenarios.models import Scenario
+
+    try:
+        scenario = Scenario.model_validate_json(scenario_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(scenario.model_dump_json(indent=2))
+
+
+@cli.command(name="trace-diff")
+@click.argument("scenario_file", type=click.Path(exists=True, path_type=Path))
+@click.argument("source_trace", type=click.Path(exists=True, path_type=Path))
+@click.argument("target_trace", type=click.Path(exists=True, path_type=Path))
+@click.option("--output", type=click.Path(path_type=Path))
+def trace_diff_cmd(
+    scenario_file: Path,
+    source_trace: Path,
+    target_trace: Path,
+    output: Path | None,
+) -> None:
+    """Compare two runtime traces using the scenario's declared rules."""
+    from xlsliberator.scenarios.diff import diff_traces
+    from xlsliberator.scenarios.models import RuntimeTrace, Scenario
+
+    try:
+        scenario = Scenario.model_validate_json(scenario_file.read_text(encoding="utf-8"))
+        source = RuntimeTrace.model_validate_json(source_trace.read_text(encoding="utf-8"))
+        target = RuntimeTrace.model_validate_json(target_trace.read_text(encoding="utf-8"))
+        result = diff_traces(source, target, scenario)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered = result.model_dump_json(indent=2)
+    if output:
+        output.write_text(rendered + "\n", encoding="utf-8")
+    click.echo(rendered)
+    if not result.equivalent:
+        raise click.exceptions.Exit(1)
+
+
+@cli.command(name="evidence-inspect")
+@click.argument("bundle", type=click.Path(exists=True, file_okay=False, path_type=Path))
+def evidence_inspect_cmd(bundle: Path) -> None:
+    """Validate and print an evidence-bundle manifest."""
+    from xlsliberator.scenarios.evidence import inspect_evidence_bundle
+
+    try:
+        manifest = inspect_evidence_bundle(bundle)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(manifest.model_dump_json(indent=2))
+
+
+@cli.command(name="agent-repair")
+@click.argument("evidence_bundle", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option(
+    "--repository", type=click.Path(exists=True, file_okay=False, path_type=Path), default="."
+)
+@click.option("--output", type=click.Path(file_okay=False, path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Validate inputs and persist a plan without editing")
+@click.option("--max-iterations", type=click.IntRange(min=1, max=100), default=3)
+@click.option("--max-wall-seconds", type=click.FloatRange(min=0.1), default=900.0)
+@click.option("--max-model-cost", type=click.FloatRange(min=0.0), default=0.0)
+def agent_repair_cmd(
+    evidence_bundle: Path,
+    repository: Path,
+    output: Path | None,
+    dry_run: bool,
+    max_iterations: int,
+    max_wall_seconds: float,
+    max_model_cost: float,
+) -> None:
+    """Run bounded repair planning for a failing evidence bundle.
+
+    Non-dry execution requires application-supplied deterministic gate callbacks;
+    this CLI intentionally never executes commands embedded in workbook evidence.
+    A pre-reviewed ``candidate.patch`` is tried before any configured coding agent.
+    """
+    from xlsliberator.agent_repair import (
+        AgentRepairOrchestrator,
+        BuildTestRecord,
+        CandidatePatch,
+        EvidencePatchRule,
+        GateKind,
+        GitRepairToolbox,
+        RepairLimits,
+        TraceDiffRecord,
+    )
+
+    result_directory = output or evidence_bundle / "agent-repair-runs"
+
+    def unavailable_gate(
+        gate: GateKind, _worktree: Path, _bundle: Path, _candidate: CandidatePatch
+    ) -> BuildTestRecord:
+        return BuildTestRecord(
+            gate=gate,
+            passed=False,
+            duration_seconds=0.0,
+            reason=(
+                "No trusted deterministic gate runner is configured; workbook evidence "
+                "cannot supply executable commands"
+            ),
+        )
+
+    toolbox = GitRepairToolbox(
+        repository=repository,
+        state_directory=result_directory,
+        gate_callback=unavailable_gate,
+        trace_callback=lambda _worktree, _bundle: TraceDiffRecord(equivalent=False),
+    )
+    orchestrator = AgentRepairOrchestrator(
+        toolbox,
+        result_directory,
+        deterministic_rules=[EvidencePatchRule()],
+        limits=RepairLimits(
+            max_iterations=max_iterations,
+            max_wall_seconds=max_wall_seconds,
+            max_model_cost=max_model_cost,
+        ),
+    )
+    try:
+        result = orchestrator.run(evidence_bundle, dry_run=dry_run)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(result.model_dump_json(indent=2))
+    if result.status.value not in {"accepted", "dry_run"}:
+        raise click.exceptions.Exit(1)
+
+
+@cli.command(name="scenario-run-target")
+@click.argument("workbook", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("scenario_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--environment",
+    "environment_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--timeout", type=click.IntRange(min=1), default=120, show_default=True)
+def scenario_run_target_cmd(
+    workbook: Path,
+    scenario_file: Path,
+    environment_file: Path | None,
+    output: Path | None,
+    timeout: int,
+) -> None:
+    """Run a scenario in the authoritative Docker-backed LibreOffice target."""
+    from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+    from xlsliberator.scenarios.models import EnvironmentManifest, Scenario
+    from xlsliberator.validation_models import GateExecutionStatus
+
+    try:
+        scenario = Scenario.model_validate_json(scenario_file.read_text(encoding="utf-8"))
+        environment = (
+            EnvironmentManifest.model_validate_json(environment_file.read_text(encoding="utf-8"))
+            if environment_file
+            else EnvironmentManifest()
+        )
+        trace = LibreOfficeScenarioRunner(timeout_seconds=timeout).run(
+            workbook,
+            environment,
+            scenario,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered = trace.model_dump_json(indent=2)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+    click.echo(rendered)
+    if trace.status is not GateExecutionStatus.PASSED:
+        raise click.exceptions.Exit(1)
+
+
 @cli.command(name="validate")
 @click.argument("input_file", type=click.Path(exists=True, path_type=Path))
 @click.argument("output_ods", required=False, type=click.Path(path_type=Path))
 @click.option(
     "--target",
-    type=click.Choice(["libreoffice", "openoffice", "both"]),
-    default="both",
+    type=click.Choice(["libreoffice"]),
+    default="libreoffice",
     help="Runtime target",
 )
 @click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
 @click.option(
     "--non-strict", is_flag=True, help="Report errors without strict certification failure"
+)
+@click.option(
+    "--scenario-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Exact scenario used for source and target execution",
+)
+@click.option(
+    "--source-trace-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Microsoft Excel source-oracle trace",
+)
+@click.option(
+    "--target-trace-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Existing Docker LibreOffice target trace; otherwise run it now",
 )
 def validate_cmd(
     input_file: Path,
@@ -135,6 +399,9 @@ def validate_cmd(
     target: str,
     json_output: bool,
     non_strict: bool,
+    scenario_file: Path | None,
+    source_trace_file: Path | None,
+    target_trace_file: Path | None,
 ) -> None:
     """Validate workbook transformation gates."""
     from xlsliberator.validation_runner import (
@@ -144,12 +411,32 @@ def validate_cmd(
     )
 
     try:
+        scenario, source_trace, target_trace = _load_formula_evidence(
+            scenario_file,
+            source_trace_file,
+            target_trace_file,
+        )
+        if target_trace is None and scenario is not None and source_trace is not None:
+            if output_ods is None:
+                raise click.ClickException(
+                    "an output ODS is required to execute the target scenario"
+                )
+            from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+
+            target_trace = LibreOfficeScenarioRunner().run(
+                output_ods,
+                source_trace.environment,
+                scenario,
+            )
         report = ValidationRunner(
             ValidationPlan(
                 input_path=input_file,
                 output_path=output_ods,
                 target_kinds=parse_target_kind(target),
                 strict=not non_strict,
+                scenario=scenario,
+                source_trace=source_trace,
+                target_trace=target_trace,
             )
         ).run_all()
 
@@ -170,8 +457,8 @@ def validate_cmd(
 @click.option(
     "--target",
     multiple=True,
-    type=click.Choice(["libreoffice", "openoffice", "both"]),
-    default=["both"],
+    type=click.Choice(["libreoffice"]),
+    default=["libreoffice"],
     help="Runtime target; may be supplied multiple times",
 )
 @click.option("--strict/--non-strict", default=True, help="Fail on validation errors")
@@ -181,6 +468,21 @@ def validate_cmd(
 @click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
 @click.option("--no-agent", is_flag=True, help="Disable agent-based VBA rewriting")
 @click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
+@click.option(
+    "--scenario-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Exact scenario used by the Excel source oracle",
+)
+@click.option(
+    "--source-trace-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Microsoft Excel source-oracle trace",
+)
+@click.option(
+    "--target-trace-file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Existing Docker LibreOffice target trace; otherwise run it after conversion",
+)
 def transform_validated_cmd(
     input_file: Path,
     output_file: Path,
@@ -190,6 +492,9 @@ def transform_validated_cmd(
     no_macros: bool,
     no_agent: bool,
     json_output: bool,
+    scenario_file: Path | None,
+    source_trace_file: Path | None,
+    target_trace_file: Path | None,
 ) -> None:
     """Convert a workbook and run validation gates."""
     from xlsliberator.validated_api import (
@@ -198,6 +503,11 @@ def transform_validated_cmd(
     )
 
     try:
+        scenario, source_trace, target_trace = _load_formula_evidence(
+            scenario_file,
+            source_trace_file,
+            target_trace_file,
+        )
         report = transform_validated(
             input_file,
             output_file,
@@ -206,6 +516,9 @@ def transform_validated_cmd(
             max_repair_iterations=max_repair_iterations,
             embed_macros=not no_macros,
             use_agent=not no_agent,
+            scenario=scenario,
+            source_trace=source_trace,
+            target_trace=target_trace,
         )
     except ValidatedTransformationError as e:
         report = e.report
@@ -218,9 +531,16 @@ def transform_validated_cmd(
 
 
 @cli.command(name="mcp-serve")
-@click.option("--host", default="0.0.0.0", help="Host address to bind to")  # nosec B104
+@click.option("--host", default="127.0.0.1", help="Loopback address to bind to")
 @click.option("--port", default=8000, help="Port number")
-def mcp_serve_cmd(host: str, port: int) -> None:
+@click.option(
+    "--workspace-root",
+    "workspace_roots",
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Host root accessible to MCP tools; repeat for multiple roots",
+)
+def mcp_serve_cmd(host: str, port: int, workspace_roots: tuple[Path, ...]) -> None:
     """Start MCP server with HTTP streaming transport.
 
     \b
@@ -236,6 +556,13 @@ def mcp_serve_cmd(host: str, port: int) -> None:
     Client endpoint: http://<host>:<port>/mcp
     """
     from xlsliberator.mcp_server import serve
+
+    if workspace_roots:
+        import os
+
+        os.environ["XLSLIBERATOR_WORKSPACE_ROOTS"] = os.pathsep.join(
+            str(path.resolve()) for path in workspace_roots
+        )
 
     click.echo(f"Starting LibreOffice UNO MCP server on {host}:{port}")
     click.echo(f"Client endpoint: http://{host}:{port}/mcp")
@@ -288,6 +615,153 @@ def cleanup_jobs_cmd(data_dir: Path, older_than_hours: int) -> None:
     except Exception as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Deleted {len(deleted)} job director{'y' if len(deleted) == 1 else 'ies'}")
+
+
+@cli.command(name="capability-report")
+@click.option(
+    "--corpus",
+    "corpus_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("corpus/manifest.json"),
+    show_default=True,
+)
+@click.option(
+    "--evidence",
+    "evidence_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--release-inputs",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--previous",
+    "previous_report",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option("--report-id", default="current", show_default=True)
+@click.option("--json-output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--markdown-output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--release-notes-output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option(
+    "--check-release", is_flag=True, help="Exit non-zero unless every release gate passes"
+)
+def capability_report_cmd(
+    corpus_path: Path,
+    evidence_path: Path,
+    release_inputs: Path,
+    previous_report: Path | None,
+    report_id: str,
+    json_output: Path | None,
+    markdown_output: Path | None,
+    release_notes_output: Path | None,
+    check_release: bool,
+) -> None:
+    """Generate capability claims from validated corpus/runtime evidence."""
+    from xlsliberator.capability_matrix import (
+        CapabilityReport,
+        ReleaseInputs,
+        generate_capability_report,
+        load_measurements,
+    )
+    from xlsliberator.conformance_corpus import CorpusManifest
+    from xlsliberator.formula_corpus import collect_formula_corpus_statistics
+
+    try:
+        corpus = CorpusManifest.load(corpus_path)
+        if integrity_errors := corpus.verify_files(corpus_path.parent.parent):
+            raise ValueError("; ".join(integrity_errors))
+        measurements = load_measurements(evidence_path)
+        inputs = ReleaseInputs.model_validate_json(release_inputs.read_text(encoding="utf-8"))
+        previous = (
+            CapabilityReport.model_validate_json(previous_report.read_text(encoding="utf-8"))
+            if previous_report is not None
+            else None
+        )
+        generated = generate_capability_report(
+            corpus=corpus,
+            measurements=measurements,
+            release_inputs=inputs,
+            formula_corpus=collect_formula_corpus_statistics(
+                corpus_path.resolve().parent.parent / "tests" / "fixtures" / "formulas",
+                display_path="tests/fixtures/formulas",
+            ),
+            previous=previous,
+            report_id=report_id,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered_json = generated.model_dump_json(indent=2) + "\n"
+    rendered_markdown = generated.to_markdown()
+    for path, content in (
+        (json_output, rendered_json),
+        (markdown_output, rendered_markdown),
+        (release_notes_output, generated.to_release_notes()),
+    ):
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+    if json_output is None and markdown_output is None:
+        click.echo(rendered_markdown, nl=False)
+    if check_release and not generated.release_ready:
+        raise click.exceptions.Exit(1)
+
+
+@cli.command(name="corpus-report")
+@click.option(
+    "--corpus",
+    "corpus_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("corpus/manifest.json"),
+    show_default=True,
+)
+@click.option(
+    "--executions",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+)
+@click.option(
+    "--previous",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
+def corpus_report_cmd(
+    corpus_path: Path,
+    executions: Path,
+    previous: Path | None,
+    output: Path | None,
+) -> None:
+    """Generate corpus statistics and trends from versioned dispositions."""
+    from xlsliberator.conformance_corpus import (
+        CorpusManifest,
+        CorpusStatistics,
+        corpus_trend_report,
+        load_corpus_executions,
+    )
+
+    try:
+        manifest = CorpusManifest.load(corpus_path)
+        if integrity_errors := manifest.verify_files(corpus_path.parent.parent):
+            raise ValueError("; ".join(integrity_errors))
+        previous_statistics = None
+        if previous is not None:
+            previous_payload = json.loads(previous.read_text(encoding="utf-8"))
+            previous_statistics = CorpusStatistics.model_validate(previous_payload["current"])
+        report = corpus_trend_report(
+            manifest,
+            load_corpus_executions(executions),
+            previous=previous_statistics,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered = report.model_dump_json(indent=2) + "\n"
+    if output is None:
+        click.echo(rendered, nl=False)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
 
 
 if __name__ == "__main__":

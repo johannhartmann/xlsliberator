@@ -1,6 +1,7 @@
 """Excel file extraction module for various formats (.xlsx/.xlsm/.xlsb/.xls)."""
 
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -88,17 +89,28 @@ def _extract_xlsx(file_path: Path) -> tuple[WorkbookIR, ExtractionStats]:
     if has_macros:
         # Check for vbaProject.bin in the archive
         try:
-            import zipfile
-
             with zipfile.ZipFile(file_path) as zf:
                 has_macros = "xl/vbaProject.bin" in zf.namelist()
-        except Exception:
-            pass
+        except (OSError, zipfile.BadZipFile) as exc:
+            logger.warning(f"Could not inspect XLSM macro archive {file_path}: {exc}")
+            has_macros = False
 
     wb_ir = WorkbookIR(
         file_path=str(file_path),
         file_format=file_path.suffix[1:].lower(),
         has_macros=has_macros,
+        metadata={
+            "date_system": "1904" if "1904" in str(wb.epoch) else "1900",
+            "calculation_settings": {
+                "mode": wb.calculation.calcMode,
+                "iterate": wb.calculation.iterate,
+                "iterate_count": wb.calculation.iterateCount,
+                "iterate_delta": wb.calculation.iterateDelta,
+                "full_calc_on_load": wb.calculation.fullCalcOnLoad,
+                "force_full_calculation": wb.calculation.forceFullCalc,
+                "calculation_id": wb.calculation.calcId,
+            },
+        },
     )
 
     stats = ExtractionStats()
@@ -196,27 +208,37 @@ def _extract_xlsx_cell(cell: Any) -> CellIR | None:
     if cell.data_type == "f":
         # Formula cell
         cell_type = CellType.FORMULA
-        formula = cell.value if isinstance(cell.value, str) else None
-        value = cell._value if hasattr(cell, "_value") else None
+        formula = cell.value if isinstance(cell.value, str) else getattr(cell.value, "text", None)
+        formula_metadata = {
+            "formula_type": type(cell.value).__name__,
+            "array_range": getattr(cell.value, "ref", None),
+        }
+        # OOXML cached results require a separate data-only load; never mislabel
+        # the formula object/text itself as a cached execution value.
+        value = None
     elif cell.data_type == "n":
         # Number
         cell_type = CellType.NUMBER
         formula = None
+        formula_metadata = {}
         value = cell.value
     elif cell.data_type == "s":
         # String
         cell_type = CellType.STRING
         formula = None
+        formula_metadata = {}
         value = cell.value
     elif cell.data_type == "b":
         # Boolean
         cell_type = CellType.BOOLEAN
         formula = None
+        formula_metadata = {}
         value = cell.value
     elif cell.data_type == "e":
         # Error
         cell_type = CellType.ERROR
         formula = None
+        formula_metadata = {}
         value = cell.value
     else:
         # Empty or other
@@ -224,6 +246,7 @@ def _extract_xlsx_cell(cell: Any) -> CellIR | None:
             return None
         cell_type = CellType.EMPTY
         formula = None
+        formula_metadata = {}
         value = cell.value
 
     return CellIR(
@@ -233,6 +256,7 @@ def _extract_xlsx_cell(cell: Any) -> CellIR | None:
         cell_type=cell_type,
         value=value,
         formula=formula,
+        formula_metadata=formula_metadata,
         comment=cell.comment.text if cell.comment else None,
     )
 

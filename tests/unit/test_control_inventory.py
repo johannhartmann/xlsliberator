@@ -3,10 +3,13 @@
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from xlsliberator.control_inventory import (
     extract_controls_from_ods,
     extract_event_bindings_from_ods,
 )
+from xlsliberator.lo_worker import _scenario_control_event_inventory
 
 
 def _write_ods(path: Path, content_xml: str) -> None:
@@ -61,6 +64,27 @@ def test_extract_controls_handles_bad_zip(tmp_path: Path) -> None:
 
     assert extract_controls_from_ods(ods_path) == []
     assert extract_event_bindings_from_ods(ods_path) == []
+
+
+def test_control_inventory_rejects_xml_entity_declarations(tmp_path: Path) -> None:
+    """Untrusted ODS XML must never expand document-defined entities."""
+    ods_path = tmp_path / "entity.ods"
+    _write_ods(
+        ods_path,
+        '<!DOCTYPE x [<!ENTITY payload "expanded">]><document>&payload;</document>',
+    )
+
+    assert extract_controls_from_ods(ods_path) == []
+    assert extract_event_bindings_from_ods(ods_path) == []
+
+
+def test_standard_library_office_worker_rejects_dtd_before_parsing(tmp_path: Path) -> None:
+    """The bundled-Python worker rejects declarations without third-party packages."""
+    ods_path = tmp_path / "worker-entity.ods"
+    _write_ods(ods_path, '<!DOCTYPE x [<!ENTITY payload "expanded">]><x>&payload;</x>')
+
+    with pytest.raises(ValueError, match="DTD or entity declarations"):
+        _scenario_control_event_inventory(ods_path)
 
 
 def test_event_binding_resolves_control_when_listener_is_nested(tmp_path: Path) -> None:

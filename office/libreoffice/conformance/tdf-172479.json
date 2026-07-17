@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "case_id": "tdf-172479-textafter-positive-match-end",
+  "source": {
+    "upstream_bug": "tdf#172479",
+    "upstream_commit": "537c8555b74bc892185e138485db6146fa36cd09",
+    "license": "CC0-1.0",
+    "provenance": "Synthetic minimized formula derived from the upstream regression"
+  },
+  "operation": "evaluate_formula",
+  "formula": "=TEXTAFTER(\"Brown, Lucas\";\"xxx\";1;0;1)",
+  "expected": {
+    "error_code": 0,
+    "string": ""
+  },
+  "stock_26_2_4_2_observed": {
+    "error_code": 0,
+    "string": "Brown, Lucas",
+    "disposition": "failed"
+  },
+  "patched_observed": {
+    "error_code": 0,
+    "string": "",
+    "disposition": "passed"
+  }
+}

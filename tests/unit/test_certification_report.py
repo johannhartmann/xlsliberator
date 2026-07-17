@@ -1,6 +1,10 @@
 """Tests for certification reports."""
 
 import json
+import zipfile
+from pathlib import Path
+
+import pytest
 
 from xlsliberator.certification_report import (
     CertificationReport,
@@ -8,6 +12,7 @@ from xlsliberator.certification_report import (
 )
 from xlsliberator.report import ConversionReport
 from xlsliberator.validation_models import (
+    GateExecutionStatus,
     ValidationCertification,
     ValidationGateResult,
     ValidationSeverity,
@@ -33,6 +38,7 @@ def test_certification_json_serialization() -> None:
 
     assert data["certified"] is True
     assert data["gate_results"][0]["gate_name"] == "inventory"
+    assert data["gate_results"][0]["status"] == "passed"
 
 
 def test_certification_markdown_contains_expected_headings() -> None:
@@ -75,9 +81,12 @@ def test_failed_gate_keeps_certified_false() -> None:
     assert "formula: failed" in report.to_markdown()
 
 
-def test_bridge_from_conversion_report() -> None:
+def test_bridge_from_conversion_report(tmp_path: Path) -> None:
     """Legacy conversion reports should bridge to certification reports."""
-    conversion = ConversionReport(input_file="in.xlsx", output_file="out.ods", success=True)
+    output = tmp_path / "out.ods"
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
+    conversion = ConversionReport(input_file="in.xlsx", output_file=str(output), success=True)
     report = certification_from_conversion_report(conversion)
 
     assert report.certification.certified
@@ -91,3 +100,25 @@ def test_conversion_gate_rendered_in_markdown() -> None:
 
     assert "## Other Gates" in markdown
     assert "conversion: failed" in markdown
+
+
+@pytest.mark.parametrize("status", list(GateExecutionStatus))
+def test_certification_report_renders_every_gate_status(status: GateExecutionStatus) -> None:
+    """JSON and Markdown must preserve every execution state distinctly."""
+    report = CertificationReport(
+        ValidationCertification(
+            gate_results=[
+                ValidationGateResult(
+                    gate_name="runtime",
+                    status=status,
+                    required=True,
+                    message="state evidence",
+                    evidence_references=["evidence/runtime.json"],
+                )
+            ]
+        )
+    )
+
+    data = json.loads(report.to_json())
+    assert data["gate_results"][0]["status"] == status.value
+    assert f"runtime: {status.value} (required)" in report.to_markdown()

@@ -79,7 +79,7 @@ class TestIndirectAddressTransformation:
         formula = '=INDIRECT(ADDRESS(5;3;4;1;"Sheet1"))'
 
         # Expected: Move sheet to concatenation
-        expected = '=INDIRECT("Sheet1."&ADDRESS(5;3;4;1))'
+        expected = '=INDIRECT("Sheet1!"&ADDRESS(5;3;4;1))'
         result = transformer.transform_indirect_address_to_offset(formula)
 
         assert result == expected
@@ -90,7 +90,7 @@ class TestIndirectAddressTransformation:
         formula = '=INDIRECT(ADDRESS(1;1;4;1;"My Sheet"))'
 
         # Expected: Use quoted sheet name
-        expected = "=INDIRECT(\"'My Sheet'.\"&ADDRESS(1;1;4;1))"
+        expected = "=INDIRECT(\"'My Sheet'!\"&ADDRESS(1;1;4;1))"
         result = transformer.transform_indirect_address_to_offset(formula)
 
         assert result == expected

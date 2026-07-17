@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0.0",
+  "id": "basic-recalculation",
+  "description": "Open, recalculate, observe one formula, save, and reopen.",
+  "steps": [
+    {
+      "id": "open",
+      "action": {"kind": "open", "parameters": {}, "required": true},
+      "observations_before": [],
+      "observations_after": [
+        {
+          "id": "sheets-after-open",
+          "kind": "sheets",
+          "selector": {},
+          "required": true,
+          "comparison": {
+            "absolute_tolerance": 0.0,
+            "relative_tolerance": 0.0,
+            "empty_string_equals_empty_cell": false,
+            "string_case_sensitive": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "recalculate",
+      "action": {"kind": "recalculate", "parameters": {}, "required": true},
+      "observations_before": [],
+      "observations_after": [
+        {
+          "id": "total-cell",
+          "kind": "cell",
+          "selector": {"sheet": "Sheet1", "address": "A3"},
+          "required": true,
+          "comparison": {
+            "absolute_tolerance": 1e-12,
+            "relative_tolerance": 1e-12,
+            "empty_string_equals_empty_cell": false,
+            "string_case_sensitive": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "save-reopen",
+      "action": {"kind": "save", "parameters": {}, "required": true},
+      "observations_before": [],
+      "observations_after": []
+    },
+    {
+      "id": "reopen",
+      "action": {"kind": "reopen", "parameters": {}, "required": true},
+      "observations_before": [],
+      "observations_after": [
+        {
+          "id": "package-after-reopen",
+          "kind": "package_hash",
+          "selector": {},
+          "required": true,
+          "comparison": {
+            "absolute_tolerance": 0.0,
+            "relative_tolerance": 0.0,
+            "empty_string_equals_empty_cell": false,
+            "string_case_sensitive": true
+          }
+        }
+      ]
+    }
+  ]
+}

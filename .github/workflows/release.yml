@@ -1,0 +1,79 @@
+name: Certified release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    name: Evidence and release gates (Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts/runtime-tmp artifacts/release dist && chmod -R 0777 artifacts dist
+      - run: docker compose --profile ci-orchestrator build test-orchestrator
+      - name: Static, unit, P0, corpus, and security gates
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          python tools/ci_check.py quality
+      - name: Dependency and source security gates
+        run: >-
+          docker compose --profile ci-orchestrator run --rm security-audit
+          python tools/ci_check.py security
+      - name: Pinned LibreOffice target gates
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          python tools/ci_check.py office
+      - name: Generate pinned target sample bundles
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          python tools/generate_certification_samples.py
+      - name: Validate evidence coverage and derive release inputs
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          python tools/write_release_inputs.py
+          --measurements artifacts/certification/capability_measurements.json
+          --output artifacts/release/release-inputs.json
+      - name: Regenerate claims and block uncertified release
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          xlsliberator capability-report
+          --evidence artifacts/certification/capability_measurements.json
+          --release-inputs artifacts/release/release-inputs.json
+          --previous corpus/baselines/pre-certification-capability.json
+          --json-output artifacts/release/capability_matrix.json
+          --markdown-output artifacts/release/capability_matrix.md
+          --release-notes-output artifacts/release/release_readiness.md
+          --report-id "${GITHUB_REF_NAME}"
+          --check-release
+      - name: Build package after certification
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          python tools/ci_check.py package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: certified-release
+          path: |
+            artifacts/certification/
+            artifacts/release/
+            dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish certified package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: certify
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: certified-release
+      - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1

@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -73,6 +74,9 @@ class ConversionReport:
 
     # Translation details
     locale: str = "en-US"
+    translation_status: str = "not_run"
+    translation_provenance: dict[str, dict[str, Any]] = field(default_factory=dict)
+    translation_evidence: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
         """Convert report to JSON string."""
@@ -114,6 +118,8 @@ class ConversionReport:
 - VBA procedures: {self.vba_procedures}
 - Python handlers created: {self.python_handlers}
 - API calls mapped: {self.api_calls_mapped}
+- Translation status: {self.translation_status}
+- Translation evidence: {len(self.translation_evidence)} manifest(s)
 
 ### Post-Conversion Validation
 

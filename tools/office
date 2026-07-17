@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -lt 2 ]; then
+    echo "usage: tools/office {fetch|build|test|worktree} libreoffice [options]" >&2
+    exit 64
+fi
+
+action=$1
+shift
+case "$action" in
+    fetch)
+        service=office-source-fetch
+        ;;
+    build|test|worktree|record-runtime)
+        service=office-source-build
+        ;;
+    *)
+        echo "unsupported office action: $action" >&2
+        exit 64
+        ;;
+esac
+
+docker compose --profile office-source run --rm "$service" \
+    python3 tools/office.py "$action" "$@"
+
+if [ "$action" = build ]; then
+    variant=patched
+    previous=
+    for argument in "$@"; do
+        if [ "$previous" = --variant ]; then
+            variant=$argument
+            break
+        fi
+        previous=$argument
+    done
+    if [ "$variant" = stock ]; then
+        artifact_variant=stock-source
+        image=xlsliberator-libreoffice:26.2.4.2-stock-source
+        runtime_variant=stock-source
+        patch_sha=none
+    else
+        artifact_variant=xlsliberator-text-functions-v1
+        image=xlsliberator-libreoffice:26.2.4.2-text-functions-v1
+        runtime_variant=xlsliberator-text-functions-v1
+        patch_sha=7211ee90e1fefe803317ef80c75f2397682219c24ce6d8321bbd4f3bb914ed7b
+    fi
+    build_image_digest=$(docker image inspect xlsliberator-office-source-builder:26.2.4.2 --format '{{.Id}}')
+    docker build \
+        --file docker/office/source-runtime/Dockerfile \
+        --build-arg "SOURCE_ARTIFACT=artifacts/office-build/libreoffice/$artifact_variant/instdir.tar.gz" \
+        --build-arg "RUNTIME_VARIANT=$runtime_variant" \
+        --build-arg "SOURCE_COMMIT=0229ac93fcf0d7cbc6376066c6f35021cef002dc" \
+        --build-arg "PATCH_SET_SHA256=$patch_sha" \
+        --build-arg "BUILD_IMAGE_DIGEST=$build_image_digest" \
+        --tag "$image" \
+        .
+    probe_json=$(docker run --rm --network none "$image" runtime-probe)
+    printf '%s\n' "$probe_json"
+    image_id=$(docker image inspect "$image" --format '{{.Id}}')
+    docker compose --profile office-source run --rm office-source-build \
+        python3 tools/office.py record-runtime libreoffice \
+        --variant "$variant" --image-id "$image_id" --probe-json "$probe_json"
+fi

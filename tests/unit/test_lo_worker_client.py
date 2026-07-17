@@ -1,127 +1,105 @@
-"""Tests for the out-of-process LibreOffice worker client."""
+"""Tests for the Docker-only LibreOffice worker client."""
 
 from __future__ import annotations
 
-import json
-import subprocess
-from pathlib import Path
 from typing import Any
 
+import pytest
+
+from xlsliberator.docker_runtime import (
+    DockerRuntimeTimeout,
+    DockerRuntimeUnavailable,
+    MalformedWorkerResponse,
+)
 from xlsliberator.lo_worker_client import (
     LibreOfficeWorkerClient,
     discover_libreoffice_python_wrapper,
 )
 
 
-def test_discovers_macos_wrapper_from_backend(tmp_path: Path, monkeypatch: Any) -> None:
-    """The client should map a macOS soffice executable to Resources/python."""
-    app = tmp_path / "LibreOffice.app"
-    soffice = app / "Contents/MacOS/soffice"
-    wrapper = app / "Contents/Resources/python"
-    soffice.parent.mkdir(parents=True)
-    wrapper.parent.mkdir(parents=True)
-    soffice.write_text("#!/bin/sh\n")
-    wrapper.write_text("#!/bin/sh\n")
-    wrapper.chmod(0o755)
+class FakeRuntime:
+    def __init__(self, response: dict[str, Any] | None = None, error: Exception | None = None):
+        self.response = response or {}
+        self.error = error
+        self.requests: list[dict[str, Any]] = []
 
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-
-    assert discover_libreoffice_python_wrapper(str(soffice)) == str(wrapper)
+    def request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.requests.append(payload)
+        if self.error:
+            raise self.error
+        return self.response
 
 
-def test_client_handles_valid_json(monkeypatch: Any) -> None:
-    """Successful worker JSON should be converted into a typed response."""
+def test_host_wrapper_discovery_is_disabled() -> None:
+    assert discover_libreoffice_python_wrapper("/Applications/LibreOffice/soffice") is None
 
-    def fake_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["python"],
-            returncode=0,
-            stdout=json.dumps(
-                {"success": True, "op": "ping", "data": {"uno_importable": True}, "error": None}
-            ),
-            stderr="",
-        )
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+def test_client_maps_valid_docker_response() -> None:
+    runtime = FakeRuntime(
+        {"success": True, "op": "ping", "data": {"uno_importable": True}, "error": None}
+    )
 
-    response = LibreOfficeWorkerClient(python_wrapper="/bin/sh").ping()
+    response = LibreOfficeWorkerClient(runtime=runtime).ping()  # type: ignore[arg-type]
 
     assert response.success is True
     assert response.data["uno_importable"] is True
+    assert runtime.requests[0]["op"] == "ping"
+    assert runtime.requests[0]["timeout_seconds"] == 10
 
 
-def test_client_handles_malformed_json(monkeypatch: Any) -> None:
-    """Non-JSON stdout should become a structured client error."""
+def test_client_preserves_worker_error() -> None:
+    runtime = FakeRuntime(
+        {
+            "success": False,
+            "op": "ping",
+            "data": {},
+            "error": {"type": "ImportError", "message": "No module named uno"},
+        }
+    )
 
-    def fake_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["python"],
-            returncode=0,
-            stdout="not json",
-            stderr="debug",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    response = LibreOfficeWorkerClient(python_wrapper="/bin/sh").ping()
-
-    assert response.success is False
-    assert response.error is not None
-    assert response.error.type == "MalformedWorkerJSON"
-    assert response.error.stderr == "debug"
-
-
-def test_client_handles_timeout(monkeypatch: Any) -> None:
-    """Worker timeouts should not raise into callers."""
-
-    def fake_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        raise subprocess.TimeoutExpired(cmd=["python"], timeout=1, stderr="slow")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    response = LibreOfficeWorkerClient(python_wrapper="/bin/sh").ping()
-
-    assert response.success is False
-    assert response.error is not None
-    assert response.error.type == "TimeoutExpired"
-
-
-def test_client_handles_nonzero_exit_with_json_error(monkeypatch: Any) -> None:
-    """Worker JSON failures should preserve worker error fields."""
-
-    def fake_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=["python"],
-            returncode=1,
-            stdout=json.dumps(
-                {
-                    "success": False,
-                    "op": "ping",
-                    "data": {},
-                    "error": {
-                        "type": "ImportError",
-                        "message": "No module named uno",
-                        "traceback": "trace",
-                    },
-                }
-            ),
-            stderr="stderr",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    response = LibreOfficeWorkerClient(python_wrapper="/bin/sh").ping()
+    response = LibreOfficeWorkerClient(runtime=runtime).ping()  # type: ignore[arg-type]
 
     assert response.success is False
     assert response.error is not None
     assert response.error.type == "ImportError"
-    assert response.error.stderr == "stderr"
 
 
-def test_client_handles_unavailable_wrapper() -> None:
-    """Missing wrappers should produce an unavailable response."""
-    response = LibreOfficeWorkerClient(python_wrapper="/missing/libreoffice/python").ping()
+def test_client_fails_closed_when_docker_is_unavailable() -> None:
+    runtime = FakeRuntime(error=DockerRuntimeUnavailable("docker missing"))
+
+    response = LibreOfficeWorkerClient(runtime=runtime).ping()  # type: ignore[arg-type]
 
     assert response.success is False
     assert response.error is not None
-    assert response.error.type == "UnoWorkerUnavailable"
+    assert response.error.type == "DockerRuntimeUnavailable"
+    assert "host fallback is disabled" in response.error.message
+
+
+def test_legacy_host_arguments_cannot_select_local_runtime() -> None:
+    runtime = FakeRuntime({"success": True, "op": "ping", "data": {}, "error": None})
+    client = LibreOfficeWorkerClient(
+        office_executable="/usr/bin/soffice",
+        python_wrapper="/usr/bin/python3",
+        runtime=runtime,  # type: ignore[arg-type]
+    )
+
+    assert client.office_executable is None
+    assert client.python_wrapper is None
+    assert client.ping().success is True
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_type"),
+    [
+        (DockerRuntimeTimeout("job exceeded limit"), "DockerRuntimeTimeout"),
+        (MalformedWorkerResponse("bad json"), "MalformedWorkerResponse"),
+    ],
+)
+def test_client_does_not_hide_runtime_protocol_failures(
+    error: Exception, expected_type: str
+) -> None:
+    response = LibreOfficeWorkerClient(runtime=FakeRuntime(error=error)).ping()  # type: ignore[arg-type]
+
+    assert response.success is False
+    assert response.error is not None
+    assert response.error.type == expected_type

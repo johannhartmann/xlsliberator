@@ -6,14 +6,16 @@ XLSLiberator is a Python package under `src/xlsliberator/`. Core entry points ar
 
 ## Build, Test, and Development Commands
 
-Install with `pip install -e ".[dev]"` or use `uv run` for tools. Common commands:
+Docker is the only supported development and runtime platform. The host shell may
+run Docker, Git, and file operations only. Never start host Python, `uv`, PyUNO,
+UNO, LibreOffice, or `soffice`, including for diagnostics. Common commands:
 
-- `uv run ruff check src tests` or `make lint`: run lint checks.
-- `uv run ruff format .` or `make fmt`: format Python code.
-- `uv run mypy src` or `make typecheck`: run static typing checks.
-- `uv run pytest` or `make test`: run the full test suite.
-- `uv run pytest tests/unit`: run unit tests only.
-- `uv run pytest -m integration`: run LibreOffice-dependent integration tests.
+- `docker compose build test`: build the development image.
+- `docker compose run --rm test ruff check src tests`: run lint checks.
+- `docker compose run --rm test ruff format .`: format Python code.
+- `docker compose run --rm test mypy src`: run static typing checks.
+- `docker compose run --rm test pytest tests/unit`: run unit tests.
+- `make test-integration`: run Docker-orchestrated LibreOffice integration tests.
 - `make all`: run the Makefile CI-style quality sequence.
 
 ## Coding Style & Naming Conventions
@@ -32,4 +34,8 @@ Before opening a PR, run lint, type checks, and relevant tests. PR descriptions 
 
 ## Security & Configuration Tips
 
-Do not commit secrets or local environment files. `ANTHROPIC_API_KEY` is optional and only needed for VBA translation. LibreOffice 7.x with Python/UNO support is required for runtime validation and integration tests; simple conversion paths may still use `soffice` CLI fallback.
+Do not commit secrets or local environment files. `ANTHROPIC_API_KEY` is optional
+and only needed for VBA translation. LibreOffice is the sole target and is pinned
+to full build `26.2.4.2`. LibreOffice, its bundled Python, UNO, and PyUNO run only
+inside the repository's pinned office image. There is no host executable discovery,
+host diagnostic, direct `soffice` fallback, or local PyUNO fallback.

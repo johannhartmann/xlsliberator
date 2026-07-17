@@ -3,6 +3,7 @@
 from xlsliberator.ir_models import WorkbookIR
 from xlsliberator.validation_models import (
     FormulaIR,
+    GateExecutionStatus,
     SourceRef,
     UnsupportedArtifactIR,
     ValidationCertification,
@@ -53,8 +54,8 @@ def test_validation_model_defaults_are_safe() -> None:
     assert second.unsupported_artifacts == []
 
 
-def test_certification_defaults_and_gate_result() -> None:
-    """Certification should default to not certified until gates prove it."""
+def test_all_required_passed_gates_can_certify() -> None:
+    """Certification is derived from required canonical gate states."""
     gate = ValidationGateResult(
         gate_name="inventory",
         passed=True,
@@ -62,7 +63,36 @@ def test_certification_defaults_and_gate_result() -> None:
     )
     certification = ValidationCertification(gate_results=[gate])
 
-    assert not certification.certified
+    assert certification.certified
     assert certification.gate_results[0].severity == ValidationSeverity.INFO
     assert certification.warnings == []
     assert certification.errors == []
+
+
+def test_gate_status_is_canonical_and_passed_is_projection() -> None:
+    """Canonical status must override a contradictory legacy passed field."""
+    gate = ValidationGateResult(
+        gate_name="runtime",
+        status=GateExecutionStatus.UNAVAILABLE,
+        passed=True,
+        message="runtime missing",
+    )
+
+    assert gate.status == GateExecutionStatus.UNAVAILABLE
+    assert gate.passed is False
+
+
+def test_certification_cannot_override_failed_required_gate() -> None:
+    """A caller-provided certified flag cannot override canonical gates."""
+    certification = ValidationCertification(
+        certified=True,
+        gate_results=[
+            ValidationGateResult(
+                gate_name="runtime",
+                status=GateExecutionStatus.SKIPPED,
+                message="not executed",
+            )
+        ],
+    )
+
+    assert certification.certified is False

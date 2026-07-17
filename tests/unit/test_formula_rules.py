@@ -25,4 +25,4 @@ def test_indirect_address_rule_preserves_existing_expected_output() -> None:
 
     assert result is not None
     assert result.success
-    assert result.after == '=INDIRECT("Sheet2."&ADDRESS(1;2;4;1))'
+    assert result.after == '=INDIRECT("Sheet2!"&ADDRESS(1;2;4;1))'

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+case "${1:-runtime-probe}" in
+  worker)
+    exec /opt/libreoffice26.2/program/python -m xlsliberator.lo_worker
+    ;;
+  runtime-probe)
+    printf '{"success":true,"op":"runtime_probe","data":'
+    /opt/libreoffice26.2/program/python -m xlsliberator.lo_worker <<'EOF' | /opt/libreoffice26.2/program/python -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["data"], separators=(",", ":")))'
+{"op":"runtime_probe"}
+EOF
+    printf ',"error":null}\n'
+    ;;
+  *)
+    echo "unsupported runtime command: $1" >&2
+    exit 64
+    ;;
+esac

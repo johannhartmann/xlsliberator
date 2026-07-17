@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0.0",
+  "report_id": "pre-certification",
+  "generated_from_evidence": true,
+  "target": "libreoffice",
+  "target_version": "26.2.4.2",
+  "measurements": [],
+  "summaries": {
+    "parse_coverage": {"counts": {"passed": 0, "failed": 0, "skipped": 0, "unavailable": 0, "unsupported": 0, "waived": 0}, "decisive_pass_rate": null},
+    "output_coverage": {"counts": {"passed": 0, "failed": 0, "skipped": 0, "unavailable": 0, "unsupported": 0, "waived": 0}, "decisive_pass_rate": null},
+    "target_runtime": {"counts": {"passed": 0, "failed": 0, "skipped": 0, "unavailable": 0, "unsupported": 0, "waived": 0}, "decisive_pass_rate": null},
+    "source_differential": {"counts": {"passed": 0, "failed": 0, "skipped": 0, "unavailable": 0, "unsupported": 0, "waived": 0}, "decisive_pass_rate": null}
+  },
+  "tier_counts": {
+    "structural-inventory": 0,
+    "target-runtime-validated": 0,
+    "source-differential-validated": 0,
+    "libreoffice-runtime-validated": 0
+  },
+  "release_gates": [],
+  "release_ready": false,
+  "previous_release": null,
+  "trend": {}
+}

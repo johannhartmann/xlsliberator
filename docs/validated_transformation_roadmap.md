@@ -3,10 +3,10 @@
 XLSLiberator is moving from a best-effort Excel-to-ODS converter toward a validated transformation system for XLS, XLSM, XLSX, and XLSB workbooks:
 
 ```text
-parse -> normalize IR -> transform -> emit ODS -> evaluate in LibreOffice and Apache OpenOffice -> diff -> repair -> certify
+parse -> normalize IR -> transform -> emit ODS -> evaluate in LibreOffice -> diff -> repair -> certify
 ```
 
-Validation code must never change a user's global LibreOffice or Apache OpenOffice macro security settings. Runtime checks must use isolated temporary user profiles and report skipped checks when an isolated runtime is not available.
+Validation code must never change a user's global LibreOffice macro security settings. Runtime checks must use disposable Docker containers and isolated temporary user profiles and report unavailable checks when the pinned runtime is not available.
 
 ## Staged Architecture
 
@@ -18,7 +18,7 @@ Validation code must never change a user's global LibreOffice or Apache OpenOffi
    - Extend the current workbook IR with formulas, controls, event bindings, unsupported artifacts, source references, target references, and validation gates.
    - Keep unsupported artifacts visible in reports instead of silently dropping them.
 
-3. CalcBackend abstraction for LibreOffice and Apache OpenOffice
+3. CalcBackend abstraction for the pinned LibreOffice Docker runtime
    - Discover installed office backends without failing when binaries are absent.
    - Run target validation through isolated user profiles with explicit backend metadata.
 

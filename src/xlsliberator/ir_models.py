@@ -26,6 +26,10 @@ class CellIR(BaseModel):
     cell_type: CellType = Field(description="Type of cell content")
     value: Any | None = Field(default=None, description="Cell value")
     formula: str | None = Field(default=None, description="Formula string (if applicable)")
+    formula_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Array, spill, and parser metadata for a formula cell",
+    )
     style: dict[str, Any] | None = Field(default=None, description="Cell style/formatting")
     comment: str | None = Field(default=None, description="Cell comment")
 

@@ -1,0 +1,80 @@
+{
+  "schema_version": "1.0.0",
+  "office_id": "libreoffice",
+  "upstream": {
+    "repository": "https://git.libreoffice.org/core",
+    "fetch_mirror": "https://github.com/LibreOffice/core.git",
+    "tag": "libreoffice-26.2.4.2",
+    "tag_object": "995ae2723a5200b4bab3e5fe39c18f24b544aaf3",
+    "commit": "0229ac93fcf0d7cbc6376066c6f35021cef002dc",
+    "tree": "a4f00a2a47da931220bb4465b0dad29175496bf7",
+    "license": "MPL-2.0 AND LGPL-3.0-or-later",
+    "license_file": "COPYING",
+    "source_archive": {
+      "url": "https://download.documentfoundation.org/libreoffice/src/26.2.4/libreoffice-26.2.4.2.tar.xz",
+      "sha256": "b9f9655442432998af2cd1034aeee802641aba4d0be6b6ce4fc10bec78ce4b9b"
+    }
+  },
+  "baseline": {
+    "full_build": "26.2.4.2",
+    "runtime_variant": "stock",
+    "runtime_image": "xlsliberator-libreoffice:26.2.4.2",
+    "lock_file": "docker/office/images.lock.json"
+  },
+  "build": {
+    "dockerfile": "docker/office/source-build/Dockerfile",
+    "base_image": "debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df",
+    "debian_snapshot": "20260701T000000Z",
+    "toolchain": "Debian bookworm snapshot GCC",
+    "options": [
+      "--enable-release-build",
+      "--enable-python=fully-internal",
+      "--disable-firebird-sdbc",
+      "--disable-mariadb-sdbc",
+      "--disable-odk",
+      "--disable-postgresql-sdbc",
+      "--without-doxygen",
+      "--without-gssapi",
+      "--without-help",
+      "--without-java",
+      "--without-myspell-dicts",
+      "--without-system-nss",
+      "--without-system-dicts",
+      "--without-system-headers",
+      "--with-lang=en-US",
+      "--with-package-format=no",
+      "--with-vendor=XLSLiberator"
+    ],
+    "correctness_cache_policy": "Caches may accelerate downloads and compilation but every input hash, source commit, patch hash, toolchain package, and output binary hash is revalidated. Cache presence never changes acceptance."
+  },
+  "patch_series": {
+    "series_file": "office/libreoffice/patches/series",
+    "variant": "xlsliberator-text-functions-v1",
+    "patches": [
+      {
+        "id": "tdf-172479-textbefore-textafter-match-end",
+        "path": "office/libreoffice/patches/0001-tdf-172479-textbefore-textafter-match-end.patch",
+        "sha256": "7211ee90e1fefe803317ef80c75f2397682219c24ce6d8321bbd4f3bb914ed7b",
+        "upstream_commit": "537c8555b74bc892185e138485db6146fa36cd09",
+        "upstream_change_id": "If8bd48310791e44ba32a7d0f83f1c4aabd42cd89",
+        "upstream_review": "https://gerrit.libreoffice.org/c/core/+/206776",
+        "license": "MPL-2.0"
+      }
+    ]
+  },
+  "result": {
+    "runtime_variant": "xlsliberator-text-functions-v1",
+    "runtime_image": "xlsliberator-libreoffice:26.2.4.2-text-functions-v1",
+    "runtime_image_digest": "sha256:b0fd4dd05234bc7b2b631bba6adf0de258561e933d0133e8758918abea931ee1",
+    "identity_evidence": "artifacts/office-build/libreoffice/xlsliberator-text-functions-v1/identity.json",
+    "stock_identity_evidence": "artifacts/office-build/libreoffice/stock-source/identity.json",
+    "status": "patched-conformance-passed"
+  },
+  "conformance": {
+    "case_id": "tdf-172479-textafter-positive-match-end",
+    "fixture": "office/libreoffice/conformance/tdf-172479.json",
+    "evidence": "office/libreoffice/conformance/evidence/tdf-172479.json",
+    "stock_expected": "failed",
+    "patched_expected": "passed"
+  }
+}

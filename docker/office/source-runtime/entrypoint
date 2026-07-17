@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+case "${1:-runtime-probe}" in
+  worker)
+    exec /opt/libreoffice/program/python -m xlsliberator.lo_worker
+    ;;
+  runtime-probe)
+    exec /opt/libreoffice/program/python -m xlsliberator.lo_worker <<'EOF'
+{"op":"runtime_probe"}
+EOF
+    ;;
+  *)
+    echo "unsupported source runtime command: $1" >&2
+    exit 64
+    ;;
+esac

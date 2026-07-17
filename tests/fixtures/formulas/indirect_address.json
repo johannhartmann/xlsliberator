@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0.0",
+  "rule": "indirect_address",
+  "source": "=INDIRECT(ADDRESS(1;2;4;1;\"Sheet2\"))",
+  "expected": "=INDIRECT(\"Sheet2!\"&ADDRESS(1;2;4;1))"
+}

@@ -2,147 +2,144 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
   workflow_dispatch:
-    inputs:
-      docker-smoke:
-        description: Run Docker web smoke build
-        required: false
-        default: "false"
+
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
+  quality:
+    name: Static quality (Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: docker compose build test
+      - run: docker compose run --rm test ruff format --check .
+      - run: docker compose run --rm test ruff check .
+      - run: docker compose run --rm test mypy src/
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff
-
-      - name: Run ruff format check
-        run: ruff format --check .
-
-      - name: Run ruff lint
-        run: ruff check .
-
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Run mypy
-        run: mypy src/
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  unit:
+    name: Unit tests (Python ${{ matrix.python }}, Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
-
+        include:
+          - python: "3.11"
+            base: python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3
+          - python: "3.12"
+            base: python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts && chmod 0777 artifacts
+      - name: Build pinned test image
+        run: >-
+          docker build --file docker/test/Dockerfile
+          --build-arg PYTHON_BASE=${{ matrix.base }}
+          --tag xlsliberator-test:py${{ matrix.python }} .
+      - name: Run office-free unit suite in Docker
+        run: >-
+          docker run --rm --network none --read-only
+          --tmpfs /tmp:rw,noexec,nosuid,size=1g,mode=1777
+          --volume "$PWD:/workspace" --workdir /workspace
+          xlsliberator-test:py${{ matrix.python }}
+          pytest -m "not integration" --junitxml=artifacts/pytest-unit-${{ matrix.python }}.xml
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          python-version: ${{ matrix.python-version }}
+          name: unit-${{ matrix.python }}
+          path: artifacts/
+          if-no-files-found: error
 
-      - name: Install LibreOffice
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libreoffice libreoffice-calc python3-uno
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[web,dev]"
-          pip install pytest-cov
-
-      - name: Run unit tests
-        run: pytest -v -m "not integration" --cov=xlsliberator --cov-report=xml --cov-report=term
-
-      - name: Run integration tests
-        run: pytest -v -m integration || true
-        env:
-          LO_SKIP_IT: "0"
-
-      - name: Upload coverage
-        if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-
-  build:
-    name: Build Package
-    runs-on: ubuntu-latest
+  corpus:
+    name: Blocking conformance corpus (Docker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: docker compose build test
+      - name: Verify corpus, minimizer, fuzz accounting, and release fail-closed behavior
+        run: >-
+          docker compose run --rm test pytest -q
+          tests/unit/test_conformance_corpus.py
+          tests/unit/test_capability_matrix.py
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+  office-integration:
+    name: LibreOffice 26.2.4.2 Docker integration
+    needs: [quality, unit, corpus]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      XLSLIBERATOR_FAIL_ON_SKIP: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
+      - run: docker compose --profile ci-orchestrator build test-orchestrator
+      - name: Run Docker-contained orchestrator and disposable office jobs
+        run: >-
+          docker compose --profile ci-orchestrator run --rm
+          test-orchestrator python tools/ci_check.py office
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          python-version: '3.11'
+          name: office-integration-evidence
+          path: |
+            artifacts/
+            **/*.evidence/
+          if-no-files-found: error
 
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
+  docker-web:
+    name: Docker web smoke
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DOCKER_TESTS: "1"
+      XLSLIBERATOR_FAIL_ON_SKIP: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
+      - run: docker compose --profile ci-orchestrator build test-orchestrator
+      - run: >-
+          docker compose --profile ci-orchestrator run --rm
+          test-orchestrator python tools/ci_check.py docker-web
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docker-web
+          path: artifacts/
+          if-no-files-found: error
 
-      - name: Build package
-        run: python -m build
-
-      - name: Check package
-        run: |
-          pip install twine
-          twine check dist/*
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+  package:
+    name: Build package in Docker
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p dist && chmod 0777 dist
+      - run: docker compose build test
+      - run: docker compose run --rm test python tools/ci_check.py package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
 
-  docker-web:
-    name: Docker Web Smoke
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.docker-smoke == 'true'
+  security:
+    name: Security checks (Docker)
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[web,dev]"
-
-      - name: Build Docker image through smoke test
-        run: pytest -v tests/integration/test_docker_web.py
-        env:
-          DOCKER_TESTS: "1"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts/ci && chmod -R 0777 artifacts
+      - run: docker compose build test
+      - run: >-
+          docker compose --profile ci-orchestrator run --rm security-audit
+          python tools/ci_check.py security

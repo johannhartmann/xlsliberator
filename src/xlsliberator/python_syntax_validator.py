@@ -10,7 +10,6 @@ Validates generated Python code for:
 import ast
 import py_compile
 import re
-import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,7 +38,10 @@ class PythonSyntaxValidator:
                                     (e.g., /usr/lib/libreoffice/program/python)
                                     If None, will attempt auto-detection.
         """
-        self.libreoffice_python = libreoffice_python_path or self._find_libreoffice_python()
+        # A legacy path may request a runtime check, but can never select a host
+        # interpreter. Compatibility checks are routed to the Docker worker.
+        self.check_runtime_compatibility = libreoffice_python_path is not None
+        self.libreoffice_python = None
 
     def _find_libreoffice_python(self) -> Path | None:
         """Auto-detect LibreOffice Python interpreter.
@@ -47,25 +49,7 @@ class PythonSyntaxValidator:
         Returns:
             Path to LibreOffice Python, or None if not found
         """
-        possible_paths = [
-            # Linux
-            Path("/usr/lib/libreoffice/program/python"),
-            Path("/opt/libreoffice7.6/program/python"),
-            Path("/opt/libreoffice/program/python"),
-            # macOS
-            Path("/Applications/LibreOffice.app/Contents/MacOS/python"),
-            Path("/Applications/LibreOffice.app/Contents/Resources/python"),
-            # Windows
-            Path("C:/Program Files/LibreOffice/program/python.exe"),
-            Path("C:/Program Files (x86)/LibreOffice/program/python.exe"),
-        ]
-
-        for path in possible_paths:
-            if path.exists():
-                logger.debug(f"Found LibreOffice Python at {path}")
-                return path
-
-        logger.warning("LibreOffice Python not found, UNO compatibility check disabled")
+        logger.debug("Host LibreOffice Python discovery is disabled")
         return None
 
     def validate_syntax(self, python_code: str) -> SyntaxValidationResult:
@@ -102,7 +86,7 @@ class PythonSyntaxValidator:
 
         # 4. LibreOffice Python compatibility (if available)
         uno_compatible = True
-        if self.libreoffice_python and self.libreoffice_python.exists():
+        if self.check_runtime_compatibility:
             uno_compatible = self._check_uno_compatibility(python_code)
             if not uno_compatible:
                 warnings.append("UNO compatibility check failed - code may not work in LibreOffice")
@@ -149,53 +133,16 @@ class PythonSyntaxValidator:
         Returns:
             True if compatible, False otherwise
         """
-        if not self.libreoffice_python:
-            return True  # Assume compatible if we can't check
+        from xlsliberator.lo_worker_client import LibreOfficeWorkerClient
 
-        # Create test script that tries to import uno and compile the code
-        test_code = f"""
-import sys
-try:
-    import uno
-    import unohelper
-    # Try to compile the translated code
-    compile({repr(python_code)}, '<string>', 'exec')
-    sys.exit(0)
-except Exception as e:
-    print(f"Error: {{e}}", file=sys.stderr)
-    sys.exit(1)
-"""
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(test_code)
-            test_path = f.name
-
-        try:
-            result = subprocess.run(
-                [str(self.libreoffice_python), test_path],
-                capture_output=True,
-                timeout=5,
-                text=True,
-            )
-
-            if result.returncode == 0:
-                logger.debug("UNO compatibility check passed")
-                return True
-            else:
-                logger.warning(f"UNO compatibility check failed: {result.stderr}")
-                return False
-
-        except subprocess.TimeoutExpired:
-            logger.warning("UNO compatibility check timed out")
+        response = LibreOfficeWorkerClient(timeout_seconds=10).request(
+            {"op": "validate_python", "python_code": python_code},
+            timeout_seconds=10,
+        )
+        if not response.success:
+            logger.warning("Docker UNO compatibility check unavailable or failed")
             return False
-        except FileNotFoundError:
-            logger.warning(f"LibreOffice Python not found at {self.libreoffice_python}")
-            return False
-        except Exception as e:
-            logger.warning(f"UNO compatibility check error: {e}")
-            return False
-        finally:
-            Path(test_path).unlink(missing_ok=True)
+        return bool(response.data.get("compatible"))
 
     def _analyze_common_issues(self, python_code: str) -> list[str]:
         """Analyze code for common VBA translation issues.

@@ -1,11 +1,13 @@
 """Certification reporting for validated transformations."""
 
 import json
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from xlsliberator.report import ConversionReport
 from xlsliberator.validation_models import (
+    GateExecutionStatus,
     ValidationCertification,
     ValidationGateResult,
     ValidationSeverity,
@@ -38,6 +40,9 @@ class CertificationReport:
             "## Formula Validation",
             self._gate_section("formula"),
             "",
+            "## Artifact Loss Accounting",
+            self._gate_section("coverage"),
+            "",
             "## Macro Validation",
             self._gate_section("macro"),
             "",
@@ -66,11 +71,26 @@ class CertificationReport:
                 "",
             ]
         )
+        if self.certification.repair_provenance:
+            lines.extend(
+                f"- Run {item.agent_run_id}; patch {item.candidate_patch_id}; "
+                f"deterministic gates: {', '.join(item.deterministic_gate_names)}"
+                for item in self.certification.repair_provenance
+            )
+            lines.append("")
 
         # Render any gate not covered by a fixed section above (e.g. the legacy
         # "conversion" gate from certification_from_conversion_report) so no gate
         # result is silently dropped from the report.
-        known_prefixes = ("inventory", "formula", "macro", "control", "backend", "repair")
+        known_prefixes = (
+            "inventory",
+            "coverage",
+            "formula",
+            "macro",
+            "control",
+            "backend",
+            "repair",
+        )
         other_gates = [
             gate
             for gate in self.certification.gate_results
@@ -81,10 +101,7 @@ class CertificationReport:
         ]
         if other_gates:
             lines.append("## Other Gates")
-            lines.extend(
-                f"- {gate.gate_name}: {'passed' if gate.passed else 'failed'} - {gate.message}"
-                for gate in other_gates
-            )
+            lines.extend(self._format_gate(gate) for gate in other_gates)
             lines.append("")
 
         lines.append("## Errors and Warnings")
@@ -115,25 +132,39 @@ class CertificationReport:
         ]
         if not matches:
             return "- Not run"
-        return "\n".join(
-            f"- {gate.gate_name}: {'passed' if gate.passed else 'failed'} - {gate.message}"
-            for gate in matches
+        return "\n".join(self._format_gate(gate) for gate in matches)
+
+    @staticmethod
+    def _format_gate(gate: ValidationGateResult) -> str:
+        references = (
+            f"; evidence: {', '.join(gate.evidence_references)}" if gate.evidence_references else ""
+        )
+        return (
+            f"- {gate.gate_name}: {gate.status.value} "
+            f"({'required' if gate.required else 'optional'}) - {gate.message}{references}"
         )
 
 
 def certification_from_conversion_report(report: ConversionReport) -> CertificationReport:
     """Build a minimal certification report from a legacy conversion report."""
+    output_path = Path(report.output_file)
+    valid_output = output_path.is_file() and zipfile.is_zipfile(output_path)
+    passed = report.success and not report.errors and valid_output
     gate_results = [
         ValidationGateResult(
             gate_name="conversion",
-            passed=report.success,
-            severity=ValidationSeverity.ERROR if not report.success else ValidationSeverity.INFO,
-            message="Legacy conversion completed" if report.success else "Legacy conversion failed",
-            details=json.loads(report.to_json()),
+            status=(GateExecutionStatus.PASSED if passed else GateExecutionStatus.FAILED),
+            severity=ValidationSeverity.INFO if passed else ValidationSeverity.ERROR,
+            message="Legacy conversion completed" if passed else "Legacy conversion failed",
+            details={
+                **json.loads(report.to_json()),
+                "output_exists": output_path.is_file(),
+                "valid_zip": valid_output,
+            },
         )
     ]
     certification = ValidationCertification(
-        certified=report.success and not report.errors,
+        certified=passed,
         gate_results=gate_results,
         warnings=list(report.warnings),
         errors=list(report.errors),

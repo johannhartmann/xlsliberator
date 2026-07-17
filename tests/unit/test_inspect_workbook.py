@@ -65,3 +65,19 @@ def test_inspect_cli_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"formulas"' in result.output
     assert "=SUM(A1:A2)" in result.output
+
+
+def test_inventory_diff_cli_accounts_for_identical_packages(tmp_path: Path) -> None:
+    source = tmp_path / "source.xlsx"
+    target = tmp_path / "target.xlsx"
+    output = tmp_path / "diff.json"
+    _create_formula_workbook(source)
+    target.write_bytes(source.read_bytes())
+
+    result = CliRunner().invoke(
+        cli,
+        ["inventory-diff", str(source), str(target), "--output", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert '"coverage_errors": []' in output.read_text(encoding="utf-8")

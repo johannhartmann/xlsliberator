@@ -50,11 +50,11 @@ def test_convert_default_does_not_set_global_macro_security(
     assert calls == []
 
 
-def test_convert_explicit_opt_in_can_set_global_macro_security(
+def test_convert_explicit_opt_in_cannot_mutate_global_macro_security(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    """Legacy global macro security mutation is allowed only by explicit opt-in."""
+    """Even explicit opt-in cannot escape the Docker-only runtime boundary."""
     input_path = tmp_path / "input.xlsx"
     output_path = tmp_path / "output.ods"
     input_path.write_text("placeholder")
@@ -76,4 +76,5 @@ def test_convert_explicit_opt_in_can_set_global_macro_security(
     )
 
     assert report.success
-    assert calls == [0]
+    assert calls == []
+    assert any("unsupported in the Docker-only runtime" in item for item in report.warnings)

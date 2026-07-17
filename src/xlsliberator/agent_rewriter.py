@@ -19,6 +19,7 @@ from loguru import logger
 
 from xlsliberator.extract_vba import VBAModuleIR
 from xlsliberator.pattern_detector import ComplexityAnalysis, VBAPatternDetector
+from xlsliberator.validation_models import GateExecutionStatus
 
 
 @dataclass
@@ -51,6 +52,7 @@ class ValidationResult:
     syntax_valid: bool
     has_exports: bool
     execution_successful: bool
+    execution_status: GateExecutionStatus
     errors: list[str]
     warnings: list[str]
     iterations_used: int
@@ -123,7 +125,7 @@ class AgentRewriter:
 
         # Phase 4: Test and iterate
         logger.info("Phase 4: Testing and refinement...")
-        validation = self._test_and_refine(
+        generated_code, validation = self._test_and_refine(
             generated_code, output_path, modules, complexity, architecture, max_iterations
         )
 
@@ -161,6 +163,7 @@ class AgentRewriter:
                 syntax_valid=True,
                 has_exports=True,
                 execution_successful=False,  # Not tested yet
+                execution_status=GateExecutionStatus.SKIPPED,
                 errors=[],
                 warnings=["Using existing translation system"],
                 iterations_used=0,
@@ -398,7 +401,7 @@ Generate complete Python-UNO code with all required components.
         complexity: ComplexityAnalysis,
         architecture: ArchitectureDesign,
         max_iterations: int,
-    ) -> ValidationResult:
+    ) -> tuple[GeneratedCode, ValidationResult]:
         """Test generated code and refine iteratively.
 
         Args:
@@ -455,17 +458,16 @@ Generate complete Python-UNO code with all required components.
 
                     # Runtime testing: Skip in favor of self-healing in api.py Step 4.7
                     # Self-healing provides better error-specific fixes with retry logic
-                    execution_successful = True
-
                     logger.info(
                         "Skipping agent runtime execution testing - "
                         "self-healing in api.py Step 4.7 will handle runtime errors"
                     )
 
-                    return ValidationResult(
+                    return code, ValidationResult(
                         syntax_valid=True,
                         has_exports=True,
-                        execution_successful=execution_successful,
+                        execution_successful=False,
+                        execution_status=GateExecutionStatus.SKIPPED,
                         errors=[],
                         warnings=all_warnings,
                         iterations_used=iteration + 1,
@@ -506,10 +508,11 @@ Generate complete Python-UNO code with all required components.
                 break
 
         # Return final validation result (with errors)
-        return ValidationResult(
+        return code, ValidationResult(
             syntax_valid=len(errors) == 0,
-            has_exports=False,  # Assume not if we have errors
+            has_exports=False,
             execution_successful=False,
+            execution_status=GateExecutionStatus.NOT_RUN,
             errors=errors,
             warnings=warnings,
             iterations_used=iteration + 1,

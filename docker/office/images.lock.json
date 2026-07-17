@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "libreoffice": {
+    "image": "xlsliberator-libreoffice:26.2.4.2",
+    "full_build": "26.2.4.2",
+    "base_image": "debian:bookworm-slim@sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df",
+    "archives": {
+      "linux/amd64": {
+        "name": "LibreOffice_26.2.4_Linux_x86-64_deb.tar.gz",
+        "sha256": "810ef197e190d7804a60e0016052c46ff33792303a200fddda9d5216a64b9900"
+      },
+      "linux/arm64": {
+        "name": "LibreOffice_26.2.4_Linux_aarch64_deb.tar.gz",
+        "sha256": "038d9d6c9045094f90d26b443c5f76f7ef09ffd8f81de6a2b89c09a37a7bc6b9"
+      }
+    }
+  }
+}

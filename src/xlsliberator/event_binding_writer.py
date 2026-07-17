@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import html
+import io
 import re
 
+# Used only for namespace registration/serialization; untrusted parsing uses defusedxml.
+import xml.etree.ElementTree as ET  # nosec B405
+from typing import cast
+
+from defusedxml.ElementTree import fromstring as safe_fromstring
+from defusedxml.ElementTree import iterparse as safe_iterparse
 from loguru import logger
 
 from xlsliberator.validation_models import EventBindingIR
@@ -20,20 +28,86 @@ def rewrite_event_bindings(
     Returned bindings contain unresolved entries when no rewrite was possible.
     """
     unresolved: list[EventBindingIR] = []
-    updated = content_xml
 
     if event_bindings:
-        for binding in event_bindings:
-            if not binding.target_script_uri:
-                unresolved.append(binding)
-                continue
-            if binding.source_handler and binding.source_handler in updated:
-                updated = updated.replace(binding.source_handler, binding.target_script_uri)
-            elif binding.source_handler:
-                unresolved.append(binding)
-        return updated, unresolved
+        return _rewrite_explicit_bindings(content_xml, event_bindings)
 
     updated = _rewrite_vba_to_python_event_handlers(content_xml, py_modules)
+    return updated, unresolved
+
+
+def _rewrite_explicit_bindings(
+    content_xml: str, event_bindings: list[EventBindingIR]
+) -> tuple[str, list[EventBindingIR]]:
+    """Rewrite exact XML attribute values without broad text replacement."""
+    unresolved: list[EventBindingIR] = []
+    namespaces: dict[str, str] = {}
+    try:
+        for _event, raw_namespace in safe_iterparse(io.StringIO(content_xml), events=("start-ns",)):
+            namespace = cast(tuple[str, str], raw_namespace)
+            prefix, uri = namespace
+            namespaces.setdefault(prefix, uri)
+        for prefix, uri in namespaces.items():
+            ET.register_namespace(prefix, uri)
+        root = safe_fromstring(content_xml)
+    except ET.ParseError:
+        return _rewrite_explicit_attribute_fragment(content_xml, event_bindings)
+
+    for binding in event_bindings:
+        source = html.unescape(binding.source_handler or "")
+        target = html.unescape(binding.target_script_uri or "")
+        if not source or not target:
+            unresolved.append(binding)
+            continue
+        matches = 0
+        for element in root.iter():
+            for attribute, value in list(element.attrib.items()):
+                if value == source:
+                    element.set(attribute, target)
+                    matches += 1
+        if matches != 1:
+            unresolved.append(binding)
+
+    declaration = content_xml.lstrip().startswith("<?xml")
+    return ET.tostring(root, encoding="unicode", xml_declaration=declaration), unresolved
+
+
+def _rewrite_explicit_attribute_fragment(
+    content: str, event_bindings: list[EventBindingIR]
+) -> tuple[str, list[EventBindingIR]]:
+    """Handle legacy XML-attribute fragments while still matching attribute values only."""
+    attribute_pattern = re.compile(
+        r"(?P<name>[A-Za-z_][\w:.-]*)\s*=\s*(?P<quote>[\"'])(?P<value>.*?)(?P=quote)"
+    )
+    unresolved: list[EventBindingIR] = []
+    updated = content
+    for binding in event_bindings:
+        source = html.unescape(binding.source_handler or "")
+        target = html.unescape(binding.target_script_uri or "")
+        if not source or not target:
+            unresolved.append(binding)
+            continue
+        matches = 0
+
+        def replace_attribute(
+            match: re.Match[str],
+            *,
+            expected_source: str = source,
+            replacement_target: str = target,
+        ) -> str:
+            nonlocal matches
+            if html.unescape(match.group("value")) != expected_source:
+                return match.group(0)
+            matches += 1
+            quote = match.group("quote")
+            escaped_target = html.escape(replacement_target, quote=True)
+            if quote == "'":
+                escaped_target = escaped_target.replace("&#x27;", "&apos;")
+            return f"{match.group('name')}={quote}{escaped_target}{quote}"
+
+        updated = attribute_pattern.sub(replace_attribute, updated)
+        if matches != 1:
+            unresolved.append(binding)
     return updated, unresolved
 
 

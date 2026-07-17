@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import itertools
-import xml.etree.ElementTree as ET
+
+# Used only for element types; all untrusted parsing uses defusedxml.
+import xml.etree.ElementTree as ET  # nosec B405
 import zipfile
 from pathlib import Path
 from typing import Any
 
+from defusedxml.ElementTree import fromstring as safe_fromstring
 from loguru import logger
 
 from xlsliberator.validation_models import ControlIR, EventBindingIR, SourceRef, TargetRef
@@ -129,7 +132,7 @@ def _read_content_xml(ods_path: Path) -> ET.Element | None:
     try:
         with zipfile.ZipFile(ods_path, "r") as archive:
             content = archive.read("content.xml")
-        return ET.fromstring(content)  # nosec B314
+        return safe_fromstring(content)
     except Exception as exc:
         logger.warning(f"Could not parse ODS controls from {ods_path}: {exc}")
         return None

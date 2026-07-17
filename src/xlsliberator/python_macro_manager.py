@@ -15,6 +15,8 @@ from typing import Any
 
 from loguru import logger
 
+from xlsliberator.validation_models import GateExecutionStatus
+
 
 class PythonMacroError(Exception):
     """Raised when Python macro operations fail."""
@@ -48,6 +50,12 @@ class ScriptExecutionResult:
     success: bool
     error: str | None
     return_value: Any | None
+    status: GateExecutionStatus = GateExecutionStatus.NOT_RUN
+
+    def __post_init__(self) -> None:
+        if self.status == GateExecutionStatus.NOT_RUN:
+            self.status = GateExecutionStatus.PASSED if self.success else GateExecutionStatus.FAILED
+        self.success = self.status == GateExecutionStatus.PASSED
 
 
 # ============================================================================
@@ -152,7 +160,9 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
     """
     ods_path = Path(ods_path)
     if not ods_path.exists():
-        return ScriptExecutionResult(False, f"File not found: {ods_path}", None)
+        return ScriptExecutionResult(
+            False, f"File not found: {ods_path}", None, GateExecutionStatus.FAILED
+        )
 
     from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
 
@@ -167,11 +177,21 @@ def test_script_execution(ods_path: str | Path, script_uri: str) -> ScriptExecut
     )
     if response.success:
         logger.debug(f"Script executed successfully: {script_uri}")
-        return ScriptExecutionResult(True, None, response.data.get("return_value"))
+        return ScriptExecutionResult(
+            True,
+            None,
+            response.data.get("return_value"),
+            GateExecutionStatus.PASSED,
+        )
 
     error_msg = worker_unavailable_message(response)
     logger.warning(error_msg)
-    return ScriptExecutionResult(False, error_msg, None)
+    status = (
+        GateExecutionStatus.UNAVAILABLE
+        if response.error and response.error.type == "DockerRuntimeUnavailable"
+        else GateExecutionStatus.FAILED
+    )
+    return ScriptExecutionResult(False, error_msg, None, status)
 
 
 def test_all_scripts(ods_path: str | Path) -> dict[str, ScriptExecutionResult]:
@@ -491,6 +511,13 @@ def test_all_macros_safe(ods_path: str | Path) -> MacroExecutionSummary:
                     if function_name.startswith("_"):
                         skipped += 1
                         logger.debug(f"Skipping private function: {function_name}")
+                        script_uri = generate_script_uri(script_info.module_name, function_name)
+                        execution_details[script_uri] = ScriptExecutionResult(
+                            False,
+                            "Private function is not an executable macro entry point",
+                            None,
+                            GateExecutionStatus.SKIPPED,
+                        )
                         continue
 
                     # Generate script URI
@@ -566,7 +593,7 @@ class FormulaValidationSummary:
 
 
 def validate_formula(formula: str) -> FormulaValidationResult:
-    """Validate a formula using FunctionAccess service.
+    """Validate formula parsing in the authoritative Docker LibreOffice runtime.
 
     Args:
         formula: Formula string (without leading "=")
@@ -581,41 +608,24 @@ def validate_formula(formula: str) -> FormulaValidationResult:
         >>> result.result
         6.0
     """
-    from xlsliberator.uno_conn import UnoCtx
+    from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
 
-    # Strip leading "=" if present
-    formula = formula.lstrip("=")
-
-    try:
-        with UnoCtx() as ctx:
-            # Create FunctionAccess service
-            smgr = ctx.component_context.ServiceManager
-            fa = smgr.createInstanceWithContext(
-                "com.sun.star.sheet.FunctionAccess", ctx.component_context
-            )
-
-            try:
-                # Try to evaluate the formula
-                # Note: This is a simplified approach that works for simple function calls
-                # More complex formulas with cell references may not work
-                result = fa.callFunction(formula, ())
-
-                logger.debug(f"Formula validated successfully: {formula} = {result}")
-                return FormulaValidationResult(
-                    valid=True, error=None, formula=formula, result=result
-                )
-
-            except Exception as e:
-                error_msg = f"Formula evaluation failed: {e}"
-                logger.debug(error_msg)
-                return FormulaValidationResult(
-                    valid=False, error=error_msg, formula=formula, result=None
-                )
-
-    except Exception as e:
-        error_msg = f"Failed to create FunctionAccess service: {e}"
-        logger.error(error_msg)
-        return FormulaValidationResult(valid=False, error=error_msg, formula=formula, result=None)
+    normalized = formula if formula.startswith("=") else f"={formula}"
+    response = LibreOfficeWorkerClient(timeout_seconds=30).request(
+        {"op": "parse_formula", "formula": normalized, "timeout_seconds": 30}
+    )
+    if not response.success:
+        error_msg = worker_unavailable_message(response)
+        logger.warning(error_msg)
+        return FormulaValidationResult(
+            valid=False, error=error_msg, formula=normalized, result=None
+        )
+    return FormulaValidationResult(
+        valid=True,
+        error=None,
+        formula=normalized,
+        result=response.data.get("roundtrip_formula"),
+    )
 
 
 def validate_all_formulas(ods_path: str | Path) -> FormulaValidationSummary:
@@ -627,68 +637,44 @@ def validate_all_formulas(ods_path: str | Path) -> FormulaValidationSummary:
     Returns:
         FormulaValidationSummary with validation results
 
-    Note:
-        This extracts formulas from all cells and validates them using FunctionAccess.
-        Complex formulas with cell references may not be fully validated.
+    The inventory and recalculated error state come from one disposable Docker
+    target container. No host UNO context is permitted.
     """
-    from xlsliberator.uno_conn import UnoCtx, open_calc
-
     ods_path = Path(ods_path)
     if not ods_path.exists():
         raise PythonMacroError(f"File not found: {ods_path}")
 
-    validation_details = {}
-    total_formulas = 0
+    from xlsliberator.lo_worker_client import LibreOfficeWorkerClient, worker_unavailable_message
+
+    response = LibreOfficeWorkerClient(timeout_seconds=60).request(
+        {"op": "list_formula_cells", "ods_path": str(ods_path), "timeout_seconds": 60}
+    )
+    if not response.success:
+        raise PythonMacroError(worker_unavailable_message(response))
+
+    validation_details: dict[str, FormulaValidationResult] = {}
     valid_formulas = 0
     invalid_formulas = 0
+    cells = response.data.get("cells") or []
+    for item in cells:
+        formula = str(item.get("formula") or "")
+        error_code = int(item.get("error") or 0)
+        valid = error_code == 0
+        cell_ref = f"{item['sheet']}!{_get_cell_address(int(item['row']), int(item['column']))}"
+        validation_details[cell_ref] = FormulaValidationResult(
+            valid=valid,
+            error=None if valid else f"LibreOffice formula error {error_code}",
+            formula=formula,
+            result=item.get("value"),
+        )
+        valid_formulas += int(valid)
+        invalid_formulas += int(not valid)
 
-    try:
-        with UnoCtx() as ctx:
-            doc = open_calc(ctx, ods_path)
-
-            try:
-                # Iterate through all sheets
-                sheets = doc.getSheets()
-                for sheet_idx in range(sheets.getCount()):
-                    sheet = sheets.getByIndex(sheet_idx)
-                    sheet_name = sheet.getName()
-
-                    # Get all formula cells
-                    # CellFlags.FORMULA = 2 (com.sun.star.sheet.CellFlags.FORMULA)
-                    formula_cells = sheet.queryContentCells(2)
-
-                    # Iterate through formula cells
-                    cell_ranges = formula_cells.getRangeAddresses()
-                    for cell_range in cell_ranges:
-                        for row in range(cell_range.StartRow, cell_range.EndRow + 1):
-                            for col in range(cell_range.StartColumn, cell_range.EndColumn + 1):
-                                cell = sheet.getCellByPosition(col, row)
-                                formula = cell.getFormula()
-
-                                if formula and formula.startswith("="):
-                                    total_formulas += 1
-                                    cell_ref = f"{sheet_name}!{_get_cell_address(row, col)}"
-
-                                    # Validate formula
-                                    result = validate_formula(formula)
-                                    validation_details[cell_ref] = result
-
-                                    if result.valid:
-                                        valid_formulas += 1
-                                    else:
-                                        invalid_formulas += 1
-
-                logger.info(
-                    f"Validated {total_formulas} formulas: "
-                    f"{valid_formulas} valid, {invalid_formulas} invalid"
-                )
-
-            finally:
-                doc.close(True)
-
-    except Exception as e:
-        logger.error(f"Formula validation failed: {e}")
-        raise PythonMacroError(f"Failed to validate formulas: {e}") from e
+    total_formulas = len(cells)
+    logger.info(
+        f"Validated {total_formulas} formulas in Docker: "
+        f"{valid_formulas} valid, {invalid_formulas} invalid"
+    )
 
     return FormulaValidationSummary(
         total_formulas=total_formulas,

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from xlsliberator.container_boundary import require_application_container
+from xlsliberator.docker_runtime import DockerRuntimeUnavailable, LibreOfficeDockerRuntime
 from xlsliberator.web.cleanup import cleanup_old_jobs
 from xlsliberator.web.jobs import JobStore
 from xlsliberator.web.routes import create_router
@@ -19,6 +19,7 @@ from xlsliberator.web.schemas import WebSettings
 
 def create_app(settings: WebSettings | None = None) -> FastAPI:
     """Create the XLSLiberator web application."""
+    require_application_container()
     resolved_settings = settings or WebSettings.from_env()
     resolved_settings.data_dir.mkdir(parents=True, exist_ok=True)
     store = JobStore()
@@ -54,25 +55,24 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
 
 
 def readiness(settings: WebSettings) -> dict[str, Any]:
-    """Return readiness checks without raising when optional tools are absent."""
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    """Return Docker runtime readiness without inspecting host office software."""
+    runtime_available = False
+    image_id = None
     version = None
-    if soffice:
-        try:
-            result = subprocess.run(
-                [soffice, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            version = (result.stdout or result.stderr).strip() or None
-        except (OSError, subprocess.SubprocessError):
-            version = None
+    error = None
+    try:
+        identity = LibreOfficeDockerRuntime().resolve_identity()
+        runtime_available = True
+        image_id = identity.image_id
+        version = identity.version
+    except DockerRuntimeUnavailable as exc:
+        error = str(exc)
     return {
         "data_dir_writable": _is_writable(settings.data_dir),
-        "soffice_available": bool(soffice),
+        "docker_runtime_available": runtime_available,
+        "image_id": image_id,
         "version": version,
+        "runtime_error": error,
     }
 
 

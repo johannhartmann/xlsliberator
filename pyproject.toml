@@ -24,6 +24,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "defusedxml>=0.7.1",
     "openpyxl>=3.1.0",
     "odfpy>=1.4.1",
     "oletools>=0.60",
@@ -58,15 +59,20 @@ dev = [
     "pytest-xdist>=3.3.0",
     "pytest-benchmark>=4.0.0",
     "pytest-asyncio>=0.21.0",
+    "hypothesis>=6.0.0",
     "mypy>=1.5.0",
     "ruff>=0.1.0",
     "httpx2>=0.28.0",
     "types-openpyxl",
     "types-PyYAML",
+    "types-defusedxml",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/xlsliberator"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/sitecustomize.py" = "sitecustomize.py"
 
 [tool.ruff]
 line-length = 100
@@ -146,6 +152,8 @@ markers = [
     "benchmark: marks performance benchmarks",
     "real: marks tests using real datasets",
     "docker: marks tests requiring Docker",
+    "live: marks optional tests requiring live external services",
+    "optional: marks an explicitly non-blocking test that may skip",
     "asyncio: marks tests as async",
 ]
 filterwarnings = [

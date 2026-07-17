@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0.0",
+  "corpus_id": "xlsliberator-conformance-v1",
+  "current": {
+    "schema_version": "1.0.0",
+    "fixture_count": 12,
+    "format_counts": {
+      "ods": 1,
+      "recipe": 5,
+      "xls": 1,
+      "xlsb": 1,
+      "xlsm": 2,
+      "xlsx": 2
+    },
+    "origin_counts": {
+      "generated": 7,
+      "malicious": 2,
+      "public": 1,
+      "regression": 2
+    },
+    "status_counts": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "unavailable": 2,
+      "unsupported": 0,
+      "waived": 0
+    },
+    "unique_failure_signatures": 0,
+    "duplicate_failures": 0
+  },
+  "previous": null,
+  "fixture_delta": 12,
+  "status_deltas": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "unavailable": 2,
+    "unsupported": 0,
+    "waived": 0
+  },
+  "unique_failure_signature_delta": 0
+}

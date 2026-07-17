@@ -6,34 +6,35 @@ This directory contains example code demonstrating various use cases for xlslibe
 
 ### Setup
 
-1. **Start MCP Server:**
+1. **Start the Docker platform:**
    ```bash
-   xlsliberator mcp-serve
+   mkdir -p artifacts/runtime-tmp artifacts/mcp-workspace
+   docker compose build libreoffice-runtime xlsliberator-mcp
+   docker compose up -d xlsliberator-mcp
    ```
 
-2. **Install Dependencies:**
+2. **Install Dependencies in a disposable Node container:**
    ```bash
-   npm install @anthropic-ai/claude-agent-sdk tsx
+   docker run --rm --network bridge \
+     --volume "$PWD:/workspace" --workdir /workspace \
+     node:22-bookworm-slim npm install @anthropic-ai/claude-agent-sdk tsx
    ```
 
-3. **Set API Key:**
-   ```bash
-   export ANTHROPIC_API_KEY="your-anthropic-api-key"
-   ```
+3. **Set API Key:** put `ANTHROPIC_API_KEY=your-anthropic-api-key` in the
+   untracked Compose `.env` file or inject it as a container secret.
 
 ### Running Examples
 
-**TypeScript Example (Recommended):**
-```bash
-npx tsx examples/claude_agent_conversion.ts
-```
+**TypeScript Example (Recommended):** run
+`examples/claude_agent_conversion.ts` from a Node container connected to the
+Docker-hosted MCP endpoint. Do not invoke `npx` or Node directly on the host.
 
 The example demonstrates:
 - ✅ **Basic Conversion**: Convert Excel to ODS with validation
 - ✅ **Batch Processing**: Convert multiple files with error handling
-- ✅ **Formula Analysis**: Deep analysis of spreadsheet formulas
+- ✅ **Formula Analysis**: Structured analysis of spreadsheet formulas
 - ✅ **Macro Validation**: VBA-to-Python translation quality checks
-- ✅ **Error Recovery**: Defensive conversion with fallback strategies
+- ✅ **Failure Reporting**: Distinguish transport, operation, capability, evidence, and error
 
 ### Customizing Examples
 
@@ -58,6 +59,10 @@ Edit `claude_agent_conversion.ts` to:
   }
   Result: {
     "success": true,
+    "transport_success": true,
+    "operation_status": "passed",
+    "implemented": true,
+    "capability_available": true,
     "report": {
       "sheet_count": 3,
       "total_formulas": 45,
@@ -77,13 +82,20 @@ Edit `claude_agent_conversion.ts` to:
 
 [Tool]: compare_formulas
   Result: {
-    "success": true,
-    "match_rate": 98.5,
+    "success": false,
+    "transport_success": true,
+    "operation_status": "failed",
+    "match_rate": 97.7777777778,
     "formula_cells": 45,
-    "matching": 44
+    "matching": 44,
+    "mismatching": 1,
+    "error": {
+      "type": "FormulaMismatch",
+      "message": "1 formula result(s) differ"
+    }
   }
 
-[Agent]: ✓ Conversion complete with 98.5% formula match rate!
+[Agent]: Conversion completed, but formula equivalence failed with one mismatch.
 ```
 
 ## Python Examples
@@ -163,7 +175,7 @@ async function testPipeline(files: string[]) {
 
     results.push({
       file,
-      success: conversion.success && comparison.match_rate > 95,
+      success: conversion.success && comparison.success,
       match_rate: comparison.match_rate
     });
   }
@@ -220,22 +232,24 @@ async function* migrateMacros() {
 ### MCP Server Not Responding
 
 ```bash
-# Check if server is running
-curl http://localhost:8000/mcp
+# Check from inside the application container
+docker compose exec xlsliberator-web python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/mcp').status)"
 
 # Restart server
-xlsliberator mcp-serve
+docker compose restart xlsliberator-web
 ```
 
 ### UNO Import Errors
 
 ```bash
-# Verify UNO is accessible
-python -c "import uno; print('✓ UNO available')"
-
-# Ensure venv has system-site-packages
-source .venv/bin/activate
+# Verify the exact pinned LibreOffice/PyUNO runtime inside Docker
+docker compose build libreoffice-runtime
+docker compose run --rm libreoffice-runtime runtime-probe
 ```
+
+Do not import UNO or start LibreOffice from a host Python or virtual environment.
+The Docker runtime probe is the only supported diagnostic.
 
 ### Agent Timeout
 
