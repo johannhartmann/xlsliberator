@@ -255,10 +255,12 @@ def _add_button_form(
 ) -> None:
     draw_page = sheet.getDrawPage()
     forms = draw_page.getForms()
-    control_index = forms.getCount() + 1
-    form = document.createInstance("com.sun.star.form.component.DataForm")
-    form.Name = "CertificationForm" if control_index == 1 else f"ControlForm{control_index}"
-    forms.insertByIndex(forms.getCount(), form)
+    if forms.getCount() == 0:
+        form = document.createInstance("com.sun.star.form.component.DataForm")
+        form.Name = "CertificationForm"
+        forms.insertByIndex(0, form)
+    else:
+        form = forms.getByIndex(0)
 
     shape = document.createInstance("com.sun.star.drawing.ControlShape")
     position = uno.createUnoStruct("com.sun.star.awt.Point")
