@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -117,6 +118,18 @@ def package() -> None:
     )
     if not distributions:
         raise RuntimeError("Package build produced no distributions")
+    wheels = [Path(path) for path in distributions if path.endswith(".whl")]
+    if not wheels:
+        raise RuntimeError("Package build produced no wheel")
+    expected_guard = (ROOT / "src" / "sitecustomize.py").read_bytes()
+    for wheel in wheels:
+        with zipfile.ZipFile(wheel) as archive:
+            try:
+                packaged_guard = archive.read("sitecustomize.py")
+            except KeyError as exc:
+                raise RuntimeError(f"{wheel.name} omits the host-UNO startup guard") from exc
+        if packaged_guard != expected_guard:
+            raise RuntimeError(f"{wheel.name} contains an invalid host-UNO startup guard")
     run([sys.executable, "-m", "twine", "check", *distributions])
 
 

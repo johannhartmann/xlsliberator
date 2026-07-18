@@ -22,9 +22,10 @@ COPY src ./src
 RUN python -m pip install --no-cache-dir --upgrade \
         "pip==${PIP_VERSION}" \
         "setuptools==${SETUPTOOLS_VERSION}" \
-    && python -m pip install --no-cache-dir -e ".[web,dev,legacy-agent]" \
+    && python -m pip install --no-cache-dir ".[web,dev,legacy-agent]" \
     && python -m pip install --no-cache-dir \
-        bandit[toml] build hatchling pip-audit pre-commit pytest-cov twine
+        bandit[toml] build hatchling pip-audit pre-commit pytest-cov twine \
+    && cmp -s /build/src/sitecustomize.py /usr/local/lib/python3.11/site-packages/sitecustomize.py
 
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin tester \
     && mkdir -p /workspace /tmp/home \

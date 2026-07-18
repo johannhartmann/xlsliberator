@@ -1,8 +1,8 @@
-"""Fail closed before host Python can import LibreOffice's UNO bridge.
+"""Fail closed before any non-office Python can import LibreOffice's UNO bridge.
 
 Python imports ``sitecustomize`` during interpreter startup when this source
-tree (or the installed module) is on ``sys.path``.  The office worker is the
-only exception, and it must prove both the container marker and the pinned
+tree or the installed wheel is on ``sys.path``. The office worker is the only
+exception, and it must prove both the container marker and the pinned
 LibreOffice Python executable path.
 """
 

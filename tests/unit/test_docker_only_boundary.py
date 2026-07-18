@@ -187,9 +187,24 @@ def test_dependency_audit_has_network_without_office_or_docker_socket_access() -
 
 def test_package_gate_is_offline_and_build_backend_is_in_test_image() -> None:
     root = Path(__file__).parents[2]
+    app_dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     test_dockerfile = (root / "docker/test/Dockerfile").read_text(encoding="utf-8")
     ci_check = (root / "tools/ci_check.py").read_text(encoding="utf-8")
 
     assert "build hatchling pip-audit" in test_dockerfile
+    assert 'pip install --no-cache-dir ".[web]"' in app_dockerfile
+    assert 'pip install --no-cache-dir ".[web,dev,legacy-agent]"' in test_dockerfile
+    assert "pip install --no-cache-dir -e" not in app_dockerfile
+    assert "pip install --no-cache-dir -e" not in test_dockerfile
+    assert (
+        "cmp -s /app/src/sitecustomize.py "
+        "/usr/local/lib/python3.11/site-packages/sitecustomize.py"
+    ) in app_dockerfile
+    assert (
+        "cmp -s /build/src/sitecustomize.py "
+        "/usr/local/lib/python3.11/site-packages/sitecustomize.py"
+    ) in test_dockerfile
     assert '"build", "--no-isolation"' in ci_check
     assert '("*.whl", "*.tar.gz")' in ci_check
+    assert 'archive.read("sitecustomize.py")' in ci_check
+    assert "packaged_guard != expected_guard" in ci_check

@@ -18,7 +18,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir --upgrade "setuptools==${SETUPTOOLS_VERSION}" \
-    && python -m pip install --no-cache-dir -e ".[web]"
+    && python -m pip install --no-cache-dir ".[web]" \
+    && cmp -s /app/src/sitecustomize.py /usr/local/lib/python3.11/site-packages/sitecustomize.py
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
     && mkdir -p /data \
