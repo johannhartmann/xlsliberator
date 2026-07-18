@@ -49,6 +49,20 @@ CONTROL_NAMES: Final = (
     "GameHighScores",
     "ScoreReturn",
 )
+_CONTROL_MODEL_NAMES: Final = {
+    "GameStart": "CertificationButton",
+    "GamePause": "Control2",
+    "GameReset": "Control3",
+    "GameHighScores": "Control4",
+    "ScoreReturn": "ScoreReturnButton",
+}
+_LOGICAL_CONTROL_NAMES: Final = {
+    "CertificationButton": "GameStart",
+    "Control2": "GamePause",
+    "Control3": "GameReset",
+    "Control4": "GameHighScores",
+    "ScoreReturnButton": "ScoreReturn",
+}
 
 _BACKGROUND: Final = 0x101820
 _GRID: Final = 0x1E293B
@@ -123,7 +137,9 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
 def _prepare_game_sheet(document: Any) -> Any:
     sheets = document.getSheets()
     game = sheets.getByIndex(0)
-    game.setName(GAME_SHEET)
+    # Match the lifecycle of the stable native-controls fixture while controls
+    # are constructed; apply the public sheet name after the form models exist.
+    game.setName("Sheet1")
     _set_cell(game, "A1", "XLSLiberator interactive game target")
     return game
 
@@ -176,14 +192,16 @@ def _initialize_document(document: Any, game: Any, uno: Any) -> None:
     _set_cell(state_sheet, "A3", "0")
     _set_cell(state_sheet, "A4", SOURCE_SHA256)
     _set_cell(state_sheet, "A5", TARGET_BUILD)
+    for row, control_name in enumerate(CONTROL_NAMES, start=7):
+        _set_cell(state_sheet, f"A{row}", control_name)
     state_sheet.IsVisible = False
 
+    game.setName(GAME_SHEET)
     controller = InteractiveGameController({}, document, enable_timer=False)
     try:
         controller.render()
     finally:
         controller.dispose()
-    _store_checkpoint(document, "complete-document")
 
 
 def _set_cell(sheet: Any, address: str, value: str) -> None:
@@ -206,10 +224,9 @@ def _add_game_controls(document: Any, game: Any, uno: Any) -> None:
             name=name,
             label=label,
             x=1_000,
-            y=4_500 + index * 1_250,
-            width=4_000,
+            y=1_000 + index * 1_500,
+            width=5_000,
         )
-        _store_checkpoint(document, f"native-control-{name}")
 
 
 def _add_score_control(document: Any, score: Any, uno: Any) -> None:
@@ -220,10 +237,9 @@ def _add_score_control(document: Any, score: Any, uno: Any) -> None:
         name="ScoreReturn",
         label="Return to Game",
         x=1_000,
-        y=5_000,
-        width=4_000,
+        y=1_000,
+        width=5_000,
     )
-    _store_checkpoint(document, "native-control-ScoreReturn")
 
 
 def _add_button_form(
@@ -241,22 +257,22 @@ def _add_button_form(
     forms = draw_page.getForms()
     control_index = forms.getCount() + 1
     form = document.createInstance("com.sun.star.form.component.DataForm")
-    form.Name = f"ControlForm{control_index}"
+    form.Name = "CertificationForm" if control_index == 1 else f"ControlForm{control_index}"
     forms.insertByIndex(forms.getCount(), form)
 
-    model = document.createInstance("com.sun.star.form.component.CommandButton")
-    model.Name = f"Control{control_index}"
-    model.Tag = name
-    model.Label = label
     shape = document.createInstance("com.sun.star.drawing.ControlShape")
     position = uno.createUnoStruct("com.sun.star.awt.Point")
     position.X = x
     position.Y = y
     size = uno.createUnoStruct("com.sun.star.awt.Size")
     size.Width = width
-    size.Height = 900
+    size.Height = 1_200
     shape.setPosition(position)
     shape.setSize(size)
+
+    model = document.createInstance("com.sun.star.form.component.CommandButton")
+    model.Name = _CONTROL_MODEL_NAMES[name]
+    model.Label = label
     shape.setControl(model)
     form.insertByIndex(form.getCount(), model)
     draw_page.add(shape)
@@ -509,7 +525,10 @@ def _find_control_model(document: Any, name: str) -> Any:
 def _control_logical_name(model: Any) -> str:
     """Return the public control ID without relying on fragile UNO model names."""
     tag = str(getattr(model, "Tag", "") or "")
-    return tag or str(getattr(model, "Name", "") or "")
+    if tag:
+        return tag
+    native_name = str(getattr(model, "Name", "") or "")
+    return _LOGICAL_CONTROL_NAMES.get(native_name, native_name)
 
 
 def _listener_types() -> tuple[type[Any], type[Any], type[Any]]:

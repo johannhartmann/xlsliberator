@@ -154,6 +154,8 @@ def test_source_identity_is_bound_to_the_real_public_workbook() -> None:
 def test_native_control_logical_name_prefers_tag_and_supports_legacy_name() -> None:
     tagged = type("Control", (), {"Name": "Control1", "Tag": "GameStart"})()
     legacy = type("Control", (), {"Name": "GameStart", "Tag": ""})()
+    native = type("Control", (), {"Name": "CertificationButton", "Tag": ""})()
 
     assert _control_logical_name(tagged) == "GameStart"
     assert _control_logical_name(legacy) == "GameStart"
+    assert _control_logical_name(native) == "GameStart"

@@ -666,6 +666,8 @@ def _click_control(document: Any, name: str, window_id: str) -> None:
 
 
 def _find_control_model(document: Any, name: str) -> Any:
+    from xlsliberator.interactive_game_uno import _control_logical_name
+
     sheets = document.getSheets()
     for sheet_index in range(sheets.getCount()):
         forms = sheets.getByIndex(sheet_index).getDrawPage().getForms()
@@ -673,8 +675,7 @@ def _find_control_model(document: Any, name: str) -> Any:
             form = forms.getByIndex(form_index)
             for control_index in range(form.getCount()):
                 control = form.getByIndex(control_index)
-                logical_name = str(getattr(control, "Tag", "") or "")
-                if (logical_name or str(getattr(control, "Name", "") or "")) == name:
+                if _control_logical_name(control) == name:
                     return control
     raise ValueError(f"control was not found: {name}")
 
