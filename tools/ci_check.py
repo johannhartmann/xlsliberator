@@ -32,6 +32,8 @@ def quality() -> None:
     run(
         [
             "pytest",
+            "-p",
+            "no:cacheprovider",
             "-m",
             "not integration",
             "--junitxml",
@@ -60,6 +62,8 @@ def office() -> None:
     run(
         [
             "pytest",
+            "-p",
+            "no:cacheprovider",
             "tests/it/test_formula_parser_backend.py",
             "tests/it/test_real_libreoffice_conversion.py",
             "-m",
@@ -79,6 +83,8 @@ def docker_web() -> None:
     run(
         [
             "pytest",
+            "-p",
+            "no:cacheprovider",
             "tests/integration/test_docker_web.py",
             "--junitxml",
             str(ARTIFACTS / "pytest-docker-web.xml"),

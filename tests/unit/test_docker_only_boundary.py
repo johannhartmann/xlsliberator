@@ -146,7 +146,7 @@ def test_orchestrator_uses_shared_workspace_for_pytest_and_office_jobs() -> None
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     assert "XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}" in compose
-    assert "PYTEST_ADDOPTS: --basetemp=${PWD}/artifacts/pytest-tmp" in compose
+    assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
     assert "XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp" in compose
 
 

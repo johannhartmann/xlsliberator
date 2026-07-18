@@ -20,6 +20,25 @@ def test_required_integration_jobs_are_blocking_and_upload_failure_evidence() ->
     assert "artifacts/ci/docker-web.log" in workflow
 
 
+def test_ci_pytest_runs_do_not_write_cache_or_basetemp_to_checkout() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    ci_check = (ROOT / "tools" / "ci_check.py").read_text(encoding="utf-8")
+
+    assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
+    assert "artifacts/pytest-tmp" not in compose
+    assert ci_check.count('"no:cacheprovider"') == 3
+
+
+def test_package_job_provisions_writable_attestation_directory() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    package_job = workflow.split("\n  package:\n", maxsplit=1)[1].split(
+        "\n  security:\n", maxsplit=1
+    )[0]
+
+    assert "mkdir -p artifacts/ci dist" in package_job
+    assert "chmod -R 0777 artifacts dist" in package_job
+
+
 def test_make_all_includes_runtime_web_and_package_gates() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 

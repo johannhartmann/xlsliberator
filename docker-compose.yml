@@ -37,7 +37,7 @@ services:
       XLSLIBERATOR_OFFICE_CONTAINER: "0"
       XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
       XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}
-      PYTEST_ADDOPTS: --basetemp=${PWD}/artifacts/pytest-tmp
+      PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp
     volumes:
       - .:${PWD}
       - /var/run/docker.sock:/var/run/docker.sock
