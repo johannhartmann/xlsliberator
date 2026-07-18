@@ -80,6 +80,7 @@ def test_statuses_and_tiers_are_not_collapsed() -> None:
             source_artifacts_accounted=True,
             evidence_schemas_valid=True,
             security_suite_passed=True,
+            agent_evaluation_passed=True,
         ),
         formula_corpus=_formula_corpus(),
     )
@@ -102,6 +103,7 @@ def test_missing_blocking_evidence_blocks_release() -> None:
             source_artifacts_accounted=True,
             evidence_schemas_valid=True,
             security_suite_passed=True,
+            agent_evaluation_passed=True,
         ),
         formula_corpus=_formula_corpus(),
     )
@@ -125,6 +127,7 @@ def test_unsupported_blocking_fixture_is_not_green() -> None:
             source_artifacts_accounted=True,
             evidence_schemas_valid=True,
             security_suite_passed=True,
+            agent_evaluation_passed=True,
         ),
         formula_corpus=_formula_corpus(),
     )
@@ -147,6 +150,7 @@ def test_required_corpus_reason_omits_green_blocking_fixtures() -> None:
             source_artifacts_accounted=True,
             evidence_schemas_valid=True,
             security_suite_passed=True,
+            agent_evaluation_passed=True,
         ),
         formula_corpus=_formula_corpus(),
     )

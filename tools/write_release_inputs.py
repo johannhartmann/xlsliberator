@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+from xlsliberator.agent_evaluation import require_agent_benchmark_release
 from xlsliberator.capability_matrix import ReleaseInputs, load_measurements
 from xlsliberator.conformance_corpus import CorpusManifest
 from xlsliberator.container_boundary import require_application_container
@@ -21,6 +22,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=Path("corpus/manifest.json"))
     parser.add_argument("--measurements", type=Path, required=True)
+    parser.add_argument("--agent-evaluation", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--quality-attestation",
@@ -39,6 +41,7 @@ def main() -> int:
     if errors := corpus.verify_files(args.corpus.parent.parent):
         raise RuntimeError("; ".join(errors))
     measurements = load_measurements(args.measurements)
+    require_agent_benchmark_release(args.agent_evaluation)
     workspace_sha256 = release_workspace_sha256(ROOT)
     load_gate_attestation(
         args.quality_attestation,
@@ -69,6 +72,7 @@ def main() -> int:
         source_artifacts_accounted=True,
         evidence_schemas_valid=True,
         security_suite_passed=True,
+        agent_evaluation_passed=True,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(inputs.model_dump_json(indent=2) + "\n", encoding="utf-8")

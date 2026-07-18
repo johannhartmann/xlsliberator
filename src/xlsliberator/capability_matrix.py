@@ -137,6 +137,7 @@ class ReleaseInputs(BaseModel):
     source_artifacts_accounted: bool
     evidence_schemas_valid: bool
     security_suite_passed: bool
+    agent_evaluation_passed: bool = False
 
 
 class ReleaseGate(BaseModel):
@@ -360,6 +361,11 @@ def generate_capability_report(
             name="security-suite",
             passed=release_inputs.security_suite_passed,
             reason="blocking security suite result",
+        ),
+        ReleaseGate(
+            name="agent-evaluation",
+            passed=release_inputs.agent_evaluation_passed,
+            reason="required corpus, security, hidden, and reviewer agent gates",
         ),
         ReleaseGate(
             name="runtime-identities",

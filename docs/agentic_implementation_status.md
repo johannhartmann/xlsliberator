@@ -267,14 +267,13 @@ when applicable, and ledger update are linked.
 | 17 — independent reviewer | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `7c7ee4c8` | separate reviewer identity, hidden/mutation gate evidence; Agent and sandbox runs `29654989184` and `29654989178` |
 | 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI FINALIZATION IN PROGRESS | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
 | 19 — serious demos and corpus | IMPLEMENTED; CI EVIDENCE PENDING | eight licensed episodes, behavioral public scenarios, corpus search/subsets, evidence-derived feature report |
-| 20 — repair promotion/build farm | IMPLEMENTED IN `xlsliberator`; OPEN-SWE FINALIZATION PENDING | validated repair records, public/reviewer corpus MCP, fail-closed build-farm contract, real TDF-172479 differential |
-| 21 — execution hardening | IMPLEMENTED IN `xlsliberator`; OPEN-SWE FINALIZATION PENDING | networkless/read-only runtime, bounded hostile-input parser, typed grants, escape probes, security-adversary evaluator, Bandit and dependency audit |
-| 22 — LangSmith evaluations | PENDING | datasets, evaluators, thresholds, release gate |
+| 20 — repair promotion/build farm | COMPLETE IN `xlsliberator`; OPEN-SWE CI REPAIR PUSHED | validated repair records, public/reviewer corpus MCP, fail-closed build-farm contract, real TDF-172479 differential |
+| 21 — execution hardening | COMPLETE IN `xlsliberator`; REMOTE CI GREEN AT `b49f486` | networkless/read-only runtime, bounded hostile-input parser, typed grants, escape probes, security-adversary evaluator, Bandit and dependency audit; full run `29658220586` |
+| 22 — LangSmith evaluations | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI EVIDENCE PENDING | exactly fourteen typed evaluator results, five-state public/hidden reports, format/feature/configuration groups, cross-repository release schema, required agent-evaluation gate |
 | 23 — autonomous showcase | PENDING | reproducible full episode, target evidence, independent verdict |
 
 ## Next action
 
-Obtain blocking remote CI evidence for Prompts 19–20, complete the Open-SWE
-repair-promotion orchestration, then begin **Prompt 21 — hostile-workbook
-hardening**. Local commands continue exclusively in Docker; no local Python or
-office fallback is permitted.
+Obtain blocking remote CI evidence for Prompts 21–22, then execute **Prompt 23 —
+the first autonomous showcase**. Local commands continue exclusively in Docker;
+no local Python or office fallback is permitted.
