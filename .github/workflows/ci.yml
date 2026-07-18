@@ -112,6 +112,42 @@ jobs:
             **/*.evidence/
           if-no-files-found: error
 
+  interactive-showcase:
+    name: Interactive game GUI showcase
+    needs: [quality, unit, corpus]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      XLSLIBERATOR_FAIL_ON_SKIP: "1"
+      XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/showcase-ci
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - run: mkdir -p artifacts/runtime-tmp artifacts/showcase-ci && chmod -R 0777 artifacts
+      - name: Build pinned stock and GUI LibreOffice images
+        run: |
+          set -o pipefail
+          docker compose --profile office build libreoffice-runtime \
+            2>&1 | tee artifacts/showcase-ci/stock-image-build.log
+          docker compose --profile office-gui build libreoffice-gui-runtime \
+            2>&1 | tee artifacts/showcase-ci/gui-image-build.log
+      - name: Build trusted Docker orchestrator
+        run: >-
+          docker compose --profile ci-orchestrator build test-orchestrator
+      - name: Run five public source-derived GUI scenarios
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator run --rm \
+            test-orchestrator pytest -p no:cacheprovider -q \
+            tests/it/test_interactive_game_showcase.py \
+            --junitxml=artifacts/showcase-ci/pytest.xml \
+            2>&1 | tee artifacts/showcase-ci/runtime.log
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: interactive-showcase-evidence
+          path: artifacts/showcase-ci/
+          if-no-files-found: error
+
   docker-web:
     name: Docker web smoke
     needs: quality

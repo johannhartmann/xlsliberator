@@ -193,8 +193,7 @@ def test_landing_locks_piece_scores_and_spawns_declared_next_piece() -> None:
 
 def test_completed_line_is_removed_and_every_upper_cell_moves_down_once() -> None:
     bottom = tuple(
-        SettledCell(row=27, column=column, color=3)
-        for column in range(BOARD_COLUMNS - 1)
+        SettledCell(row=27, column=column, color=3) for column in range(BOARD_COLUMNS - 1)
     )
     marker = SettledCell(row=25, column=0, color=54)
     state = _running_single(

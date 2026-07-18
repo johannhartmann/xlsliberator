@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "line-collapse",
+  "timer_enabled": true,
+  "actions": [
+    {
+      "kind": "load_game_state",
+      "state_json": "{\"active\":{\"column\":14,\"kind\":\"single\",\"rotation\":0,\"row\":27},\"completed_lines\":0,\"draw_index\":2,\"event_index\":1,\"high_score\":0,\"next_piece\":\"single\",\"phase\":\"running\",\"rng_state\":17,\"schema_version\":\"1.0.0\",\"score\":0,\"seed\":17,\"settled\":[{\"color\":54,\"column\":0,\"row\":25},{\"color\":3,\"column\":0,\"row\":27},{\"color\":3,\"column\":1,\"row\":27},{\"color\":3,\"column\":2,\"row\":27},{\"color\":3,\"column\":3,\"row\":27},{\"color\":3,\"column\":4,\"row\":27},{\"color\":3,\"column\":5,\"row\":27},{\"color\":3,\"column\":6,\"row\":27},{\"color\":3,\"column\":7,\"row\":27},{\"color\":3,\"column\":8,\"row\":27},{\"color\":3,\"column\":9,\"row\":27},{\"color\":3,\"column\":10,\"row\":27},{\"color\":3,\"column\":11,\"row\":27},{\"color\":3,\"column\":12,\"row\":27},{\"color\":3,\"column\":13,\"row\":27}],\"tick_index\":0}"
+    },
+    {"kind": "wait", "seconds": 0.35},
+    {"kind": "observe", "sheet": "game", "address": "C3", "expect_value": 105},
+    {"kind": "observe", "sheet": "game", "address": "C4", "expect_value": 1},
+    {"kind": "observe", "sheet": "game", "address": "M30", "expect_background": 15485081},
+    {"kind": "screenshot", "name": "line-collapsed"}
+  ]
+}

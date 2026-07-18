@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0.0",
+  "scenario_id": "keyboard-control",
+  "timer_enabled": false,
+  "actions": [
+    {
+      "kind": "load_game_state",
+      "state_json": "{\"active\":{\"column\":6,\"kind\":\"line\",\"rotation\":0,\"row\":5},\"completed_lines\":0,\"draw_index\":2,\"event_index\":1,\"high_score\":0,\"next_piece\":\"single\",\"phase\":\"running\",\"rng_state\":17,\"schema_version\":\"1.0.0\",\"score\":0,\"seed\":17,\"settled\":[],\"tick_index\":0}"
+    },
+    {"kind": "key", "key": "Left"},
+    {"kind": "observe", "sheet": "game", "address": "C10", "expect_value": 5},
+    {"kind": "key", "key": "Right"},
+    {"kind": "observe", "sheet": "game", "address": "C10", "expect_value": 6},
+    {"kind": "key", "key": "Down"},
+    {"kind": "observe", "sheet": "game", "address": "C6", "expect_value": 7},
+    {"kind": "observe", "sheet": "game", "address": "C3", "expect_value": 1},
+    {"kind": "key", "key": "Up"},
+    {"kind": "observe", "sheet": "game", "address": "C11", "expect_value": 1},
+    {
+      "kind": "load_game_state",
+      "state_json": "{\"active\":{\"column\":0,\"kind\":\"line\",\"rotation\":1,\"row\":5},\"completed_lines\":0,\"draw_index\":2,\"event_index\":1,\"high_score\":0,\"next_piece\":\"single\",\"phase\":\"running\",\"rng_state\":17,\"schema_version\":\"1.0.0\",\"score\":0,\"seed\":17,\"settled\":[],\"tick_index\":0}"
+    },
+    {"kind": "key", "key": "Left"},
+    {"kind": "observe", "sheet": "game", "address": "C10", "expect_value": 0},
+    {"kind": "screenshot", "name": "keyboard-control"}
+  ]
+}

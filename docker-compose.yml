@@ -72,6 +72,28 @@ services:
     profiles:
       - office
 
+  libreoffice-gui-runtime:
+    image: xlsliberator-libreoffice-gui:26.2.4.2
+    build:
+      context: .
+      dockerfile: docker/office/gui/Dockerfile
+      args:
+        XLSLIBERATOR_OFFICE_IMAGE: xlsliberator-libreoffice:26.2.4.2
+    command: runtime-probe
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=1g,mode=1777,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    profiles:
+      - office-gui
+
   office-source-fetch:
     image: xlsliberator-office-source-builder:26.2.4.2
     build:

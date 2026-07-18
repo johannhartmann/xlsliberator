@@ -167,6 +167,14 @@ def _dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return _with_document(request, _execute_button_handler)
     if op == "recalculate_document":
         return _with_document(request, _recalculate_document)
+    if op == "build_interactive_game_target":
+        from xlsliberator.interactive_game_uno import build_interactive_game_target
+
+        return build_interactive_game_target(request)
+    if op == "run_gui_scenario":
+        from xlsliberator.gui_worker import run_gui_scenario
+
+        return run_gui_scenario(request)
     raise ValueError(f"Unsupported worker op: {op}")
 
 
@@ -1827,9 +1835,13 @@ class _OfficeSession:
             cmd.insert(1, "--headless")
 
         env = dict(os.environ)
-        env["SAL_USE_VCLPLUGIN"] = "svp"
-        if display:
+        if self.use_gui:
+            if not display:
+                raise ValueError("GUI office sessions require a private display identifier")
+            env["SAL_USE_VCLPLUGIN"] = os.environ.get("SAL_USE_VCLPLUGIN", "gen")
             env["DISPLAY"] = display
+        else:
+            env["SAL_USE_VCLPLUGIN"] = "svp"
         self.process = subprocess.Popen(
             cmd,
             env=env,

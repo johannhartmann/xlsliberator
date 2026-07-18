@@ -154,6 +154,51 @@ def inspect_cmd(
         sys.exit(1)
 
 
+@cli.command(name="interactive-game-build")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--timeout", type=click.IntRange(min=1, max=600), default=120, show_default=True)
+def interactive_game_build_cmd(source: Path, output: Path, timeout: int) -> None:
+    """Build the public interactive-game ODS in pinned Docker LibreOffice."""
+    from xlsliberator.interactive_game_showcase import build_target
+
+    try:
+        result = build_target(source, output, timeout_seconds=timeout)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
+@cli.command(name="interactive-game-run")
+@click.argument("target", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("scenario", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("evidence_archive", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--timeout", type=click.IntRange(min=1, max=600), default=180, show_default=True)
+def interactive_game_run_cmd(
+    target: Path,
+    scenario: Path,
+    evidence_archive: Path,
+    timeout: int,
+) -> None:
+    """Run declared real-GUI actions and write a replay evidence ZIP."""
+    from xlsliberator.interactive_game_showcase import run_gui_scenario
+
+    try:
+        payload = json.loads(scenario.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not isinstance(payload.get("actions"), list):
+            raise ValueError("scenario JSON must contain an actions array")
+        result = run_gui_scenario(
+            target,
+            evidence_archive,
+            list(payload["actions"]),
+            timer_enabled=bool(payload.get("timer_enabled", True)),
+            timeout_seconds=timeout,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
 @cli.command(name="inventory-diff")
 @click.argument("source_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("target_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))

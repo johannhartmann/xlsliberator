@@ -84,9 +84,7 @@ _PIECE_ORDER: Final[tuple[PieceKind, ...]] = tuple(PieceKind)
 def _normalize_shape(shape: Shape) -> Shape:
     minimum_row = min(row for row, _column in shape)
     minimum_column = min(column for _row, column in shape)
-    return tuple(
-        sorted((row - minimum_row, column - minimum_column) for row, column in shape)
-    )
+    return tuple(sorted((row - minimum_row, column - minimum_column) for row, column in shape))
 
 
 def _rotate_shape(shape: Shape) -> Shape:
@@ -355,8 +353,7 @@ def state_to_dict(state: GameState) -> dict[str, object]:
         "schema_version": SCHEMA_VERSION,
         "phase": state.phase.value,
         "settled": [
-            {"row": cell.row, "column": cell.column, "color": cell.color}
-            for cell in state.settled
+            {"row": cell.row, "column": cell.column, "color": cell.color} for cell in state.settled
         ],
         "active": active,
         "next_piece": state.next_piece.value if state.next_piece is not None else None,
@@ -398,12 +395,7 @@ def state_from_dict(payload: Mapping[str, object]) -> GameState:
     settled_payload = payload["settled"]
     if not isinstance(settled_payload, list):
         raise ValueError("settled must be a list")
-    settled = tuple(
-        sorted(
-            _settled_cell_from_payload(item)
-            for item in settled_payload
-        )
-    )
+    settled = tuple(sorted(_settled_cell_from_payload(item) for item in settled_payload))
 
     active_payload = payload["active"]
     active = None
@@ -543,9 +535,7 @@ def _spawn_piece(kind: PieceKind) -> ActivePiece:
 
 
 def _draw_piece(state: GameState) -> tuple[PieceKind, GameState]:
-    rng_state = (
-        state.rng_state * _LCG_MULTIPLIER + _LCG_INCREMENT
-    ) & _UINT64_MASK
+    rng_state = (state.rng_state * _LCG_MULTIPLIER + _LCG_INCREMENT) & _UINT64_MASK
     kind = _PIECE_ORDER[rng_state % len(_PIECE_ORDER)]
     return kind, replace(
         state,

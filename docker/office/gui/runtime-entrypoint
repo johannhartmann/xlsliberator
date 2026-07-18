@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+
+display="${DISPLAY:-:99}"
+screen="${XLSLIBERATOR_XVFB_SCREEN:-1280x1024x24}"
+
+Xvfb "$display" -screen 0 "$screen" -nolisten tcp -noreset &
+xvfb_pid=$!
+
+cleanup() {
+  kill "$xvfb_pid" 2>/dev/null || true
+  if [ -n "${openbox_pid:-}" ]; then
+    kill "$openbox_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+ready=0
+attempt=0
+while [ "$attempt" -lt 50 ]; do
+  if xdpyinfo -display "$display" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.1
+done
+if [ "$ready" -ne 1 ]; then
+  echo "Xvfb did not become ready" >&2
+  exit 70
+fi
+
+openbox --display "$display" >/tmp/openbox.log 2>&1 &
+openbox_pid=$!
+
+/usr/local/bin/runtime-entrypoint "$@"
