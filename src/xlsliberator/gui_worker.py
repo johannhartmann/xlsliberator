@@ -340,14 +340,12 @@ def _observe(document: Any, action: dict[str, Any]) -> dict[str, Any]:
     expected_string = action.get("expect_string")
     if expected_string is not None and result["string"] != str(expected_string):
         raise AssertionError(
-            f"{sheet_name}!{address} string is {result['string']!r}, "
-            f"expected {expected_string!r}"
+            f"{sheet_name}!{address} string is {result['string']!r}, expected {expected_string!r}"
         )
     expected_value = action.get("expect_value")
     if expected_value is not None and result["value"] != float(expected_value):
         raise AssertionError(
-            f"{sheet_name}!{address} value is {result['value']!r}, "
-            f"expected {expected_value!r}"
+            f"{sheet_name}!{address} value is {result['value']!r}, expected {expected_value!r}"
         )
     minimum = action.get("min_value")
     if minimum is not None and result["value"] < float(minimum):
@@ -360,10 +358,7 @@ def _observe(document: Any, action: dict[str, Any]) -> dict[str, Any]:
             f"{sheet_name}!{address} value is above {maximum!r}: {result['value']!r}"
         )
     expected_background = action.get("expect_background")
-    if (
-        expected_background is not None
-        and result["background"] != int(expected_background)
-    ):
+    if expected_background is not None and result["background"] != int(expected_background):
         raise AssertionError(
             f"{sheet_name}!{address} background is {result['background']!r}, "
             f"expected {expected_background!r}"

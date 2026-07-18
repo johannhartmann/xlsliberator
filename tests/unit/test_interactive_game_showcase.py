@@ -92,8 +92,7 @@ def test_gui_scenario_selects_dedicated_image_and_forwards_timer_policy(
 def test_public_scenarios_have_exact_ids_and_valid_game_fixtures() -> None:
     root = Path("demos/interactive-game/showcase/scenarios")
     scenarios = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(root.glob("*.json"))
+        json.loads(path.read_text(encoding="utf-8")) for path in sorted(root.glob("*.json"))
     ]
 
     assert {scenario["scenario_id"] for scenario in scenarios} == {

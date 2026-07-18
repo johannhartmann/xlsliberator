@@ -36,9 +36,7 @@ from xlsliberator.interactive_game_engine import (
     tick_interval_ms,
 )
 
-SOURCE_SHA256: Final = (
-    "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1"
-)
+SOURCE_SHA256: Final = "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1"
 TARGET_BUILD: Final = "26.2.4.2"
 GAME_SHEET: Final = "game"
 SCORE_SHEET: Final = "Score"
@@ -401,9 +399,9 @@ class InteractiveGameController:
         board.clearContents(1023)
         board.CellBackColor = _GRID
         for cell in self.state.settled:
-            game.getCellByPosition(12 + cell.column, 3 + cell.row).CellBackColor = (
-                _SETTLED_COLORS.get(cell.color, 0x94A3B8)
-            )
+            game.getCellByPosition(
+                12 + cell.column, 3 + cell.row
+            ).CellBackColor = _SETTLED_COLORS.get(cell.color, 0x94A3B8)
         if self.state.active is not None:
             for row, column in piece_cells(self.state.active):
                 game.getCellByPosition(12 + column, 3 + row).CellBackColor = _ACTIVE
@@ -451,11 +449,7 @@ class InteractiveGameController:
         return state_from_json(str(encoded))
 
     def _increment_open_count(self) -> None:
-        cell = (
-            self.document.getSheets()
-            .getByName(STATE_SHEET)
-            .getCellRangeByName("A3")
-        )
+        cell = self.document.getSheets().getByName(STATE_SHEET).getCellRangeByName("A3")
         value = int(str(cell.getString()) or "0") + 1
         cell.setString(str(value))
 
