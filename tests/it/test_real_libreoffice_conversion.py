@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from zipfile import ZipFile
 
 import openpyxl
 import pytest
@@ -92,6 +93,10 @@ def test_native_control_fixture_serializes_in_real_libreoffice(
     assert created["success"] is True, created
     assert created["data"]["button_name"] == "CertificationButton"
     assert output_path.is_file()
+    with ZipFile(output_path) as archive:
+        content = archive.read("content.xml")
+    assert b"com.sun.star.form.component.CommandButton" in content
+    assert b"CertificationButton" in content
 
     validation = runtime.validate_document(output_path)
     assert validation["success"] is True, validation

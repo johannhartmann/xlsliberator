@@ -275,58 +275,67 @@ def _convert_document(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
-    """Create a real ODS form control with a document-local event handler."""
+    """Round-trip a real native Calc control through the pinned office."""
+    from xlsliberator.native_control_fods import (
+        NativeButton,
+        NativeSheet,
+        write_native_button_seed,
+    )
+
     output_path = Path(str(request["output_path"])).resolve()
     button_name = str(request.get("button_name") or "CertificationButton")
     marker_address = str(request.get("marker_address") or "D4")
     marker_value = str(request.get("marker_value") or "control-event-fired")
-    with _office_session(request, use_gui=False) as session:
-        document = None
-        try:
-            document = session["desktop"].loadComponentFromURL(
-                "private:factory/scalc",
-                "_blank",
-                0,
-                (_property_value("Hidden", True),),
-            )
-            if document is None:
-                raise RuntimeError("LibreOffice could not create the controls fixture")
-            sheet = document.getSheets().getByIndex(0)
-            sheet.setName("Sheet1")
-            sheet.getCellRangeByName("A1").setString("Controls certification fixture")
-
-            draw_page = sheet.getDrawPage()
-            shape = document.createInstance("com.sun.star.drawing.ControlShape")
-            position = session["uno"].createUnoStruct("com.sun.star.awt.Point")
-            position.X = 1000
-            position.Y = 1000
-            size = session["uno"].createUnoStruct("com.sun.star.awt.Size")
-            size.Width = 5000
-            size.Height = 1200
-            shape.setPosition(position)
-            shape.setSize(size)
-
-            button = document.createInstance("com.sun.star.form.component.CommandButton")
-            button.Name = button_name
-            button.Label = "Run certification event"
-
-            forms = draw_page.getForms()
-            form = document.createInstance("com.sun.star.form.component.Form")
-            form.Name = "CertificationForm"
-            forms.insertByName("CertificationForm", form)
-            form.insertByName(button_name, button)
-            shape.setControl(button)
-            draw_page.add(shape)
-
-            document.storeAsURL(
-                session["uno"].systemPathToFileUrl(str(output_path)),
-                (
-                    _property_value("FilterName", "calc8"),
-                    _property_value("Overwrite", True),
+    with tempfile.NamedTemporaryFile(
+        dir=output_path.parent,
+        prefix=".xlsliberator-native-control-fixture-",
+        suffix=".fods",
+        delete=False,
+    ) as seed_handle:
+        seed_path = Path(seed_handle.name)
+    try:
+        write_native_button_seed(
+            seed_path,
+            (
+                NativeSheet(
+                    name="Sheet1",
+                    buttons=(
+                        NativeButton(
+                            name=button_name,
+                            label="Run certification event",
+                            tag=button_name,
+                            x=1_000,
+                            y=1_000,
+                            width=5_000,
+                        ),
+                    ),
                 ),
-            )
-        finally:
-            _close_document(document, save=False)
+            ),
+        )
+        with _office_session(request, use_gui=False) as session:
+            document = None
+            try:
+                document = session["desktop"].loadComponentFromURL(
+                    session["uno"].systemPathToFileUrl(str(seed_path)),
+                    "_blank",
+                    0,
+                    (_property_value("Hidden", True),),
+                )
+                if document is None:
+                    raise RuntimeError("LibreOffice could not import the controls fixture")
+                sheet = document.getSheets().getByIndex(0)
+                sheet.getCellRangeByName("A1").setString("Controls certification fixture")
+                document.storeAsURL(
+                    session["uno"].systemPathToFileUrl(str(output_path)),
+                    (
+                        _property_value("FilterName", "calc8"),
+                        _property_value("Overwrite", True),
+                    ),
+                )
+            finally:
+                _close_document(document, save=False)
+    finally:
+        seed_path.unlink(missing_ok=True)
     if not output_path.is_file():
         raise RuntimeError("LibreOffice did not produce the controls fixture")
     return {

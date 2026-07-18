@@ -13,6 +13,7 @@ import hashlib
 import json
 from contextlib import suppress
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Final
 
 from xlsliberator.interactive_game_engine import (
@@ -32,6 +33,11 @@ from xlsliberator.interactive_game_engine import (
     state_to_json,
     tick,
     tick_interval_ms,
+)
+from xlsliberator.native_control_fods import (
+    NativeButton,
+    NativeSheet,
+    write_native_button_seed,
 )
 
 SOURCE_SHA256: Final = "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1"
@@ -94,30 +100,41 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
     if output.suffix.lower() != ".ods":
         raise ValueError("interactive-game target must use the ODS format")
 
-    with _office_session(request, use_gui=False) as session:
-        document = session["desktop"].loadComponentFromURL(
-            "private:factory/scalc",
-            "_blank",
-            0,
-            (_property_value("Hidden", True),),
-        )
-        if document is None:
-            raise RuntimeError("LibreOffice did not create the interactive-game target")
-        try:
-            game = _prepare_game_sheet(document)
-            _initialize_document(document, game, session["uno"])
-            document.storeAsURL(
-                session["uno"].systemPathToFileUrl(str(output)),
-                (
-                    _property_value("FilterName", "calc8"),
-                    _property_value("Overwrite", True),
-                ),
+    with NamedTemporaryFile(
+        dir=output.parent,
+        prefix=".xlsliberator-native-controls-",
+        suffix=".fods",
+        delete=False,
+    ) as seed_handle:
+        seed_path = Path(seed_handle.name)
+    try:
+        _write_interactive_game_seed(seed_path)
+        with _office_session(request, use_gui=False) as session:
+            document = session["desktop"].loadComponentFromURL(
+                session["uno"].systemPathToFileUrl(str(seed_path)),
+                "_blank",
+                0,
+                (_property_value("Hidden", True),),
             )
-        except Exception:
-            output.unlink(missing_ok=True)
-            raise
-        finally:
-            _close_document(document, save=False)
+            if document is None:
+                raise RuntimeError("LibreOffice did not import the native-control seed")
+            try:
+                game = _prepare_game_sheet(document)
+                _initialize_document(document, game)
+                document.storeAsURL(
+                    session["uno"].systemPathToFileUrl(str(output)),
+                    (
+                        _property_value("FilterName", "calc8"),
+                        _property_value("Overwrite", True),
+                    ),
+                )
+            except Exception:
+                output.unlink(missing_ok=True)
+                raise
+            finally:
+                _close_document(document, save=False)
+    finally:
+        seed_path.unlink(missing_ok=True)
     if not output.is_file():
         raise RuntimeError("LibreOffice did not write the interactive-game target")
     return {
@@ -135,23 +152,14 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
 
 def _prepare_game_sheet(document: Any) -> Any:
     sheets = document.getSheets()
-    game = sheets.getByIndex(0)
-    # Match the lifecycle of the stable native-controls fixture while controls
-    # are constructed; apply the public sheet name after the form models exist.
-    game.setName("Sheet1")
+    game = sheets.getByName(GAME_SHEET)
     _set_cell(game, "A1", "XLSLiberator interactive game target")
     return game
 
 
-def _initialize_document(document: Any, game: Any, uno: Any) -> None:
+def _initialize_document(document: Any, game: Any) -> None:
     sheets = document.getSheets()
-    _add_game_controls(document, game, uno)
-
-    sheets.insertNewByName(SCORE_SHEET, 1)
     score = sheets.getByName(SCORE_SHEET)
-    _add_score_control(document, score, uno)
-
-    sheets.insertNewByName(STATE_SHEET, 2)
     state_sheet = sheets.getByName(STATE_SHEET)
 
     _set_cell(game, "B2", "phase")
@@ -195,7 +203,6 @@ def _initialize_document(document: Any, game: Any, uno: Any) -> None:
         _set_cell(state_sheet, f"A{row}", control_name)
     state_sheet.IsVisible = False
 
-    game.setName(GAME_SHEET)
     controller = InteractiveGameController({}, document, enable_timer=False)
     try:
         controller.render()
@@ -207,81 +214,41 @@ def _set_cell(sheet: Any, address: str, value: str) -> None:
     sheet.getCellRangeByName(address).setString(value)
 
 
-def _add_game_controls(document: Any, game: Any, uno: Any) -> None:
-    for index, (name, label) in enumerate(
-        (
-            ("GameStart", "Start"),
-            ("GamePause", "Pause / Resume"),
-            ("GameReset", "Reset"),
-            ("GameHighScores", "High Scores"),
-        )
-    ):
-        _add_button_form(
-            document,
-            game,
-            uno,
-            name=name,
+def _write_interactive_game_seed(path: Path) -> None:
+    game_buttons = tuple(
+        NativeButton(
+            name=_CONTROL_MODEL_NAMES[name],
             label=label,
+            tag=name,
             x=1_000,
             y=1_000 + index * 1_500,
             width=5_000,
         )
-
-
-def _add_score_control(document: Any, score: Any, uno: Any) -> None:
-    _add_button_form(
-        document,
-        score,
-        uno,
-        name="ScoreReturn",
+        for index, (name, label) in enumerate(
+            (
+                ("GameStart", "Start"),
+                ("GamePause", "Pause / Resume"),
+                ("GameReset", "Reset"),
+                ("GameHighScores", "High Scores"),
+            )
+        )
+    )
+    score_button = NativeButton(
+        name=_CONTROL_MODEL_NAMES["ScoreReturn"],
         label="Return to Game",
+        tag="ScoreReturn",
         x=1_000,
         y=1_000,
         width=5_000,
     )
-
-
-def _add_button_form(
-    document: Any,
-    sheet: Any,
-    uno: Any,
-    *,
-    name: str,
-    label: str,
-    x: int,
-    y: int,
-    width: int,
-) -> None:
-    draw_page = sheet.getDrawPage()
-    shape = document.createInstance("com.sun.star.drawing.ControlShape")
-    position = uno.createUnoStruct("com.sun.star.awt.Point")
-    position.X = x
-    position.Y = y
-    size = uno.createUnoStruct("com.sun.star.awt.Size")
-    size.Width = width
-    size.Height = 1_200
-    shape.setPosition(position)
-    shape.setSize(size)
-
-    model = document.createInstance("com.sun.star.form.component.CommandButton")
-    model.Name = _CONTROL_MODEL_NAMES[name]
-    model.Label = label
-
-    forms = draw_page.getForms()
-    if forms.getCount() == 0:
-        # These controls are intentionally not data-aware.  Using DataForm
-        # activates the database RowSet persistence path and LibreOffice
-        # 26.2.4.2 aborts ODS export with std::bad_alloc for an otherwise
-        # minimal command button.  The base Form service is the native,
-        # persistable container required by non-data-aware control models.
-        form = document.createInstance("com.sun.star.form.component.Form")
-        form.Name = "CertificationForm"
-        forms.insertByName("CertificationForm", form)
-    else:
-        form = forms.getByIndex(0)
-    form.insertByName(model.Name, model)
-    shape.setControl(model)
-    draw_page.add(shape)
+    write_native_button_seed(
+        path,
+        (
+            NativeSheet(name=GAME_SHEET, buttons=game_buttons),
+            NativeSheet(name=SCORE_SHEET, buttons=(score_button,)),
+            NativeSheet(name=STATE_SHEET, hidden=True),
+        ),
+    )
 
 
 class InteractiveGameController:
