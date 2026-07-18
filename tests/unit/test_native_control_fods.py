@@ -1,7 +1,8 @@
-"""Contract tests for the native-control flat-ODF seed."""
+"""Contract tests for the native-control ODS seed."""
 
 from pathlib import Path
 from xml.etree import ElementTree
+from zipfile import ZIP_STORED, ZipFile
 
 import pytest
 
@@ -13,7 +14,7 @@ from xlsliberator.native_control_fods import (
 
 
 def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Path) -> None:
-    seed = tmp_path / "controls.fods"
+    seed = tmp_path / "controls.ods"
 
     write_native_button_seed(
         seed,
@@ -35,7 +36,14 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
         ),
     )
 
-    root = ElementTree.parse(seed).getroot()
+    with ZipFile(seed) as package:
+        infos = package.infolist()
+        assert infos[0].filename == "mimetype"
+        assert infos[0].compress_type == ZIP_STORED
+        assert package.read("mimetype") == b"application/vnd.oasis.opendocument.spreadsheet"
+        assert {"META-INF/manifest.xml", "content.xml", "styles.xml"} <= set(package.namelist())
+        content = package.read("content.xml")
+    root = ElementTree.fromstring(content)
     namespaces = {
         "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
         "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
@@ -53,19 +61,20 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
     assert shape is not None
     form_id = button.attrib["{urn:oasis:names:tc:opendocument:xmlns:form:1.0}id"]
     assert shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}control"] == form_id
-    serialized = seed.read_text(encoding="utf-8")
+    serialized = content.decode("utf-8")
     assert "Start &amp; play &lt;now&gt;" in serialized
     assert 'table:name="game &quot;certification&quot;"' in serialized
     assert 'form:name="Certification &quot;Button&quot;"' in serialized
     assert 'form:delay-for-repeat="PT0.050000000S"' in serialized
     assert 'xlink:href=""' in serialized
+    assert "<table:shapes>" in serialized
 
 
 def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="at least one sheet"):
-        write_native_button_seed(tmp_path / "empty.fods", ())
+        write_native_button_seed(tmp_path / "empty.ods", ())
     with pytest.raises(ValueError, match="visible sheet"):
         write_native_button_seed(
-            tmp_path / "hidden.fods",
+            tmp_path / "hidden.ods",
             (NativeSheet(name="_state", hidden=True),),
         )

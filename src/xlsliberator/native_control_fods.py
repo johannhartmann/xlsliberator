@@ -1,20 +1,21 @@
-"""Build minimal flat-ODF spreadsheets containing native LibreOffice controls.
+"""Build minimal ODF spreadsheets containing native LibreOffice controls.
 
-LibreOffice 26.2.4.2 can import and round-trip form controls represented in
-flat ODF even when exporting an equivalent programmatically assembled UNO
-object graph fails. The structure below follows LibreOffice's own Calc test
-fixture:
+The native form structure follows LibreOffice's own current Calc test fixture:
 
 https://github.com/LibreOffice/core/blob/master/sc/qa/unit/tiledrendering/data/form-image-link.fods
 
-This module only writes an intermediate FODS document. The pinned LibreOffice
-Docker worker imports it and produces the final ODS package.
+The package writer avoids LibreOffice's unstable FODS-to-ODS ``storeAsURL``
+path. The pinned Docker worker opens this valid ODS seed, populates it through
+UNO, and persists it through the document's normal ``store`` lifecycle.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
+
+_MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ class NativeButton:
 
 @dataclass(frozen=True)
 class NativeSheet:
-    """A sheet in the intermediate flat-ODF document."""
+    """A sheet in the intermediate ODS document."""
 
     name: str
     buttons: tuple[NativeButton, ...] = ()
@@ -47,7 +48,7 @@ def _xml_attr(value: str) -> str:
 
 
 def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
-    """Write a minimal FODS spreadsheet with sheet-local native buttons."""
+    """Write a minimal ODS spreadsheet with sheet-local native buttons."""
     if not sheets:
         raise ValueError("native-control seed requires at least one sheet")
     if all(sheet.hidden for sheet in sheets):
@@ -62,8 +63,8 @@ def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> Non
             controls.append((button, f"control{control_number}"))
         sheet_xml.append(_sheet_xml(sheet, controls))
 
-    document = f"""<?xml version="1.0" encoding="UTF-8"?>
-<office:document
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
@@ -74,16 +75,38 @@ def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> Non
  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
  xmlns:xlink="http://www.w3.org/1999/xlink"
  xmlns:ooo="http://openoffice.org/2004/office"
- office:version="1.3"
- office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ office:version="1.4">
  <office:body>
   <office:spreadsheet>
 {"".join(sheet_xml)}
   </office:spreadsheet>
  </office:body>
-</office:document>
+</office:document-content>
 """
-    path.write_text(document, encoding="utf-8")
+    styles = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles
+ xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+ office:version="1.4">
+ <office:styles/>
+</office:document-styles>
+"""
+    manifest = f"""<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest
+ xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
+ manifest:version="1.4">
+ <manifest:file-entry
+  manifest:full-path="/"
+  manifest:version="1.4"
+  manifest:media-type="{_MIMETYPE}"/>
+ <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+ <manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>
+"""
+    with ZipFile(path, "w") as package:
+        package.writestr("mimetype", _MIMETYPE, compress_type=ZIP_STORED)
+        package.writestr("META-INF/manifest.xml", manifest, compress_type=ZIP_DEFLATED)
+        package.writestr("content.xml", content, compress_type=ZIP_DEFLATED)
+        package.writestr("styles.xml", styles, compress_type=ZIP_DEFLATED)
 
 
 def _sheet_xml(
@@ -93,13 +116,15 @@ def _sheet_xml(
     visibility = ' table:visibility="collapse"' if sheet.hidden else ""
     forms = _forms_xml(controls) if controls else ""
     shapes = "".join(_shape_xml(button, control_id) for button, control_id in controls)
+    shapes_xml = f"    <table:shapes>{shapes}    </table:shapes>\n" if shapes else ""
     return f"""   <table:table table:name="{_xml_attr(sheet.name)}"{visibility}>
 {forms}    <table:table-column table:number-columns-repeated="32"/>
     <table:table-row>
      <table:table-cell>
       <text:p/>
-{shapes}     </table:table-cell>
+     </table:table-cell>
     </table:table-row>
+{shapes_xml}\
    </table:table>
 """
 

@@ -13,7 +13,6 @@ import hashlib
 import json
 from contextlib import suppress
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any, Final
 
 from xlsliberator.interactive_game_engine import (
@@ -100,18 +99,12 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
     if output.suffix.lower() != ".ods":
         raise ValueError("interactive-game target must use the ODS format")
 
-    with NamedTemporaryFile(
-        dir=output.parent,
-        prefix=".xlsliberator-native-controls-",
-        suffix=".fods",
-        delete=False,
-    ) as seed_handle:
-        seed_path = Path(seed_handle.name)
+    output.unlink(missing_ok=True)
     try:
-        _write_interactive_game_seed(seed_path)
+        _write_interactive_game_seed(output)
         with _office_session(request, use_gui=False) as session:
             document = session["desktop"].loadComponentFromURL(
-                session["uno"].systemPathToFileUrl(str(seed_path)),
+                session["uno"].systemPathToFileUrl(str(output)),
                 "_blank",
                 0,
                 (_property_value("Hidden", True),),
@@ -121,20 +114,15 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
             try:
                 game = _prepare_game_sheet(document)
                 _initialize_document(document, game)
-                document.storeAsURL(
-                    session["uno"].systemPathToFileUrl(str(output)),
-                    (
-                        _property_value("FilterName", "calc8"),
-                        _property_value("Overwrite", True),
-                    ),
-                )
+                document.store()
             except Exception:
                 output.unlink(missing_ok=True)
                 raise
             finally:
                 _close_document(document, save=False)
-    finally:
-        seed_path.unlink(missing_ok=True)
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
     if not output.is_file():
         raise RuntimeError("LibreOffice did not write the interactive-game target")
     return {

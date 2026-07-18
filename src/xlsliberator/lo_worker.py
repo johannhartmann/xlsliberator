@@ -286,16 +286,10 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
     button_name = str(request.get("button_name") or "CertificationButton")
     marker_address = str(request.get("marker_address") or "D4")
     marker_value = str(request.get("marker_value") or "control-event-fired")
-    with tempfile.NamedTemporaryFile(
-        dir=output_path.parent,
-        prefix=".xlsliberator-native-control-fixture-",
-        suffix=".fods",
-        delete=False,
-    ) as seed_handle:
-        seed_path = Path(seed_handle.name)
+    output_path.unlink(missing_ok=True)
     try:
         write_native_button_seed(
-            seed_path,
+            output_path,
             (
                 NativeSheet(
                     name="Sheet1",
@@ -316,7 +310,7 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             document = None
             try:
                 document = session["desktop"].loadComponentFromURL(
-                    session["uno"].systemPathToFileUrl(str(seed_path)),
+                    session["uno"].systemPathToFileUrl(str(output_path)),
                     "_blank",
                     0,
                     (_property_value("Hidden", True),),
@@ -325,17 +319,15 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
                     raise RuntimeError("LibreOffice could not import the controls fixture")
                 sheet = document.getSheets().getByIndex(0)
                 sheet.getCellRangeByName("A1").setString("Controls certification fixture")
-                document.storeAsURL(
-                    session["uno"].systemPathToFileUrl(str(output_path)),
-                    (
-                        _property_value("FilterName", "calc8"),
-                        _property_value("Overwrite", True),
-                    ),
-                )
+                document.store()
+            except Exception:
+                output_path.unlink(missing_ok=True)
+                raise
             finally:
                 _close_document(document, save=False)
-    finally:
-        seed_path.unlink(missing_ok=True)
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
     if not output_path.is_file():
         raise RuntimeError("LibreOffice did not produce the controls fixture")
     return {
