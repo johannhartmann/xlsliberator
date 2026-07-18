@@ -11,11 +11,25 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 LIBREOFFICE_BUILD = "26.2.4.2"
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 _ARTIFACT_ID = re.compile(r"^[0-9a-f]{24}$")
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Keep bearer credentials on the configured service origin."""
+
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+_SERVICE_OPENER = build_opener(_NoRedirectHandler())
+
+
+def _open_service_request(request: Request, *, timeout: float) -> Any:
+    return _SERVICE_OPENER.open(request, timeout=timeout)
 
 
 class OpenSWEError(RuntimeError):
@@ -170,14 +184,19 @@ class OpenSWEClient:
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
+        url = self._service_url(path)
         request = Request(
-            f"{self.base_url}{path}",
+            url,
             data=body,
             headers=headers,
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout_seconds) as response:
+            # The origin and path are validated above, and the opener rejects redirects.
+            with _open_service_request(
+                request,
+                timeout=self.timeout_seconds,
+            ) as response:
                 content = response.read(_MAX_RESPONSE_BYTES + 1)
                 if len(content) > _MAX_RESPONSE_BYTES:
                     raise OpenSWEError("Open-SWE response exceeded the safety limit")
@@ -187,6 +206,20 @@ class OpenSWEClient:
             raise OpenSWEError(detail) from exc
         except (OSError, URLError) as exc:
             raise OpenSWEError("Open-SWE migration service is unavailable") from exc
+
+    def _service_url(self, path: str) -> str:
+        parsed = urlsplit(path)
+        if (
+            not path.startswith("/")
+            or path.startswith("//")
+            or parsed.scheme
+            or parsed.netloc
+            or parsed.fragment
+            or "\\" in path
+            or any(ord(character) < 32 or ord(character) == 127 for character in path)
+        ):
+            raise OpenSWEError("Invalid Open-SWE service path")
+        return f"{self.base_url}{path}"
 
 
 def _object(value: object) -> dict[str, Any]:
