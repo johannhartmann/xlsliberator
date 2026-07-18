@@ -95,9 +95,7 @@ def test_native_control_fixture_serializes_in_real_libreoffice(
 
     validation = runtime.validate_document(output_path)
     assert validation["success"] is True, validation
-    assert all(
-        stage["status"] == "passed" for stage in validation["data"]["stages"].values()
-    )
+    assert all(stage["status"] == "passed" for stage in validation["data"]["stages"].values())
 
 
 @pytest.mark.integration
