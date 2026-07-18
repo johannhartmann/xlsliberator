@@ -42,10 +42,7 @@ class NativeSheet:
 def _xml_attr(value: str) -> str:
     """Encode text for a double-quoted XML attribute without parsing XML."""
     return (
-        value.replace("&", "&amp;")
-        .replace('"', "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
+        value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
     )
 
 
