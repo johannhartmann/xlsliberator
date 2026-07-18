@@ -1,4 +1,4 @@
-"""Multi-agent VBA rewriter using Claude Agent SDK.
+"""Deprecated embedded VBA rewriter using a provider SDK.
 
 Orchestrates the complete transformation pipeline:
 1. Pattern Detection (semantic analysis)
@@ -18,7 +18,7 @@ from anthropic.types import TextBlock
 from loguru import logger
 
 from xlsliberator.extract_vba import VBAModuleIR
-from xlsliberator.pattern_detector import ComplexityAnalysis, VBAPatternDetector
+from xlsliberator.legacy_agent.pattern_detector import ComplexityAnalysis, VBAPatternDetector
 from xlsliberator.validation_models import GateExecutionStatus
 
 

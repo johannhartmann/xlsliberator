@@ -8,8 +8,11 @@ import pytest
 
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.ir_models import CellIR, CellType, SheetIR, WorkbookIR
+from xlsliberator.legacy_agent.vba2py_uno import (
+    create_event_handler_stub,
+    translate_vba_to_python,
+)
 from xlsliberator.uno_conn import UnoCtx, get_cell, get_sheet, open_calc
-from xlsliberator.vba2py_uno import create_event_handler_stub, translate_vba_to_python
 from xlsliberator.write_ods import write_ods_from_ir
 
 # Translation through translate_vba_to_python/create_event_handler_stub defaults to

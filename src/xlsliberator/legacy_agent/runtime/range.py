@@ -1,10 +1,10 @@
-"""Range adapter primitives for translated VBA."""
+"""Deprecated range adapter primitives for the legacy translator."""
 
 from __future__ import annotations
 
 import re
 
-from xlsliberator.runtime.errors import ExcelError
+from xlsliberator.legacy_agent.runtime.errors import ExcelError
 
 
 def normalize_address(address: str) -> str:

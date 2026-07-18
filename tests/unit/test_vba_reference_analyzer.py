@@ -2,7 +2,7 @@
 
 import pytest
 
-from xlsliberator.vba_reference_analyzer import (
+from xlsliberator.legacy_agent.vba_reference_analyzer import (
     VBAReferences,
     analyze_vba_references,
     get_recommended_translation_strategy,

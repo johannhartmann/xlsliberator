@@ -15,8 +15,8 @@ class WebSettings:
     max_upload_mb: int = 100
     worker_count: int = 1
     job_retention_hours: int = 24
-    embed_macros: bool = True
-    use_agent: bool = True
+    embed_macros: bool = False
+    use_agent: bool = False
 
     @classmethod
     def from_env(cls) -> WebSettings:
@@ -26,8 +26,8 @@ class WebSettings:
             max_upload_mb=_int_env("XLSLIBERATOR_MAX_UPLOAD_MB", 100),
             worker_count=max(1, _int_env("XLSLIBERATOR_WEB_WORKERS", 1)),
             job_retention_hours=max(1, _int_env("XLSLIBERATOR_JOB_RETENTION_HOURS", 24)),
-            embed_macros=os.getenv("XLSLIBERATOR_EMBED_MACROS", "1") != "0",
-            use_agent=os.getenv("XLSLIBERATOR_USE_AGENT", "1") != "0",
+            embed_macros=os.getenv("XLSLIBERATOR_EMBED_MACROS", "0") == "1",
+            use_agent=os.getenv("XLSLIBERATOR_USE_AGENT", "0") == "1",
         )
 
 

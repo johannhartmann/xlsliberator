@@ -1,6 +1,7 @@
 """High-level validated transformation API."""
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from xlsliberator.api import convert
@@ -24,8 +25,9 @@ def transform_validated(
     targets: list[str] | None = None,
     strict: bool = True,
     max_repair_iterations: int = 0,
-    embed_macros: bool = True,
-    use_agent: bool = True,
+    embed_macros: bool = False,
+    use_agent: bool = False,
+    python_modules: Mapping[str, str] | None = None,
     scenario: Scenario | None = None,
     source_trace: RuntimeTrace | None = None,
     target_trace: RuntimeTrace | None = None,
@@ -40,6 +42,7 @@ def transform_validated(
         strict=False,
         embed_macros=embed_macros,
         use_agent=use_agent,
+        python_modules=python_modules,
     )
 
     target_kinds = []
@@ -83,9 +86,7 @@ def transform_validated(
             ],
         )
     ).run_all()
-    report.certification.metadata["conversion_report"] = json.loads(
-        conversion_report.to_json()
-    )
+    report.certification.metadata["conversion_report"] = json.loads(conversion_report.to_json())
 
     if strict and not report.certification.certified:
         raise ValidatedTransformationError("Validated transformation failed", report)

@@ -7,11 +7,11 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from xlsliberator.container_boundary import ContainerBoundaryError
+from xlsliberator.api import ConversionError
 
 
 def test_conversion_rejects_host_before_constructing_office_runtime(monkeypatch: Any) -> None:
-    from xlsliberator import api
+    from xlsliberator import api, primitives
 
     monkeypatch.setattr(
         "xlsliberator.container_boundary.application_container_is_authorized",
@@ -21,8 +21,8 @@ def test_conversion_rejects_host_before_constructing_office_runtime(monkeypatch:
     def forbidden_runtime(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("office runtime must not be constructed on the host")
 
-    monkeypatch.setattr(api, "LibreOfficeDockerRuntime", forbidden_runtime)
-    with pytest.raises(ContainerBoundaryError, match="Host Python execution is forbidden"):
+    monkeypatch.setattr(primitives, "LibreOfficeDockerRuntime", forbidden_runtime)
+    with pytest.raises(ConversionError, match="Host Python execution is forbidden"):
         api.convert_native(api.Path("input.xlsx"), api.Path("output.ods"))
 
 

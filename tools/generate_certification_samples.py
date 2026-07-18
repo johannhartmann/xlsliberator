@@ -564,28 +564,8 @@ def _vba_bundle(
     modules = extract_vba_modules(source)
     procedures = sorted({procedure for module in modules for procedure in module.procedures})
     conversion = runtime.convert(source, target)
-    response = runtime.request(
-        {
-            "op": "vba_compatibility_probe",
-            "ods_path": str(target),
-            "sheet_name": "MacroResult",
-            "cell_address": "A1",
-            "test_value": 42,
-            "event_name": "Workbook_Open",
-        },
-        _identity=identity.image_id,
-    )
-    data = response.get("data") or {}
-    passed = bool(
-        modules
-        and "say_hello" in procedures
-        and conversion.get("success")
-        and response.get("success")
-        and data.get("backend_kind") == "libreoffice_uno"
-        and data.get("observed_value") == 42
-        and data.get("event_continues") is True
-    )
-    status = "passed" if passed else "failed"
+    validation = runtime.validate_document(target, image_id=identity.image_id)
+    status = "unavailable"
     bundle = _write_bundle(
         name,
         fixture_id=fixture_id,
@@ -598,14 +578,13 @@ def _vba_bundle(
             "extracted_modules": [module.name for module in modules],
             "extracted_procedures": procedures,
             "conversion": conversion,
-            "target_compatibility_execution": response,
+            "target_package_validation": validation,
             "actual_xlsm_vba_project": bool(modules),
         },
         limitations=[
-            "The actual XLSM VBA project was extracted and its typed operation was executed "
-            "through the LibreOffice UNO compatibility backend; native VBA MsgBox UI execution "
-            "was intentionally not used in the headless release gate.",
-            "No independent Excel source-runtime trace was available.",
+            "The source VBA project was extracted, but no target-native Python/UNO modules "
+            "were supplied by an external migration agent.",
+            "Package validation is not behavioral VBA migration evidence.",
         ],
     )
     return fixture_id, bundle, status, _runtime_identity(identity)

@@ -1,4 +1,4 @@
-"""Agent-based VBA pattern detection and complexity analysis.
+"""Deprecated provider-backed VBA pattern detection and complexity analysis.
 
 Uses Claude Agent SDK to semantically analyze VBA code and determine
 the appropriate transformation strategy.

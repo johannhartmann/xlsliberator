@@ -1,20 +1,21 @@
 """Docker-only Excel to LibreOffice Calc conversion API."""
 
 import time
+import warnings
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-from xlsliberator.container_boundary import require_application_container
-from xlsliberator.docker_runtime import DockerRuntimeUnavailable, LibreOfficeDockerRuntime
-from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_excel import extract_workbook
-from xlsliberator.extract_vba import extract_vba_modules
+from xlsliberator.primitives import (
+    extract_vba_project,
+    native_convert_workbook,
+    upsert_python_modules,
+)
 from xlsliberator.report import ConversionReport
-from xlsliberator.vba2py_uno import translate_vba_project
 
 
 class ConversionError(Exception):
@@ -60,16 +61,17 @@ def convert_native(
     but are intentionally ignored: host office profiles and host UNO sockets are
     outside the supported runtime boundary.
     """
-    require_application_container()
     del user_installation_dir, uno_port
     logger.info(f"Running Docker-only LibreOffice conversion: {input_path.name}")
-    try:
-        response = LibreOfficeDockerRuntime(
-            timeout_seconds=NATIVE_CONVERSION_TIMEOUT_SECONDS
-        ).convert(input_path, output_path)
-    except DockerRuntimeUnavailable as exc:
-        raise ConversionError(f"LibreOffice Docker runtime unavailable: {exc}") from exc
-    image_id = str((response.get("data") or {}).get("container_image_id", "unknown"))
+    result = native_convert_workbook(
+        input_path,
+        output_path,
+        timeout_seconds=NATIVE_CONVERSION_TIMEOUT_SECONDS,
+    )
+    if not result.success:
+        detail = "; ".join(result.errors) or result.status.value
+        raise ConversionError(f"LibreOffice Docker runtime conversion failed: {detail}")
+    image_id = str(result.runtime_identity.get("image_id") or "unknown")
     logger.success(f"Docker LibreOffice conversion complete: {output_path} ({image_id})")
 
 
@@ -79,8 +81,9 @@ def convert(
     *,
     locale: str = "en-US",
     strict: bool = False,
-    embed_macros: bool = True,
-    use_agent: bool = True,
+    embed_macros: bool = False,
+    use_agent: bool = False,
+    python_modules: Mapping[str, str] | None = None,
     validate_macro_execution: bool = False,
     allow_global_macro_security_change: bool = False,
     progress_callback: ProgressCallback | None = None,
@@ -93,8 +96,9 @@ def convert(
         output_path: Path for output ODS file
         locale: Target locale for formulas (note: native conversion handles this)
         strict: If True, fail on any errors; if False, continue with warnings
-        embed_macros: If True, translate and embed VBA macros
-        use_agent: If True, automatically use agent rewriting for complex VBA (default)
+        embed_macros: If True, require and embed supplied target-native Python modules
+        use_agent: Deprecated compatibility flag; model orchestration is external
+        python_modules: Agent-produced target-native Python/UNO modules to embed
         validate_macro_execution: If True, run macro execution validation when safe
         allow_global_macro_security_change: Explicit opt-in for legacy global macro security change
         progress_callback: Optional callback for ordered conversion progress events
@@ -112,7 +116,13 @@ def convert(
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
-    del use_agent
+    if use_agent:
+        warnings.warn(
+            "Embedded model orchestration was removed; use xlsliberator-swe and pass "
+            "python_modules to the deterministic converter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     start_time = time.time()
 
@@ -178,13 +188,14 @@ def convert(
             # Continue without metadata
             logger.info("Continuing without metadata extraction")
 
-        # Step 2: Extract VBA from original Excel (if embed_macros=True)
+        # Step 2: Extract VBA from the original source for explicit loss accounting.
         vba_modules = []
-        if embed_macros and input_path.suffix.lower() in [".xlsm", ".xlsb", ".xls"]:
+        if input_path.suffix.lower() in [".xlsm", ".xlsb", ".xls"]:
             logger.info("Step 2: Extracting VBA macros...")
             _emit_progress(progress_callback, "extracting_vba", "Extracting VBA macros")
-            try:
-                vba_modules = extract_vba_modules(input_path)
+            extraction = extract_vba_project(input_path)
+            if extraction.success:
+                vba_modules = extraction.modules
                 report.vba_modules = len(vba_modules)
                 report.vba_procedures = sum(len(m.procedures) for m in vba_modules)
 
@@ -192,67 +203,38 @@ def convert(
                     logger.info(f"Found {len(vba_modules)} VBA modules")
                 else:
                     logger.info("No VBA macros found")
-            except Exception as e:
-                msg = f"VBA extraction failed: {e}"
-                logger.warning(msg)
-                report.warnings.append(msg)
-
-        # Step 3: Translate the complete VBA project with one provider context
-        # and one Docker-runtime provenance record. ``use_agent`` remains a
-        # compatibility argument; coding-agent repair is a separate bounded
-        # workflow and never bypasses deterministic translation validation.
-        python_modules: dict[str, str] = {}
-        if vba_modules:
-            logger.info("Step 3: Translating and validating the complete VBA project...")
-            _emit_progress(progress_callback, "translating", "Translating VBA project")
-            evidence_dir = output_path.parent / f"{output_path.name}.evidence" / "translation"
-            project = translate_vba_project(
-                {module.name: module.source_code for module in vba_modules},
-                cache_path=Path(".vba_cache.v2.json"),
-                evidence_dir=evidence_dir,
-            )
-            report.translation_status = project.status.value
-            report.translation_provenance = {
-                name: module.provenance.model_dump(mode="json")
-                for name, module in project.modules.items()
-            }
-            if project.evidence_manifest:
-                report.translation_evidence.append(project.evidence_manifest)
-            for warning in project.warnings:
-                report.warnings.append(f"VBA translation: {warning}")
-            if project.accepted:
-                python_modules = {
-                    f"{name}.py": module.python_code
-                    for name, module in project.modules.items()
-                    if module.python_code is not None
-                }
-                logger.success(f"Accepted {len(python_modules)} translated Python modules")
             else:
-                details = "; ".join(project.errors) or project.status.value
-                report.errors.append(
-                    f"VBA translation did not produce an accepted project: {details}"
-                )
-
-        # Step 4: Embed Python macros into native ODS
-        if python_modules:
-            logger.info("Step 4: Embedding Python macros into ODS...")
-            _emit_progress(progress_callback, "embedding", "Embedding translated Python macros")
-            try:
-                unresolved_bindings = embed_python_macros(output_path, python_modules)
-                logger.success(f"Embedded {len(python_modules)} Python modules")
-                for binding in unresolved_bindings:
-                    report.warnings.append(f"Event binding not rewritten: {binding.source_handler}")
-            except Exception as e:
-                msg = f"Macro embedding failed: {e}"
+                msg = f"VBA extraction failed: {'; '.join(extraction.errors)}"
                 logger.warning(msg)
                 report.errors.append(msg)
+
+        supplied_modules = dict(python_modules or {})
+        if vba_modules and not supplied_modules:
+            message = (
+                "Source VBA was extracted but not migrated; model orchestration belongs to "
+                "xlsliberator-swe"
+            )
+            if embed_macros:
+                report.errors.append(message)
+            else:
+                report.warnings.append(message)
+
+        # Step 3: Embed caller-supplied target-native Python modules.
+        if supplied_modules:
+            logger.info("Step 4: Embedding Python macros into ODS...")
+            _emit_progress(progress_callback, "embedding", "Embedding supplied Python modules")
+            upsert = upsert_python_modules(output_path, supplied_modules)
+            if upsert.success:
+                logger.success(f"Embedded {len(supplied_modules)} Python modules")
+            else:
+                report.errors.extend(upsert.errors)
 
         # Step 4.5: Global macro security changes are disabled by default.
         if allow_global_macro_security_change:
             msg = "Global macro security mutation is unsupported in the Docker-only runtime"
             logger.warning(msg)
             report.warnings.append(msg)
-        elif python_modules:
+        elif supplied_modules:
             msg = (
                 "Skipped global macro security change; runtime macro execution validation "
                 "requires an isolated office profile"
@@ -260,7 +242,7 @@ def convert(
             logger.info(msg)
             report.warnings.append(msg)
 
-        if python_modules:
+        if supplied_modules:
             # Step 4.6: Validate embedded Python macros
             logger.info("Step 4.6: Validating embedded Python macros...")
             _emit_progress(
@@ -296,7 +278,7 @@ def convert(
                 logger.warning(msg)
                 report.errors.append(msg)
 
-            # Step 4.7: Test macro execution (with self-healing if agent-generated)
+            # Step 4.7: Test macro execution without embedded model repair.
             if not validate_macro_execution and not allow_global_macro_security_change:
                 msg = (
                     "Macro execution validation skipped because no isolated runtime profile "

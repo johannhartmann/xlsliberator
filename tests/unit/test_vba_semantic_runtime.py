@@ -2,9 +2,9 @@
 
 import pytest
 
-from xlsliberator.runtime.backend import FakeExcelBackend, RuntimeCapability
-from xlsliberator.runtime.object_model import Application
-from xlsliberator.vba_execution import (
+from xlsliberator.legacy_agent.runtime.backend import FakeExcelBackend, RuntimeCapability
+from xlsliberator.legacy_agent.runtime.object_model import Application
+from xlsliberator.legacy_agent.vba_execution import (
     ByRefCell,
     TypedVBAInterpreter,
     VBAArray,
@@ -15,7 +15,7 @@ from xlsliberator.vba_execution import (
     coerce_number,
     coerce_string,
 )
-from xlsliberator.vba_parser import parse_vba_project
+from xlsliberator.legacy_agent.vba_parser import parse_vba_project
 
 
 def test_vba_type_coercion_preserves_empty_null_boolean_and_error() -> None:

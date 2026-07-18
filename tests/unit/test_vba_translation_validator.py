@@ -2,9 +2,9 @@
 
 import pytest
 
-from xlsliberator import vba_translation_validator
-from xlsliberator.vba_reference_analyzer import VBAReferences
-from xlsliberator.vba_translation_validator import (
+from xlsliberator.legacy_agent import vba_translation_validator
+from xlsliberator.legacy_agent.vba_reference_analyzer import VBAReferences
+from xlsliberator.legacy_agent.vba_translation_validator import (
     TranslationEvaluation,
     TranslationIssue,
     TranslationIssueType,

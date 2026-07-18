@@ -221,10 +221,7 @@ def _get_job_or_404(store: JobStore, job_id: str) -> WebJob:
 
 def _completed_job_with_file(store: JobStore, job_id: str, kind: str) -> WebJob:
     job = _get_job_or_404(store, job_id)
-    if (
-        job.status != JobPhase.COMPLETED
-        or job.operation_status != GateExecutionStatus.PASSED
-    ):
+    if job.status != JobPhase.COMPLETED or job.operation_status != GateExecutionStatus.PASSED:
         raise HTTPException(status_code=409, detail="Job is not complete")
     path = {
         "ods": job.output_path,

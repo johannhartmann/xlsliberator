@@ -1,4 +1,4 @@
-"""VBA validation test generator using LLM.
+"""Deprecated provider-backed VBA validation test generator.
 
 Generates validation tests that verify translated Python-UNO code
 produces the same behavior as the original VBA code.
@@ -14,7 +14,7 @@ from anthropic import Anthropic
 from loguru import logger
 
 if TYPE_CHECKING:
-    from xlsliberator.vba_reference_analyzer import VBAReferences
+    from xlsliberator.legacy_agent.vba_reference_analyzer import VBAReferences
 
 
 @dataclass

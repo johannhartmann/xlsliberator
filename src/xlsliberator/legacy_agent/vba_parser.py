@@ -1,4 +1,4 @@
-"""Deterministic, open-source VBA parser for the typed project IR.
+"""Deprecated parser used only by the embedded legacy translator.
 
 The parser intentionally preserves raw source text alongside typed nodes. It
 never treats a successfully tokenized but unsupported construct as executable.
@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
-from xlsliberator.vba_ir import (
+from xlsliberator.legacy_agent.vba_ir import (
     SourceSpan,
     VBAConditionalBlock,
     VBAConditionalConstant,

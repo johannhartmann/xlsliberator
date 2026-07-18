@@ -1,4 +1,4 @@
-"""Typed, provider-neutral VBA translation with fail-closed provenance."""
+"""Deprecated embedded VBA translation and validation service."""
 
 from __future__ import annotations
 
@@ -16,15 +16,15 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xlsliberator.scenarios.models import EnvironmentManifest
-from xlsliberator.vba_execution import (
+from xlsliberator.legacy_agent.vba_execution import (
     DifferentialProof,
     ProcedureStrategy,
     VBAExecutionPlan,
     build_execution_plan,
 )
-from xlsliberator.vba_ir import VBAProjectIR
-from xlsliberator.vba_parser import parse_vba_project
+from xlsliberator.legacy_agent.vba_ir import VBAProjectIR
+from xlsliberator.legacy_agent.vba_parser import parse_vba_project
+from xlsliberator.scenarios.models import EnvironmentManifest
 
 TRANSLATOR_IMPLEMENTATION_VERSION = "3.0.0"
 PROMPT_TEMPLATE_VERSION = "2.0.0"

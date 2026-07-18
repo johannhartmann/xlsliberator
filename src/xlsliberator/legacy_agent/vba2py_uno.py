@@ -1,4 +1,4 @@
-"""Fail-closed VBA to Python-UNO translation facade."""
+"""Deprecated embedded VBA-to-Python translation facade."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xlsliberator.docker_runtime import DockerRuntimeUnavailable, LibreOfficeDockerRuntime
-from xlsliberator.translation_service import (
+from xlsliberator.legacy_agent.translation_service import (
     AnthropicTranslationProvider,
     ProjectTranslationResult,
     TranslationProvider,

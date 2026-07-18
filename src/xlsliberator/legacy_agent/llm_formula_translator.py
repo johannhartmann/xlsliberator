@@ -1,4 +1,4 @@
-"""LLM-based formula translation using Claude API."""
+"""Deprecated provider-backed formula translation."""
 
 import json
 import os

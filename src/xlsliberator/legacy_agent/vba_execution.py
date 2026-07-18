@@ -1,4 +1,4 @@
-"""Deterministic VBA semantics and procedure-by-procedure execution planning."""
+"""Deprecated Excel-shaped VBA execution planning."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from typing import Any, Generic, TypedDict, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xlsliberator.runtime.object_model import Application
-from xlsliberator.scenarios.models import EnvironmentManifest
-from xlsliberator.vba_ir import (
+from xlsliberator.legacy_agent.runtime.object_model import Application
+from xlsliberator.legacy_agent.vba_ir import (
     VBAParameterPassing,
     VBAProcedureIR,
     VBAProjectIR,
     VBAStatementKind,
 )
+from xlsliberator.scenarios.models import EnvironmentManifest
 
 
 class VBAValueKind(StrEnum):

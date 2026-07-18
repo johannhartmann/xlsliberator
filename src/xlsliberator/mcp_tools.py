@@ -113,16 +113,16 @@ def _worker_tool_response(
 async def convert_excel_to_ods(
     excel_path: str,
     output_path: str,
-    embed_macros: bool = True,
-    use_agent: bool = True,
+    embed_macros: bool = False,
+    use_agent: bool = False,
 ) -> dict[str, Any]:
     """Convert Excel file to LibreOffice Calc ODS format.
 
     Args:
         excel_path: Path to input Excel file (.xlsx, .xlsm, .xlsb, .xls)
         output_path: Path for output ODS file
-        embed_macros: If True, translate and embed VBA macros (default: True)
-        use_agent: If True, use agent-based rewriting for complex VBA (default: True)
+        embed_macros: Deprecated compatibility flag; no model translation is performed
+        use_agent: Deprecated compatibility flag; orchestration is external
 
     Returns:
         Dictionary with conversion results:

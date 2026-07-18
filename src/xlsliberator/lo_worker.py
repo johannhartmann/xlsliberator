@@ -166,8 +166,6 @@ def _dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return _with_document(request, _execute_button_handler)
     if op == "recalculate_document":
         return _with_document(request, _recalculate_document)
-    if op == "vba_compatibility_probe":
-        return _with_document(request, _vba_compatibility_probe)
     raise ValueError(f"Unsupported worker op: {op}")
 
 
@@ -592,42 +590,6 @@ def _read_cell(request: dict[str, Any], _session: dict[str, Any], document: Any)
         formula = cell.getFormula()
 
     return {"value": _jsonable(value), "formula": formula, "type": cell_type}
-
-
-def _vba_compatibility_probe(
-    request: dict[str, Any], _session: dict[str, Any], document: Any
-) -> dict[str, Any]:
-    """Exercise the real compatibility backend inside the guarded UNO worker."""
-    from xlsliberator.runtime.backend import UnoExcelBackend
-    from xlsliberator.runtime.object_model import Application
-
-    workbook_name = str(request.get("workbook_name") or "ThisWorkbook")
-    backend = UnoExcelBackend(document, workbook_name=workbook_name)
-    application = Application(backend)
-    workbook = application.active_workbook
-    worksheet = workbook.worksheets.item(str(request.get("sheet_name") or "Sheet1"))
-    address = str(request.get("cell_address") or "A1")
-    test_value = request.get("test_value", "xlsliberator-vba-runtime")
-    worksheet.range(address).value = test_value
-    observed = worksheet.range(address).value
-    application.calculate()
-    event_name = str(request.get("event_name") or "Workbook_Open")
-    event_continues = workbook.emit_event(event_name, {"Cancel": False})
-    return {
-        "backend_kind": backend.backend_kind,
-        "capabilities": sorted(capability.value for capability in backend.capabilities),
-        "workbooks": backend.workbook_names(),
-        "worksheets": backend.worksheet_names(workbook.name),
-        "observed_value": _jsonable(observed),
-        "names": backend.named_items(workbook.name),
-        "tables": worksheet.tables.items(),
-        "filters": worksheet.filters.items(),
-        "charts": worksheet.charts.items(),
-        "pivots": worksheet.pivots.items(),
-        "controls": worksheet.controls.items(),
-        "event_name": event_name,
-        "event_continues": event_continues,
-    }
 
 
 def _get_sheet_data(

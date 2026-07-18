@@ -1,4 +1,4 @@
-"""LLM-based VBA to Python-UNO translation using Claude API."""
+"""Deprecated provider-backed VBA translation."""
 
 import json
 import os
@@ -13,8 +13,8 @@ from loguru import logger
 from xlsliberator.python_syntax_validator import PythonSyntaxValidator
 
 if TYPE_CHECKING:
-    from xlsliberator.vba_reference_analyzer import VBAReferences
-    from xlsliberator.vba_translation_validator import TranslationEvaluation
+    from xlsliberator.legacy_agent.vba_reference_analyzer import VBAReferences
+    from xlsliberator.legacy_agent.vba_translation_validator import TranslationEvaluation
 
 
 # Python-UNO Best Practices Context (from LibreOffice manual research)
@@ -223,7 +223,7 @@ class LLMVBATranslator:
         # Analyze references if reference-aware enabled
         references = None
         if enable_reference_aware:
-            from xlsliberator.vba_reference_analyzer import (
+            from xlsliberator.legacy_agent.vba_reference_analyzer import (
                 analyze_vba_references,
             )
 
@@ -711,8 +711,8 @@ Now translate the VBA code above:"""
         Returns:
             Tuple of (final_python_code, evaluation_history)
         """
-        from xlsliberator.vba_reference_analyzer import analyze_vba_references
-        from xlsliberator.vba_translation_validator import VBATranslationValidator
+        from xlsliberator.legacy_agent.vba_reference_analyzer import analyze_vba_references
+        from xlsliberator.legacy_agent.vba_translation_validator import VBATranslationValidator
 
         logger.info(f"Starting reflection-based translation (max {max_iterations} iterations)")
 

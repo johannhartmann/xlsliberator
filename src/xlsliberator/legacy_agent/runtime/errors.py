@@ -1,4 +1,4 @@
-"""Runtime error types."""
+"""Deprecated legacy runtime error types."""
 
 
 class ExcelError(Exception):

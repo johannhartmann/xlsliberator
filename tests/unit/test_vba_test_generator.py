@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from xlsliberator.vba_reference_analyzer import VBAReferences
-from xlsliberator.vba_test_generator import ValidationTest, VBATestGenerator
+from xlsliberator.legacy_agent.vba_reference_analyzer import VBAReferences
+from xlsliberator.legacy_agent.vba_test_generator import ValidationTest, VBATestGenerator
 
 # Skip tests requiring live LLM access unless explicitly requested.
 requires_api_key = pytest.mark.skipif(
@@ -31,7 +31,9 @@ class _DummyAnthropic:
 def generator(monkeypatch: pytest.MonkeyPatch) -> VBATestGenerator:
     """Create test generator instance."""
     if os.environ.get("XLSLIBERATOR_RUN_LLM_TESTS") != "1":
-        monkeypatch.setattr("xlsliberator.vba_test_generator.Anthropic", _DummyAnthropic)
+        monkeypatch.setattr(
+            "xlsliberator.legacy_agent.vba_test_generator.Anthropic", _DummyAnthropic
+        )
     test_generator = VBATestGenerator()
     yield test_generator
     close = getattr(test_generator.client, "close", None)

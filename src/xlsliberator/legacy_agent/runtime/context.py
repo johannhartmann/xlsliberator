@@ -1,10 +1,10 @@
-"""Excel runtime context over the shared fake/UNO backend interface."""
+"""Deprecated legacy Excel runtime context."""
 
 from dataclasses import dataclass, field
 
-from xlsliberator.runtime.backend import CompatibilityBackend, FakeExcelBackend
-from xlsliberator.runtime.object_model import Application, Workbook, Worksheet
-from xlsliberator.runtime.worksheet_function import WorksheetFunctionAdapter
+from xlsliberator.legacy_agent.runtime.backend import CompatibilityBackend, FakeExcelBackend
+from xlsliberator.legacy_agent.runtime.object_model import Application, Workbook, Worksheet
+from xlsliberator.legacy_agent.runtime.worksheet_function import WorksheetFunctionAdapter
 
 
 @dataclass

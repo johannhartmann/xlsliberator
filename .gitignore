@@ -135,6 +135,7 @@ Thumbs.db
 
 # Project specific
 *.ods
+!tests/fixtures/scenarios/basic.ods
 *.xlsx
 *.xlsm
 *.xlsb
@@ -166,7 +167,6 @@ output_*.ods
 !/tools/office.py
 !/tools/ci_check.py
 !/tools/generate_certification_samples.py
-!/tools/windows_excel_oracle.py
 !/tools/write_release_inputs.py
 prompts/
 rules/calc_transforms/
@@ -190,7 +190,6 @@ docs/*
 !docs/capability_matrix.json
 !docs/corpus_statistics.json
 !docs/agent_repair.md
-!docs/excel_oracle.md
 !docs/mcp_tools.md
 !docs/security_threat_model.md
 !docs/office_source_integration.md

@@ -224,10 +224,7 @@ def public_job_dict(job: WebJob) -> dict[str, Any]:
 
 
 def _download_links(job: WebJob) -> dict[str, str]:
-    if (
-        job.status != JobPhase.COMPLETED
-        or job.operation_status != GateExecutionStatus.PASSED
-    ):
+    if job.status != JobPhase.COMPLETED or job.operation_status != GateExecutionStatus.PASSED:
         return {}
     return {
         "ods": f"/jobs/{job.id}/download",

@@ -1,4 +1,4 @@
-"""Typed Excel compatibility object model shared by fake and UNO backends."""
+"""Deprecated Excel compatibility object model used only by the legacy translator."""
 
 from __future__ import annotations
 
@@ -6,10 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from xlsliberator.runtime.backend import CompatibilityBackend, RuntimeCapability
-from xlsliberator.runtime.errors import ExcelError
-from xlsliberator.runtime.range import address_to_row_col, row_col_to_address
-from xlsliberator.runtime.worksheet_function import WorksheetFunctionAdapter
+from xlsliberator.legacy_agent.runtime.backend import CompatibilityBackend, RuntimeCapability
+from xlsliberator.legacy_agent.runtime.errors import ExcelError
+from xlsliberator.legacy_agent.runtime.range import address_to_row_col, row_col_to_address
+from xlsliberator.legacy_agent.runtime.worksheet_function import WorksheetFunctionAdapter
 
 
 @dataclass

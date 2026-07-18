@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from xlsliberator.agent_rewriter import (
+from xlsliberator.legacy_agent.agent_rewriter import (
     AgentRewriter,
     ArchitectureDesign,
     GeneratedCode,

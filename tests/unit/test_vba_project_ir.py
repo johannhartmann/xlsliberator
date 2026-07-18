@@ -1,16 +1,11 @@
 """Typed VBA project parser and fail-closed execution-plan tests."""
 
-from xlsliberator.scenarios.models import (
-    EnvironmentManifest,
-    ExternalCapability,
-    ExternalCapabilityKind,
-)
-from xlsliberator.vba_execution import (
+from xlsliberator.legacy_agent.vba_execution import (
     DifferentialProof,
     ProcedureStrategy,
     build_execution_plan,
 )
-from xlsliberator.vba_ir import (
+from xlsliberator.legacy_agent.vba_ir import (
     VBAExternalDependencyKind,
     VBAModuleKind,
     VBAParameterPassing,
@@ -18,7 +13,12 @@ from xlsliberator.vba_ir import (
     VBAProjectReference,
     VBAStatementKind,
 )
-from xlsliberator.vba_parser import parse_vba_project
+from xlsliberator.legacy_agent.vba_parser import parse_vba_project
+from xlsliberator.scenarios.models import (
+    EnvironmentManifest,
+    ExternalCapability,
+    ExternalCapabilityKind,
+)
 
 MODULE = """Attribute VB_Name = "Module1"
 #Const Win64 = True

@@ -2,10 +2,10 @@
 
 import pytest
 
-from xlsliberator.runtime.backend import FakeExcelBackend
-from xlsliberator.runtime.errors import ExcelError
-from xlsliberator.runtime.object_model import Application
-from xlsliberator.runtime.range import (
+from xlsliberator.legacy_agent.runtime.backend import FakeExcelBackend
+from xlsliberator.legacy_agent.runtime.errors import ExcelError
+from xlsliberator.legacy_agent.runtime.object_model import Application
+from xlsliberator.legacy_agent.runtime.range import (
     address_to_row_col,
     normalize_address,
     row_col_to_address,
@@ -41,7 +41,7 @@ def test_invalid_offset_raises() -> None:
 
 def test_active_sheet_follows_workbook_not_hardcoded_name() -> None:
     """ExcelContext.active_sheet should track the workbook, not a hardcoded Sheet1."""
-    from xlsliberator.runtime.context import ExcelContext
+    from xlsliberator.legacy_agent.runtime.context import ExcelContext
 
     backend = FakeExcelBackend(sheets={"Book1": ["Dashboard", "Summary"]})
     ctx = ExcelContext(backend)

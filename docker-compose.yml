@@ -111,7 +111,6 @@ services:
       XLSLIBERATOR_MAX_UPLOAD_MB: "100"
       XLSLIBERATOR_WEB_WORKERS: "1"
       XLSLIBERATOR_JOB_RETENTION_HOURS: "24"
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     volumes:
       - xlsliberator-data:/data
       - ./artifacts/runtime-tmp:/runtime-tmp

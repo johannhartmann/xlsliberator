@@ -1,4 +1,4 @@
-"""Backend boundary for the deterministic Excel compatibility object model."""
+"""Deprecated backend boundary for the legacy Excel compatibility model."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
-from xlsliberator.runtime.errors import ExcelError
+from xlsliberator.legacy_agent.runtime.errors import ExcelError
 
 
 class RuntimeCapability(StrEnum):

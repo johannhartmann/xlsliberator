@@ -1,4 +1,4 @@
-"""WorksheetFunction compatibility adapter."""
+"""Deprecated WorksheetFunction compatibility adapter."""
 
 from __future__ import annotations
 

@@ -5,15 +5,15 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-**Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation**
+**Deterministic Excel-to-LibreOffice migration toolbelt**
 
 XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files. Formula, VBA, control, and runtime support varies by artifact and must be read from the [evidence-backed capability matrix](docs/capability_matrix.md).
 
 ## Features
 
 - **Formula Translation**: Deterministic AST-based formula transformation for Excel→Calc compatibility
-- **Experimental VBA-to-Python-UNO Conversion**: The legacy provider-backed path
-  is not accepted unless deterministic validation and required target evidence pass
+- **Raw VBA Extraction**: Preserves complete source modules for external migration agents
+- **Target-native Script Upsert**: Transactionally embeds caller-supplied Python/UNO modules
 - **Translation Evidence**: Records syntax, export, provenance, runtime, and
   unresolved-artifact outcomes without promoting model confidence to success
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
@@ -33,18 +33,10 @@ XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.x
 host office installation is neither required nor supported, including for
 diagnostics.
 
-### Optional Requirements
-
-**Anthropic API Key** (required only for VBA-to-Python translation)
-
-1. Sign up at [anthropic.com](https://www.anthropic.com/)
-2. Generate API key from console
-3. Put `ANTHROPIC_API_KEY=your-api-key-here` in the untracked Compose `.env`
-   file or supply it through the container platform's secret mechanism.
-
-Without the API key, XLSLiberator can still attempt Excel-to-ODS conversion, but
-VBA macros are not translated and formula preservation is not certified without
-the required runtime and differential evidence.
+No model-provider credential is read by deterministic commands. Long-running
+model orchestration, model selection, and credentials belong to the separate
+`xlsliberator-swe` Open-SWE service. The deprecated embedded translator can be
+installed only with the explicit `legacy-agent` extra and is disabled by default.
 
 ## Installation
 
@@ -65,11 +57,7 @@ docker compose build test libreoffice-runtime
 docker compose --profile ci-orchestrator run --rm test-orchestrator \
   xlsliberator convert "$PWD/input.xlsx" "$PWD/output.ods"
 
-# VBA translation requires ANTHROPIC_API_KEY in the Docker Compose environment
-docker compose --profile ci-orchestrator run --rm test-orchestrator \
-  xlsliberator convert "$PWD/input.xlsm" "$PWD/output.ods"
-
-# Skip VBA macro translation
+# VBA is inventoried but not silently translated by the deterministic converter
 docker compose --profile ci-orchestrator run --rm test-orchestrator \
   xlsliberator convert --no-macros "$PWD/input.xlsm" "$PWD/output.ods"
 
@@ -84,9 +72,9 @@ docker compose --profile ci-orchestrator run --rm test-orchestrator \
   xlsliberator validate "$PWD/input.xlsm" "$PWD/output.ods"
 ```
 
-### MCP Server (Claude Agent SDK)
+### Provider-neutral MCP Server
 
-Start the MCP server for Claude Agent SDK integration:
+Start the MCP server for any MCP-compatible orchestrator:
 
 ```bash
 # Build the exact office worker, then start the loopback-only MCP orchestrator
@@ -97,30 +85,8 @@ docker compose up -d xlsliberator-mcp
 # Client connects to: http://localhost:8080/mcp
 ```
 
-Use with Claude Agent SDK:
-
-```typescript
-import { query } from "@anthropic-ai/claude-agent-sdk";
-
-const mcpServers = {
-  "libreoffice-uno": {
-    url: "http://localhost:8080/mcp"
-  }
-};
-
-for await (const message of query({
-  prompt: generateMessages(),
-  options: {
-    mcpServers,
-    allowedTools: ["mcp__libreoffice-uno__convert_excel_to_ods"],
-  }
-})) {
-  // Agent can now convert Excel files!
-}
-```
-
 **Available Tools:**
-- `convert_excel_to_ods` - Convert Excel to ODS with macro translation
+- `convert_excel_to_ods` - Run deterministic native Excel-to-ODS conversion
 - `inspect_workbook` - Return parsed workbook inventory and unsupported artifacts
 - `validate_transformation` - Run validation gates and return certification data
 - `compare_formulas` - Test formula equivalence
@@ -176,8 +142,8 @@ result = convert("input.xlsx", "output.ods")
 result = convert(
     "input.xlsm",
     "output.ods",
-    embed_macros=True,   # translate and embed VBA macros (default)
-    use_agent=True,      # legacy compatibility option; not certification evidence
+    python_modules={"MigratedModule": generated_python_uno_source},
+    embed_macros=True,
 )
 
 print(f"Conversion completed: {result.success}")
@@ -197,10 +163,10 @@ print(report.to_markdown())
 
 ## Python Macro Support
 
-When converting Excel files with VBA, XLSLiberator:
-
-1. **VBA Translation**: Translates VBA macros to Python-UNO equivalents
-2. **Event Handler Rewriting**: Rewrites VBA event handlers to point to the generated Python functions
+XLSLiberator does not choose a model or translate VBA in its deterministic
+conversion API. External agents read the raw VBA and workbook dossier, generate
+target-native Python/UNO modules, and pass those modules back for transactional
+upsert and independent validation.
 
 ### How It Works
 
@@ -222,33 +188,19 @@ from xlsliberator.api import convert
 convert("input.xlsm", "output.ods", allow_global_macro_security_change=True)
 ```
 
-### Configuring macro security in your LibreOffice
-
-**Option 1: GUI Configuration**
-- Open LibreOffice Calc
-- Navigate to: `Tools → Options → LibreOffice → Security → Macro Security`
-- Select **"Low"** (run all macros) or **"Medium"** (prompt for approval)
-
-**Option 2: Trusted File Locations**
-- Navigate to: `Tools → Options → LibreOffice → Security → Macro Security → Trusted Sources → Trusted File Locations`
-- Add the directory containing your converted ODS files
+Do not configure or start a host LibreOffice installation. Macro execution uses
+only an isolated, disposable profile inside the pinned office container.
 
 ## Architecture
 
-XLSLiberator uses a hybrid approach:
+XLSLiberator uses a deterministic target-tool approach:
 
 1. **Native Conversion**: the pinned LibreOffice Docker runtime provides the base conversion; equivalence is evaluated separately
-2. **VBA Extraction**: Extracts VBA code from Excel files using oletools
-3. **Legacy LLM Translation**: Proposes VBA-to-Python-UNO candidates using the
-   currently configured provider:
-   - Phase 1: Reference-aware translation (hybrid LLM + regex pattern detection)
-   - Phase 2: Python-UNO syntax validation (AST parsing, compilation checks)
-   - Phase 3: legacy reflection and iterative refinement
-   - Phase 4: target runtime evidence when available
-4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
-5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
-6. **Isolated Runtime Validation**: Runs required validation in disposable, resource-limited LibreOffice containers and profiles
-7. **Formula Repair**: Deterministic AST transformations fix incompatibilities
+2. **Source Inspection**: extracts workbook metadata and raw VBA without model calls
+3. **External Migration**: `xlsliberator-swe` owns model routing and specialist work
+4. **Artifact Upsert**: embeds explicitly supplied target-native Python/UNO modules
+5. **Isolated Runtime Validation**: runs required validation in disposable, resource-limited LibreOffice containers and profiles
+6. **Formula Repair**: deterministic transformations address known incompatibilities
 
 ## Development
 
@@ -277,22 +229,17 @@ make test     # Run test suite
 ```
 xlsliberator/
 ├── src/xlsliberator/                # Main source code
-│   ├── api.py                       # Hybrid conversion pipeline (convert)
+│   ├── api.py                       # Deterministic conversion pipeline
+│   ├── primitives.py                # Typed public operations
 │   ├── validated_api.py             # Validated transformation (transform_validated)
 │   ├── cli.py                       # Command-line interface
 │   ├── config.py                    # Environment-driven configuration
 │   ├── extract_excel.py             # Workbook metadata/IR extraction
 │   ├── extract_vba.py               # VBA extraction (oletools)
-│   ├── vba2py_uno.py                # VBA→Python-UNO translation entry point
-│   ├── llm_vba_translator.py        # LLM-based VBA translator
-│   ├── vba_reference_analyzer.py    # Phase 1: Reference-aware analysis
 │   ├── python_syntax_validator.py   # Phase 2: Syntax validation
-│   ├── vba_translation_validator.py # Phase 3: Quality evaluation
-│   ├── vba_test_generator.py        # Phase 4: Test generation
-│   ├── agent_rewriter.py            # Multi-agent rewriting for complex VBA
+│   ├── legacy_agent/                # Deprecated optional provider-backed code
 │   ├── embed_macros.py              # Macro embedding + event binding
 │   ├── python_macro_manager.py      # Scripts/python/ management & validation
-│   ├── runtime/                     # Excel-compatibility runtime for translated macros
 │   ├── formula_ast_transformer.py   # Formula AST transforms
 │   ├── formula_engine.py            # Formula checks & rule registry
 │   ├── fix_native_ods.py            # Post-conversion ODS fixes
@@ -345,8 +292,8 @@ storage I/O failure; see the
 
 ## Known Limitations
 
-- VBA translation requires Anthropic API key (Claude model)
-- Some complex VBA patterns may require manual review
+- Core conversion does not translate VBA; orchestration must supply target-native modules
+- Complex migrations require external specialist work and independent review
 - Cross-workbook references require manual adjustment
 - COM automation and external DLLs are not supported
 
@@ -382,7 +329,6 @@ GitHub: [@johannhartmann](https://github.com/johannhartmann)
 
 - **Lukas Kahwe Smith** ([@lsmith77](https://github.com/lsmith77)): For the original idea and concept
 - **LibreOffice**: For the excellent open-source office suite
-- **Anthropic**: For the Claude API used in VBA translation
 - **oletools**: For VBA extraction capabilities
 
 ## Roadmap

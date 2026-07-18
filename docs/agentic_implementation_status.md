@@ -78,15 +78,37 @@ The new fail-closed regression tests are
 `tests/unit/test_validation_runner.py` and `tests/unit/test_validated_api.py`,
 and the web operation-status/package tests under `tests/unit/web/`.
 
+## Prompt 02 verification
+
+Prompt 02 is implemented and locally verified in Docker. Provider-driven
+translation, the semantic VBA runtime, and the prohibited Microsoft Excel
+worker/oracle were removed from the deterministic package surface. Historical
+provider code is isolated in the deprecated, optional
+`xlsliberator.legacy_agent` namespace. The public core exposes typed,
+provider-neutral primitives for inspection, native conversion, raw VBA
+extraction, caller-supplied script upsert, package validation, target lifecycle,
+and acceptance scenarios.
+
+The normal Compose build remained unusable because Docker Desktop had cached an
+invalid architecture layer for the pinned Python base. Validation therefore
+built the same repository test Dockerfile explicitly for `linux/arm64`; no host
+Python, office executable, UNO, or PyUNO process was used.
+
+| Exact command | Exit | Outcome |
+|---|---:|---|
+| `docker build --platform linux/arm64 --file docker/test/Dockerfile --build-arg PYTHON_BASE=python:3.11-slim --tag xlsliberator-test:local-arm64 .` | 0 | Test image built successfully. |
+| `docker run ... xlsliberator-test:local-arm64 pytest -p no:cacheprovider -q tests/unit/test_core_architecture.py tests/unit/test_primitives.py tests/unit/test_agent_repair.py tests/unit/test_translation_service.py tests/unit/test_runtime.py tests/unit/test_vba_project_ir.py tests/unit/test_vba_semantic_runtime.py` | 0 | 39 focused architecture, primitive, and legacy-boundary tests passed. |
+| `docker run ... xlsliberator-test:local-arm64 pytest -p no:cacheprovider -q -m 'not integration' tests/unit` | 0 | 409 passed and 5 explicitly declared live/fixture skips. |
+| `docker run ... xlsliberator-test:local-arm64 mypy --cache-dir=/tmp/mypy-cache src/` | 0 | Strict typing passed for 87 source files. |
+| `docker run ... xlsliberator-test:local-arm64 ruff check --no-cache src tests` | 0 | Lint passed. |
+| `docker run ... xlsliberator-test:local-arm64 ruff format --no-cache --check .` | 0 | All 169 files were formatted. |
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
 |---|---|---|
-| Model calls in the core package | direct Anthropic use in `agent_rewriter.py`, `llm_formula_translator.py`, `llm_vba_translator.py`, `pattern_detector.py`, `vba_reference_analyzer.py`, `vba_test_generator.py`, `vba_translation_validator.py`, plus the adapter in `translation_service.py` | Prompt 02 removes orchestration/provider clients from core; specialist work moves to `xlsliberator-swe` |
-| Hardcoded provider/model dependencies | mandatory `anthropic` dependency; `claude-sonnet-4-5` strings; Anthropic environment/config fields | model selection and credentials belong to the Open-SWE fork |
-| Invalid model output can be returned or cached | the legacy formula translator caches minimally normalized text without target parsing and returns the original formula on failure; old caches are untyped | Prompt 01 makes every invalid/unavailable outcome fail closed; Prompt 02 retires the legacy model path |
-| Excel-shaped runtime | `runtime/`, `vba_execution.py`, and `lo_worker.py` implement or consume `Application`, workbook, worksheet, range, and worksheet-function compatibility objects | remove rather than extend; generated code must call target-native UNO APIs |
-| Prohibited Excel worker/oracle | `windows_excel_worker.py`, `excel_oracle.py`, `vba_conformance.py`, tests, and documentation still define Microsoft Excel source-runtime evidence | remove in Prompt 02; scenarios use declared expectations, public fixtures, and independent target tests without Excel execution |
+| Legacy provider code | deprecated modules remain available only under the optional `xlsliberator.legacy_agent` extra for migration compatibility | remove after all downstream users have moved to `xlsliberator-swe` |
+| Core deterministic surface | typed primitives exist, but the richer forensics, transactional mutation, and stateful runtime tools are not yet implemented | Prompts 03–06 build those deterministic tools |
 | Fail-open or ambiguous validation states | macro/control gates can report `SKIPPED` for missing output; legacy translation fallbacks return source text; some test paths accept skipped live behavior | Prompt 01 makes required gates reject `SKIPPED`, `UNAVAILABLE`, `NOT_RUN`, timeouts, and transport-only success |
 | Integration coverage is incomplete outside CI | GitHub office and web jobs are now blocking with `XLSLIBERATOR_FAIL_ON_SKIP=1`, but `make all` omits office, web, and package gates; multiple integration modules still contain permissive skips outside that mode | Prompt 01 aligns local and CI truth and separates explicitly optional live-provider tests |
 | Placeholder or inaccurate tools | `take_screenshot` and keyboard input are registered MCP tools but only return unavailable; “click” resolves a handler and invokes a script rather than dispatching a GUI click; `test_placeholder.py` adds no behavior coverage | Prompt 01 corrects naming/status; Prompts 04 and 06 expose only operations with truthful semantics |
@@ -115,8 +137,8 @@ when applicable, and ledger update are linked.
 | Prompt | Status | Required acceptance evidence |
 |---:|---|---|
 | 00 — baseline and architecture | COMPLETE WITH BLOCKED RUNTIME | this baseline; [migration architecture](architecture/open-swe-migration.md); [decision log](architecture/decision-log.md) |
-| 01 — truthful validation and CI | IMPLEMENTED; CI PENDING | fail-closed tests, aligned Docker CI commands, exact results |
-| 02 — extract model orchestration | **NEXT AFTER CI** | dependency/import audit, removed prohibited runtime/worker paths, tests |
+| 01 — truthful validation and CI | IMPLEMENTED; REMOTE CI RERUN REQUIRED | fail-closed tests, aligned Docker CI commands, exact results |
+| 02 — extract model orchestration | COMPLETE LOCALLY; REMOTE CI RERUN REQUIRED | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
 | 03 — `xlsprobe` dossier | PENDING | CLI/API schema, fixture snapshots, dossier evidence |
 | 04 — transactional `odstool` | PENDING | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | PENDING | scenario schema, target execution traces, negative cases |
@@ -141,7 +163,8 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Complete remote Docker CI for **Prompt 01**, then run **Prompt 02 — Extract
-model orchestration from the XLSLiberator core**. Docker-backed verification
-must also be rerun locally after the Docker Desktop storage fault is repaired;
-no local Python or office fallback is permitted.
+Commit and push Prompt 02 so remote Docker CI can verify Prompts 01 and 02, then
+begin **Prompt 03 — `xlsprobe` and the migration dossier**. The normal local
+Compose path must be rerun after Docker Desktop's pinned-base cache is repaired;
+the explicit arm64 test image remains valid local Docker evidence. No local
+Python or office fallback is permitted.

@@ -1,4 +1,4 @@
-"""Bounded repair orchestration with deterministic acceptance.
+"""Deprecated bounded repair orchestration with deterministic acceptance.
 
 Agents may propose repository patches. They cannot certify those patches: an
 independent, ordered gate runner owns every acceptance decision.

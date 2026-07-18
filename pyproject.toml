@@ -33,7 +33,6 @@ dependencies = [
     "loguru>=0.7.0",
     "click>=8.1.0",
     "pyyaml>=6.0.0",
-    "anthropic>=0.39.0",
     "lark>=1.1.0",
     "fastmcp>=2.0.0",
 ]
@@ -53,6 +52,9 @@ web = [
     "uvicorn[standard]>=0.30.0",
     "jinja2>=3.1.0",
     "python-multipart>=0.0.9",
+]
+legacy-agent = [
+    "anthropic>=0.39.0",
 ]
 dev = [
     "pytest>=7.4.0",

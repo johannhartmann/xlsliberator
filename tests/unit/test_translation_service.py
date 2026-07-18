@@ -3,15 +3,15 @@
 import json
 from pathlib import Path
 
-from xlsliberator.translation_service import (
+from xlsliberator.legacy_agent.translation_service import (
     FakeTranslationProvider,
     TranslationProviderError,
     TranslationProviderUnavailable,
     TranslationService,
     TranslationStatus,
 )
-from xlsliberator.vba_execution import DifferentialProof
-from xlsliberator.vba_parser import parse_vba_project
+from xlsliberator.legacy_agent.vba_execution import DifferentialProof
+from xlsliberator.legacy_agent.vba_parser import parse_vba_project
 
 VBA = """Public Sub UpdateCell()
     Range("A1").Value = 1

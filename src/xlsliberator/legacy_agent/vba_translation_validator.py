@@ -1,4 +1,4 @@
-"""VBA translation validation using LLM reflection.
+"""Deprecated provider-backed VBA translation validation.
 
 Validates VBA-to-Python-UNO translations by having Claude evaluate
 its own translations and provide structured feedback for improvement.
@@ -15,7 +15,7 @@ from anthropic import Anthropic
 from loguru import logger
 
 if TYPE_CHECKING:
-    from xlsliberator.vba_reference_analyzer import VBAReferences
+    from xlsliberator.legacy_agent.vba_reference_analyzer import VBAReferences
 
 
 class TranslationIssueType(Enum):

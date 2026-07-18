@@ -1,4 +1,4 @@
-"""VBA reference analysis for targeted translation.
+"""Deprecated provider-backed VBA reference analysis.
 
 Analyzes VBA code to detect API usage, dependencies, and special patterns
 to enable reference-aware LLM translation prompts.

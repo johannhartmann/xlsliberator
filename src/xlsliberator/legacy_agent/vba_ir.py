@@ -1,4 +1,4 @@
-"""Versioned, source-mapped semantic IR for VBA projects."""
+"""Deprecated semantic IR used only by the embedded legacy translator."""
 
 from __future__ import annotations
 

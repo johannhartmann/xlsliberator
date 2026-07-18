@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from xlsliberator.agent_rewriter import AgentRewriter
 from xlsliberator.embed_macros import embed_python_macros
 from xlsliberator.extract_vba import VBAModuleIR, VBAModuleType
 from xlsliberator.ir_models import CellIR, CellType, SheetIR, WorkbookIR
+from xlsliberator.legacy_agent.agent_rewriter import AgentRewriter
 from xlsliberator.uno_conn import UnoCtx
 from xlsliberator.write_ods import write_ods_from_ir
 

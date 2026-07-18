@@ -1,13 +1,11 @@
-"""ODS file generation from IR using LibreOffice UNO."""
+"""Deterministic ODS file generation from IR inside the office container."""
 
-import os
 from typing import Any
 
 from loguru import logger
 
-from xlsliberator.formula_mapper import map_formula  # noqa: F401
+from xlsliberator.formula_mapper import map_formula
 from xlsliberator.ir_models import CellType, WorkbookIR
-from xlsliberator.llm_formula_translator import LLMFormulaTranslator
 from xlsliberator.uno_conn import UnoCtx, new_calc, recalc
 
 
@@ -19,7 +17,6 @@ def build_calc_from_ir(
     ctx: UnoCtx,
     wb_ir: WorkbookIR,
     locale: str = "en-US",
-    use_llm: bool = True,
 ) -> Any:
     """Build LibreOffice Calc document from WorkbookIR.
 
@@ -45,14 +42,6 @@ def build_calc_from_ir(
         f"Building Calc document from IR: {wb_ir.sheet_count} sheets, "
         f"{wb_ir.total_cells} cells, {wb_ir.total_formulas} formulas"
     )
-
-    # Initialize LLM translator if enabled
-    translator = None
-    if use_llm and os.environ.get("ANTHROPIC_API_KEY"):
-        logger.info("Using LLM-based formula translation (Claude)")
-        translator = LLMFormulaTranslator()
-    elif use_llm:
-        logger.warning("LLM translation requested but ANTHROPIC_API_KEY not set, using passthrough")
 
     try:
         # Create new Calc document
@@ -89,30 +78,14 @@ def build_calc_from_ir(
 
                     # Write value based on cell type
                     if cell_ir.cell_type == CellType.FORMULA and cell_ir.formula:
-                        # Hybrid approach: rule-based first, LLM fallback on error
-                        translated_formula = None
                         try:
-                            # Try rule-based translation
                             translated_formula = map_formula(cell_ir.formula, locale)
                             uno_cell.setFormula(translated_formula)
                         except Exception as e:
-                            # Rule-based failed, try LLM if available
-                            if translator:
-                                logger.warning(
-                                    f"Rule-based translation failed for {cell_ir.address}, "
-                                    f"using LLM fallback: {e}"
-                                )
-                                llm_formula = translator.translate_formula(
-                                    cell_ir.formula, locale, translated_formula
-                                )
-                                uno_cell.setFormula(llm_formula)
-                            else:
-                                # No LLM available, use passthrough
-                                logger.warning(
-                                    f"Formula translation failed for {cell_ir.address}, "
-                                    f"using passthrough: {e}"
-                                )
-                                uno_cell.setFormula(cell_ir.formula)
+                            raise ODSWriteError(
+                                f"Formula translation failed for {sheet_ir.name}!"
+                                f"{cell_ir.address}: {e}"
+                            ) from e
                         formulas_written += 1
                     elif cell_ir.cell_type == CellType.NUMBER and cell_ir.value is not None:
                         uno_cell.setValue(float(cell_ir.value))

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from xlsliberator.formula_engine import FormulaDialect
@@ -100,6 +100,7 @@ def test_formula_ir_uses_extracted_array_formula_metadata() -> None:
     right=st.integers(min_value=1, max_value=9999),
     operator=st.sampled_from(["+", "-", "*", "/"]),
 )
+@settings(database=None)
 def test_generated_arithmetic_formula_ir_is_deterministic(
     left: int,
     right: int,

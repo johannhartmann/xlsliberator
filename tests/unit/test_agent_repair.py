@@ -11,7 +11,8 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
-from xlsliberator.agent_repair import (
+from xlsliberator.cli import cli
+from xlsliberator.legacy_agent.agent_repair import (
     AgentRepairOrchestrator,
     AgentRequest,
     AgentRunStatus,
@@ -27,7 +28,6 @@ from xlsliberator.agent_repair import (
     delimit_untrusted_evidence,
     repair_provenance_from_run,
 )
-from xlsliberator.cli import cli
 from xlsliberator.validation_models import (
     GateExecutionStatus,
     RepairProvenance,
@@ -317,18 +317,11 @@ def test_repair_provenance_never_overrides_failed_certification_gate() -> None:
     assert certification.certified is False
 
 
-def test_agent_repair_cli_dry_run_never_creates_a_worktree(tmp_path: Path) -> None:
-    bundle = _evidence(tmp_path)
-    output = tmp_path / "runs"
+def test_agent_repair_is_not_exposed_by_the_deterministic_cli() -> None:
+    result = CliRunner().invoke(cli, ["agent-repair"])
 
-    result = CliRunner().invoke(
-        cli,
-        ["agent-repair", str(bundle), "--output", str(output), "--dry-run"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert '"status": "dry_run"' in result.output
-    assert not (output / "worktrees").exists()
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 def _git(repository: Path, *args: str) -> str:

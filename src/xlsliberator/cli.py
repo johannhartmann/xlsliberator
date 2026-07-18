@@ -51,14 +51,18 @@ def _load_formula_evidence(
 @click.argument("output_file", type=click.Path(path_type=Path))
 @click.option("--locale", default="en-US", help="Target locale (en-US or de-DE)")
 @click.option("--strict", is_flag=True, help="Fail on any errors")
-@click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
+@click.option(
+    "--embed-macros/--no-macros",
+    default=False,
+    help="Embed separately supplied target-native modules (disabled by default)",
+)
 @click.option("--report", type=click.Path(path_type=Path), help="Save report to file")
 def convert_cmd(
     input_file: Path,
     output_file: Path,
     locale: str,
     strict: bool,
-    no_macros: bool,
+    embed_macros: bool,
     report: Path | None,
 ) -> None:
     """Convert Excel file to ODS format.
@@ -77,8 +81,7 @@ def convert_cmd(
             output_file,
             locale=locale,
             strict=strict,
-            embed_macros=not no_macros,
-            use_agent=True,
+            embed_macros=embed_macros,
         )
 
         # Display results
@@ -244,82 +247,6 @@ def evidence_inspect_cmd(bundle: Path) -> None:
     click.echo(manifest.model_dump_json(indent=2))
 
 
-@cli.command(name="agent-repair")
-@click.argument("evidence_bundle", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option(
-    "--repository", type=click.Path(exists=True, file_okay=False, path_type=Path), default="."
-)
-@click.option("--output", type=click.Path(file_okay=False, path_type=Path))
-@click.option("--dry-run", is_flag=True, help="Validate inputs and persist a plan without editing")
-@click.option("--max-iterations", type=click.IntRange(min=1, max=100), default=3)
-@click.option("--max-wall-seconds", type=click.FloatRange(min=0.1), default=900.0)
-@click.option("--max-model-cost", type=click.FloatRange(min=0.0), default=0.0)
-def agent_repair_cmd(
-    evidence_bundle: Path,
-    repository: Path,
-    output: Path | None,
-    dry_run: bool,
-    max_iterations: int,
-    max_wall_seconds: float,
-    max_model_cost: float,
-) -> None:
-    """Run bounded repair planning for a failing evidence bundle.
-
-    Non-dry execution requires application-supplied deterministic gate callbacks;
-    this CLI intentionally never executes commands embedded in workbook evidence.
-    A pre-reviewed ``candidate.patch`` is tried before any configured coding agent.
-    """
-    from xlsliberator.agent_repair import (
-        AgentRepairOrchestrator,
-        BuildTestRecord,
-        CandidatePatch,
-        EvidencePatchRule,
-        GateKind,
-        GitRepairToolbox,
-        RepairLimits,
-        TraceDiffRecord,
-    )
-
-    result_directory = output or evidence_bundle / "agent-repair-runs"
-
-    def unavailable_gate(
-        gate: GateKind, _worktree: Path, _bundle: Path, _candidate: CandidatePatch
-    ) -> BuildTestRecord:
-        return BuildTestRecord(
-            gate=gate,
-            passed=False,
-            duration_seconds=0.0,
-            reason=(
-                "No trusted deterministic gate runner is configured; workbook evidence "
-                "cannot supply executable commands"
-            ),
-        )
-
-    toolbox = GitRepairToolbox(
-        repository=repository,
-        state_directory=result_directory,
-        gate_callback=unavailable_gate,
-        trace_callback=lambda _worktree, _bundle: TraceDiffRecord(equivalent=False),
-    )
-    orchestrator = AgentRepairOrchestrator(
-        toolbox,
-        result_directory,
-        deterministic_rules=[EvidencePatchRule()],
-        limits=RepairLimits(
-            max_iterations=max_iterations,
-            max_wall_seconds=max_wall_seconds,
-            max_model_cost=max_model_cost,
-        ),
-    )
-    try:
-        result = orchestrator.run(evidence_bundle, dry_run=dry_run)
-    except Exception as exc:
-        raise click.ClickException(str(exc)) from exc
-    click.echo(result.model_dump_json(indent=2))
-    if result.status.value not in {"accepted", "dry_run"}:
-        raise click.exceptions.Exit(1)
-
-
 @cli.command(name="scenario-run-target")
 @click.argument("workbook", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("scenario_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
@@ -465,18 +392,22 @@ def validate_cmd(
 @click.option(
     "--max-repair-iterations", default=0, type=int, help="Deterministic repair iterations"
 )
-@click.option("--no-macros", is_flag=True, help="Skip VBA macro translation")
-@click.option("--no-agent", is_flag=True, help="Disable agent-based VBA rewriting")
+@click.option(
+    "--embed-macros/--no-macros",
+    default=False,
+    help="Embed separately supplied target-native modules (disabled by default)",
+)
+@click.option("--no-agent", is_flag=True, hidden=True)
 @click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
 @click.option(
     "--scenario-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Exact scenario used by the Excel source oracle",
+    help="Exact externally supplied acceptance scenario",
 )
 @click.option(
     "--source-trace-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Microsoft Excel source-oracle trace",
+    help="Declared source-evidence trace from an independent test authority",
 )
 @click.option(
     "--target-trace-file",
@@ -489,14 +420,15 @@ def transform_validated_cmd(
     target: tuple[str, ...],
     strict: bool,
     max_repair_iterations: int,
-    no_macros: bool,
+    embed_macros: bool,
     no_agent: bool,
     json_output: bool,
     scenario_file: Path | None,
     source_trace_file: Path | None,
     target_trace_file: Path | None,
 ) -> None:
-    """Convert a workbook and run validation gates."""
+    """Convert a workbook and run deterministic validation gates."""
+    del no_agent
     from xlsliberator.validated_api import (
         ValidatedTransformationError,
         transform_validated,
@@ -514,8 +446,8 @@ def transform_validated_cmd(
             targets=list(target),
             strict=strict,
             max_repair_iterations=max_repair_iterations,
-            embed_macros=not no_macros,
-            use_agent=not no_agent,
+            embed_macros=embed_macros,
+            use_agent=False,
             scenario=scenario,
             source_trace=source_trace,
             target_trace=target_trace,
@@ -544,7 +476,7 @@ def mcp_serve_cmd(host: str, port: int, workspace_roots: tuple[Path, ...]) -> No
     """Start MCP server with HTTP streaming transport.
 
     \b
-    Exposes LibreOffice UNO operations as MCP tools for Claude Agent SDK integration.
+    Exposes deterministic LibreOffice operations as provider-neutral MCP tools.
 
     \b
     Examples:

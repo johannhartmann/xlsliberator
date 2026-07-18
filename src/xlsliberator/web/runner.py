@@ -70,7 +70,6 @@ class WebJobRunner:
                 job.output_path,
                 strict=False,
                 embed_macros=self.settings.embed_macros,
-                use_agent=self.settings.use_agent,
                 validate_macro_execution=False,
                 allow_global_macro_security_change=False,
                 progress_callback=progress,

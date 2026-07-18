@@ -1,14 +1,14 @@
-"""Compatibility runtime for translated VBA macros."""
+"""Deprecated Excel-shaped compatibility runtime for the legacy translator."""
 
-from xlsliberator.runtime.backend import (
+from xlsliberator.legacy_agent.runtime.backend import (
     CompatibilityBackend,
     FakeExcelBackend,
     RuntimeCapability,
     UnoExcelBackend,
 )
-from xlsliberator.runtime.context import ExcelContext
-from xlsliberator.runtime.errors import ExcelError
-from xlsliberator.runtime.object_model import (
+from xlsliberator.legacy_agent.runtime.context import ExcelContext
+from xlsliberator.legacy_agent.runtime.errors import ExcelError
+from xlsliberator.legacy_agent.runtime.object_model import (
     Application,
     Names,
     Range,
@@ -17,7 +17,7 @@ from xlsliberator.runtime.object_model import (
     Worksheet,
     WorksheetCollection,
 )
-from xlsliberator.runtime.worksheet_function import WorksheetFunctionAdapter
+from xlsliberator.legacy_agent.runtime.worksheet_function import WorksheetFunctionAdapter
 
 __all__ = [
     "Application",

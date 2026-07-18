@@ -3,7 +3,7 @@
 
 def test_inject_source_markers_emits_stable_marker_format() -> None:
     """Injected markers carry the module, procedure, and artifact id."""
-    from xlsliberator.vba2py_uno import _inject_source_markers
+    from xlsliberator.legacy_agent.vba2py_uno import _inject_source_markers
 
     code = "def StartButton_Click():\n    pass\n"
     updated = _inject_source_markers(code, ["StartButton_Click"], "Game.bas")
@@ -36,7 +36,7 @@ def test_extract_vba_procedure_names_ignores_end_and_exit() -> None:
 
     These helpers feed the LLM translation path's source-map injection.
     """
-    from xlsliberator.vba2py_uno import _extract_vba_procedure_names
+    from xlsliberator.legacy_agent.vba2py_uno import _extract_vba_procedure_names
 
     code = "Private Sub Foo()\n    Exit Sub\nEnd Sub\nPublic Function Bar()\nEnd Function\n"
 
@@ -45,7 +45,7 @@ def test_extract_vba_procedure_names_ignores_end_and_exit() -> None:
 
 def test_inject_source_markers_handles_nested_parens() -> None:
     """A signature with nested parens in a default value still gets a source marker."""
-    from xlsliberator.vba2py_uno import _inject_source_markers
+    from xlsliberator.legacy_agent.vba2py_uno import _inject_source_markers
 
     updated = _inject_source_markers("def foo(x=(1, 2)):\n    return x\n", ["foo"], "Mod1")
 

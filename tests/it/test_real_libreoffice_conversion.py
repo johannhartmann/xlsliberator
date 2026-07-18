@@ -327,37 +327,3 @@ def test_macro_and_control_actions_are_unavailable_without_explicit_capability(
     assert protected.status is GateExecutionStatus.UNAVAILABLE
     assert protected.error is not None
     assert "macro_execution" in protected.error["message"]
-
-
-@pytest.mark.integration
-@pytest.mark.docker
-def test_vba_compatibility_object_model_uses_real_uno_backend_in_docker(
-    tmp_path: Path,
-    skip_if_no_lo: None,
-) -> None:
-    """Exercise cells, collections, calculation, and events through UNO."""
-    fixture = Path(__file__).parents[1] / "fixtures" / "scenarios" / "basic.ods"
-    target = tmp_path / "vba-runtime.ods"
-    target.write_bytes(fixture.read_bytes())
-    before = target.read_bytes()
-    runtime = LibreOfficeDockerRuntime()
-
-    result = runtime.request(
-        {
-            "op": "vba_compatibility_probe",
-            "ods_path": str(target),
-            "sheet_name": "Sheet1",
-            "cell_address": "C3",
-            "test_value": "typed-vba-runtime",
-        }
-    )
-
-    assert result["success"] is True, result
-    data = result["data"]
-    assert data["backend_kind"] == "libreoffice_uno"
-    assert data["observed_value"] == "typed-vba-runtime"
-    assert "excel.cells" in data["capabilities"]
-    assert "excel.events" in data["capabilities"]
-    assert data["event_name"] == "Workbook_Open"
-    assert data["event_continues"] is True
-    assert target.read_bytes() == before

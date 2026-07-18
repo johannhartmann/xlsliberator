@@ -8,15 +8,6 @@ from pathlib import Path
 
 from loguru import logger
 
-from xlsliberator.vba_ir import (
-    VBAModuleKind as TypedVBAModuleKind,
-)
-from xlsliberator.vba_ir import (
-    VBAProjectIR,
-    VBAProjectReference,
-)
-from xlsliberator.vba_parser import parse_vba_project
-
 try:
     import oletools.olevba as olevba
 except ImportError:
@@ -128,38 +119,6 @@ def extract_vba_modules(file_path: str | Path) -> list[VBAModuleIR]:
 
     except Exception as e:
         raise VBAExtractionError(f"Failed to extract VBA: {e}") from e
-
-
-def extract_vba_project_ir(
-    file_path: str | Path,
-    *,
-    project_name: str = "VBAProject",
-    references: list[VBAProjectReference] | None = None,
-    conditional_compilation_arguments: dict[str, str] | None = None,
-) -> VBAProjectIR:
-    """Extract with oletools and parse every module into the typed project IR."""
-    modules = extract_vba_modules(file_path)
-    sources = {module.name: module.source_code for module in modules}
-    kinds = {
-        module.name: {
-            VBAModuleType.STANDARD: TypedVBAModuleKind.STANDARD,
-            VBAModuleType.CLASS: TypedVBAModuleKind.CLASS,
-            VBAModuleType.DOCUMENT: TypedVBAModuleKind.DOCUMENT,
-            VBAModuleType.FORM: TypedVBAModuleKind.USERFORM,
-            VBAModuleType.UNKNOWN: TypedVBAModuleKind.STANDARD,
-        }[module.module_type]
-        for module in modules
-    }
-    try:
-        return parse_vba_project(
-            project_name,
-            sources,
-            module_kinds=kinds,
-            references=references or [],
-            conditional_compilation_arguments=conditional_compilation_arguments,
-        )
-    except ValueError as exc:
-        raise VBAExtractionError(f"Failed to parse typed VBA project: {exc}") from exc
 
 
 def _detect_module_type(module_name: str, source_code: str) -> VBAModuleType:
