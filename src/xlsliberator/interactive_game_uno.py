@@ -124,9 +124,11 @@ def _initialize_document(document: Any, uno: Any) -> None:
     first = sheets.getByIndex(0)
     first.setName(GAME_SHEET)
     sheets.insertNewByName(SCORE_SHEET, 1)
-    sheets.insertNewByName(STATE_SHEET, 2)
     game = sheets.getByName(GAME_SHEET)
     score = sheets.getByName(SCORE_SHEET)
+    _add_form(document, game, score, uno)
+
+    sheets.insertNewByName(STATE_SHEET, 2)
     state_sheet = sheets.getByName(STATE_SHEET)
 
     _set_cell(game, "B2", "phase")
@@ -169,7 +171,6 @@ def _initialize_document(document: Any, uno: Any) -> None:
     state_sheet.IsVisible = False
 
     _store_checkpoint(document, "base-document")
-    _add_form(document, game, score, uno)
     controller = InteractiveGameController({}, document, enable_timer=False)
     try:
         controller.render()
