@@ -7,9 +7,11 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import time
-from pathlib import Path
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -29,6 +31,13 @@ _ALLOWED_ACTIONS = frozenset(
     }
 )
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
+_PUBLIC_SCENARIOS = (
+    "keyboard-control",
+    "timer-tick",
+    "native-controls",
+    "document-events",
+    "line-collapse",
+)
 
 
 def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
@@ -211,6 +220,294 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     response["evidence_archive_sha256"] = _sha256_file(archive_path)
     response["evidence_archive_bytes"] = archive_path.stat().st_size
     return response
+
+
+def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
+    """Validate and combine all public GUI recordings into one replay bundle."""
+    _require_gui_container()
+    from xlsliberator.lo_worker import _sha256_file
+
+    source = _confined_path(
+        request["input_path"],
+        root=Path(os.environ.get("XLSLIBERATOR_INPUT_DIR", "/input")),
+        must_exist=True,
+        label="GUI replay input",
+    )
+    archive_path = _confined_path(
+        request["output_path"],
+        root=Path(os.environ.get("XLSLIBERATOR_JOB_DIR", "/job")),
+        must_exist=False,
+        label="GUI replay output",
+    )
+    if source.suffix.lower() != ".zip" or archive_path.suffix.lower() != ".zip":
+        raise ValueError("GUI replay input and output must be ZIP archives")
+
+    output_dir = archive_path.parent / f".{archive_path.stem}-public-replay"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    replay_dir = output_dir / "public" / "replay"
+    replay_dir.mkdir(parents=True)
+
+    flattened: list[dict[str, Any]] = []
+    target_sha256: str | None = None
+    recordings: list[Path] = []
+    expected_outer = {f"{scenario_id}.zip" for scenario_id in _PUBLIC_SCENARIOS}
+    with ZipFile(source) as outer:
+        _validate_zip_members(outer, expected=expected_outer, label="replay input")
+        for scenario_id in _PUBLIC_SCENARIOS:
+            nested_payload = outer.read(f"{scenario_id}.zip")
+            if len(nested_payload) > 128 * 1024**2:
+                raise ValueError(f"scenario replay is oversized: {scenario_id}")
+            with ZipFile(BytesIO(nested_payload)) as evidence:
+                names = _validate_zip_members(
+                    evidence,
+                    required={"result.json", "recording.webm", "replay.html", "working-copy.ods"},
+                    label=f"scenario replay {scenario_id}",
+                )
+                if not any(name.endswith(".png") for name in names):
+                    raise ValueError(f"scenario replay has no screenshot: {scenario_id}")
+                result_payload = evidence.read("result.json")
+                if len(result_payload) > 2 * 1024**2:
+                    raise ValueError(f"scenario result is oversized: {scenario_id}")
+                try:
+                    result = json.loads(result_payload)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError(f"scenario result is not valid JSON: {scenario_id}") from exc
+                scenario_target = _validated_scenario_result(result, scenario_id)
+                if target_sha256 is None:
+                    target_sha256 = scenario_target
+                elif scenario_target != target_sha256:
+                    raise ValueError("scenario replays do not exercise one identical target")
+
+                recording_payload = evidence.read("recording.webm")
+                if (
+                    len(recording_payload) < 4
+                    or recording_payload[:4] != b"\x1aE\xdf\xa3"
+                    or hashlib.sha256(recording_payload).hexdigest()
+                    != result["recording"]["sha256"]
+                ):
+                    raise ValueError(f"scenario recording identity is invalid: {scenario_id}")
+                recording_path = output_dir / f"{scenario_id}.webm"
+                recording_path.write_bytes(recording_payload)
+                recordings.append(recording_path)
+
+                for operation in result["operations"]:
+                    flattened.append(
+                        {
+                            "sequence": len(flattened) + 1,
+                            "scenario_id": scenario_id,
+                            "scenario_sequence": operation["sequence"],
+                            "kind": operation["kind"],
+                            "status": "passed",
+                            "duration_ms": operation["duration_ms"],
+                            "state_sha256_before": operation["state_sha256_before"],
+                            "state_sha256_after": operation["state_sha256_after"],
+                        }
+                    )
+
+    if target_sha256 is None or not 1 <= len(flattened) <= 100:
+        raise ValueError("combined replay has an invalid operation count")
+    recording = replay_dir / "showcase.webm"
+    _concatenate_recordings(recordings, recording)
+    events: dict[str, Any] = {
+        "schema_version": "1.0.0",
+        "status": "passed",
+        "scenario_id": "interactive-game",
+        "target_build": "26.2.4.2",
+        "target_sha256": target_sha256,
+        "covered_scenarios": list(_PUBLIC_SCENARIOS),
+        "operations": flattened,
+    }
+    event_log = replay_dir / "events.json"
+    event_log.write_text(
+        json.dumps(events, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _write_showcase_replay_html(replay_dir, events)
+    with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
+        for path in sorted(replay_dir.iterdir()):
+            archive.write(path, f"public/replay/{path.name}")
+    return {
+        "status": "passed",
+        "target_build": "26.2.4.2",
+        "target_sha256": target_sha256,
+        "covered_scenarios": list(_PUBLIC_SCENARIOS),
+        "operation_count": len(flattened),
+        "recording_sha256": _sha256_file(recording),
+        "event_log_sha256": _sha256_file(event_log),
+        "entrypoint_sha256": _sha256_file(replay_dir / "index.html"),
+        "output_sha256": _sha256_file(archive_path),
+        "output_bytes": archive_path.stat().st_size,
+    }
+
+
+def _validate_zip_members(
+    archive: ZipFile,
+    *,
+    expected: set[str] | None = None,
+    required: set[str] | None = None,
+    label: str,
+) -> set[str]:
+    infos = archive.infolist()
+    if not 1 <= len(infos) <= 100:
+        raise ValueError(f"{label} has an invalid member count")
+    names: set[str] = set()
+    total = 0
+    for info in infos:
+        path = PurePosixPath(info.filename)
+        mode = info.external_attr >> 16
+        if (
+            info.is_dir()
+            or stat.S_ISLNK(mode)
+            or path.is_absolute()
+            or ".." in path.parts
+            or "\\" in info.filename
+            or info.filename != path.as_posix()
+            or info.filename in names
+        ):
+            raise ValueError(f"{label} contains an unsafe member")
+        if info.file_size > 128 * 1024**2:
+            raise ValueError(f"{label} contains an oversized member")
+        total += info.file_size
+        if total > 512 * 1024**2:
+            raise ValueError(f"{label} exceeds the uncompressed size limit")
+        names.add(info.filename)
+    if expected is not None and names != expected:
+        raise ValueError(f"{label} does not contain the exact canonical scenarios")
+    if required is not None and not required.issubset(names):
+        raise ValueError(f"{label} is missing required evidence")
+    return names
+
+
+def _validated_scenario_result(result: object, scenario_id: str) -> str:
+    if not isinstance(result, dict):
+        raise ValueError(f"scenario result must be an object: {scenario_id}")
+    if (
+        result.get("status") != "passed"
+        or result.get("scenario_id") != scenario_id
+        or result.get("event_layer") != "xvfb-openbox-xdotool"
+    ):
+        raise ValueError(f"scenario result did not pass the real GUI contract: {scenario_id}")
+    target_sha256 = result.get("source_sha256")
+    if not isinstance(target_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", target_sha256) is None:
+        raise ValueError(f"scenario target identity is invalid: {scenario_id}")
+    recording = result.get("recording")
+    if (
+        not isinstance(recording, dict)
+        or recording.get("path") != "recording.webm"
+        or not isinstance(recording.get("sha256"), str)
+    ):
+        raise ValueError(f"scenario recording declaration is invalid: {scenario_id}")
+    operations = result.get("operations")
+    if not isinstance(operations, list) or not 1 <= len(operations) <= 100:
+        raise ValueError(f"scenario operations are invalid: {scenario_id}")
+    for expected_sequence, operation in enumerate(operations, start=1):
+        if (
+            not isinstance(operation, dict)
+            or operation.get("sequence") != expected_sequence
+            or operation.get("status") != "passed"
+            or not isinstance(operation.get("kind"), str)
+            or re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", operation["kind"]) is None
+            or not isinstance(operation.get("duration_ms"), (int, float))
+            or isinstance(operation.get("duration_ms"), bool)
+            or not 0 <= operation["duration_ms"] <= 300_000
+        ):
+            raise ValueError(f"scenario operation evidence is invalid: {scenario_id}")
+        for key in ("state_sha256_before", "state_sha256_after"):
+            if (
+                not isinstance(operation.get(key), str)
+                or re.fullmatch(r"[0-9a-f]{64}", operation[key]) is None
+            ):
+                raise ValueError(f"scenario state identity is invalid: {scenario_id}")
+    return target_sha256
+
+
+def _concatenate_recordings(recordings: list[Path], output: Path) -> None:
+    concat_file = output.parent / "recordings.txt"
+    concat_file.write_text(
+        "".join(f"file '{path.as_posix()}'\n" for path in recordings),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-an",
+            "-c:v",
+            "libvpx-vp9",
+            "-deadline",
+            "good",
+            "-cpu-used",
+            "4",
+            "-y",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if result.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
+        raise RuntimeError(f"showcase recording concatenation failed: {result.stderr[-1000:]}")
+
+
+def _write_showcase_replay_html(output_dir: Path, events: dict[str, Any]) -> None:
+    payload = json.dumps(events, sort_keys=True).replace("<", "\\u003c")
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XLSLiberator autonomous showcase replay</title>
+  <style>
+    :root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
+    body {{ max-width: 72rem; margin: 0 auto; padding: 2rem; background: #111827; color: #f8fafc; }}
+    video {{ width: 100%; border: 1px solid #475569; background: #020617; }}
+    ol {{ padding: 0; list-style: none; display: grid; gap: .5rem; }}
+    button {{ width: 100%; padding: .7rem; text-align: left; color: inherit; background: #1e293b;
+      border: 1px solid #475569; border-radius: .4rem; cursor: pointer; }}
+    code {{ color: #7dd3fc; }}
+  </style>
+</head>
+<body>
+  <h1>Interactive game — five-scenario LibreOffice replay</h1>
+  <p>Real X11 input in LibreOffice <code>26.2.4.2</code>; all events are public and sanitized.</p>
+  <video id="recording" controls preload="metadata" src="showcase.webm"></video>
+  <ol id="timeline"></ol>
+  <script id="evidence" type="application/json">{payload}</script>
+  <script>
+    const evidence = JSON.parse(document.getElementById("evidence").textContent);
+    const video = document.getElementById("recording");
+    const timeline = document.getElementById("timeline");
+    let elapsed = 0;
+    evidence.operations.forEach((operation) => {{
+      const start = elapsed;
+      elapsed += operation.duration_ms / 1000;
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent =
+        `${{operation.sequence}}. ${{operation.scenario_id}} / ${{operation.kind}}`;
+      button.addEventListener("click", () => {{
+        video.currentTime = Math.min(start, Number.isFinite(video.duration) ? video.duration : start);
+        video.play();
+      }});
+      item.appendChild(button);
+      timeline.appendChild(item);
+    }});
+  </script>
+</body>
+</html>
+"""
+    (output_dir / "index.html").write_text(html, encoding="utf-8")
 
 
 def _write_replay_html(output_dir: Path, response: dict[str, Any]) -> None:

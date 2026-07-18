@@ -175,6 +175,10 @@ def _dispatch(request: dict[str, Any]) -> dict[str, Any]:
         from xlsliberator.gui_worker import run_gui_scenario
 
         return run_gui_scenario(request)
+    if op == "bundle_gui_replays":
+        from xlsliberator.gui_worker import bundle_gui_replays
+
+        return bundle_gui_replays(request)
     raise ValueError(f"Unsupported worker op: {op}")
 
 

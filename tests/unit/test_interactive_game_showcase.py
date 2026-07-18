@@ -12,7 +12,9 @@ import pytest
 from xlsliberator.interactive_game_engine import state_from_json
 from xlsliberator.interactive_game_showcase import (
     GUI_IMAGE,
+    PUBLIC_SCENARIOS,
     build_target,
+    bundle_gui_replays,
     run_gui_scenario,
 )
 from xlsliberator.interactive_game_uno import SOURCE_SHA256
@@ -87,6 +89,38 @@ def test_gui_scenario_selects_dedicated_image_and_forwards_timer_policy(
     assert runtime.payload["adapter"] == "interactive-game"
     assert runtime.payload["timer_enabled"] is False
     assert runtime.payload["actions"] == actions
+
+
+def test_replay_bundle_selects_gui_image_and_requires_all_public_scenarios(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    evidence: dict[str, Path] = {}
+    for scenario_id in PUBLIC_SCENARIOS:
+        path = tmp_path / f"{scenario_id}.zip"
+        path.write_bytes(scenario_id.encode())
+        evidence[scenario_id] = path
+    output = tmp_path / "replay.zip"
+    monkeypatch.setattr(
+        "xlsliberator.interactive_game_showcase.LibreOfficeDockerRuntime",
+        _FakeRuntime,
+    )
+    _FakeRuntime.instances.clear()
+
+    bundle_gui_replays(evidence, output)
+
+    runtime = _FakeRuntime.instances[0]
+    assert runtime.image == GUI_IMAGE
+    assert runtime.payload is not None
+    assert runtime.payload["op"] == "bundle_gui_replays"
+    assert runtime.payload["output_path"] == str(output)
+    assert not Path(runtime.payload["input_path"]).exists()
+
+    with pytest.raises(ValueError, match="every canonical public scenario"):
+        bundle_gui_replays(
+            {scenario: path for scenario, path in evidence.items() if scenario != "timer-tick"},
+            output,
+        )
 
 
 def test_public_scenarios_have_exact_ids_and_valid_game_fixtures() -> None:

@@ -199,6 +199,33 @@ def interactive_game_run_cmd(
     click.echo(json.dumps(result, indent=2, sort_keys=True))
 
 
+@cli.command(name="interactive-game-bundle")
+@click.argument(
+    "evidence_archives",
+    nargs=5,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.argument("replay_archive", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--timeout", type=click.IntRange(min=1, max=600), default=180, show_default=True)
+def interactive_game_bundle_cmd(
+    evidence_archives: tuple[Path, ...],
+    replay_archive: Path,
+    timeout: int,
+) -> None:
+    """Bundle the five canonical GUI recordings into one public replay."""
+    from xlsliberator.interactive_game_showcase import (
+        PUBLIC_SCENARIOS,
+        bundle_gui_replays,
+    )
+
+    try:
+        mapped = dict(zip(PUBLIC_SCENARIOS, evidence_archives, strict=True))
+        result = bundle_gui_replays(mapped, replay_archive, timeout_seconds=timeout)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
 @cli.command(name="inventory-diff")
 @click.argument("source_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("target_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))

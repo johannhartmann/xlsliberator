@@ -10,7 +10,11 @@ from zipfile import ZipFile
 
 import pytest
 
-from xlsliberator.interactive_game_showcase import build_target, run_gui_scenario
+from xlsliberator.interactive_game_showcase import (
+    build_target,
+    bundle_gui_replays,
+    run_gui_scenario,
+)
 from xlsliberator.interactive_game_uno import SOURCE_SHA256
 
 pytestmark = [pytest.mark.integration, pytest.mark.docker]
@@ -52,6 +56,8 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
         assert b"GameReset" in content
 
     results: dict[str, dict[str, object]] = {}
+    evidence_archives: dict[str, Path] = {}
+    operation_count = 0
     for scenario_id in (
         "keyboard-control",
         "timer-tick",
@@ -61,6 +67,7 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
     ):
         scenario = _scenario(scenario_id)
         evidence = evidence_root / f"{scenario_id}.zip"
+        evidence_archives[scenario_id] = evidence
         result = run_gui_scenario(
             target,
             evidence,
@@ -71,7 +78,9 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
         assert result["status"] == "passed"
         assert result["event_layer"] == "xvfb-openbox-xdotool"
         assert result["source_sha256"] == target_sha256
-        assert result["operations"]
+        operations = result["operations"]
+        assert isinstance(operations, list) and operations
+        operation_count += len(operations)
         assert evidence.is_file()
         with ZipFile(evidence) as archive:
             names = set(archive.namelist())
@@ -80,6 +89,25 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
             assert "replay.html" in names
             assert any(name.endswith(".png") for name in names)
             assert "working-copy.ods" in names
+
+    replay_archive = evidence_root / "public-showcase-replay.zip"
+    replay = bundle_gui_replays(evidence_archives, replay_archive)
+    assert replay["status"] == "passed"
+    assert replay["target_sha256"] == target_sha256
+    assert set(replay["covered_scenarios"]) == set(evidence_archives)
+    assert replay["operation_count"] == operation_count
+    with ZipFile(replay_archive) as archive:
+        assert set(archive.namelist()) == {
+            "public/replay/events.json",
+            "public/replay/index.html",
+            "public/replay/showcase.webm",
+        }
+        events = json.loads(archive.read("public/replay/events.json"))
+        assert events["status"] == "passed"
+        assert events["scenario_id"] == "interactive-game"
+        assert events["target_sha256"] == target_sha256
+        assert len(events["operations"]) == replay["operation_count"]
+        assert archive.read("public/replay/showcase.webm").startswith(b"\x1aE\xdf\xa3")
 
     timer_sessions = results["timer-tick"]["controller_sessions"]
     assert isinstance(timer_sessions, list) and len(timer_sessions) == 1
