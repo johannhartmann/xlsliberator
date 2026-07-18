@@ -141,6 +141,15 @@ jobs:
             tests/it/test_interactive_game_showcase.py \
             --junitxml=artifacts/showcase-ci/pytest.xml \
             2>&1 | tee artifacts/showcase-ci/runtime.log
+      - name: Kill source-derived engine mutants without changing the oracle
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator run --rm \
+            test-orchestrator python \
+            -m xlsliberator.interactive_game_mutation \
+            --repository-root /workspace \
+            --output /workspace/artifacts/showcase-ci/mutation \
+            2>&1 | tee artifacts/showcase-ci/mutation.log
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
