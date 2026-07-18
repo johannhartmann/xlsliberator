@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from click.testing import CliRunner
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from xlsliberator.cli import cli
 from xlsliberator.migration_services_mcp import (
+    _serve,
     collect_build_logs,
     compare_stock_patched,
     create_source_worktree,
@@ -126,6 +128,31 @@ def test_hidden_corpus_and_buildfarm_mutation_require_server_authority(
     )
     assert unavailable["operation_status"] == "unavailable"
     assert unavailable["capability_available"] is False
+
+
+def test_migration_mcp_rejects_public_bind_without_trusted_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = MagicMock()
+    monkeypatch.setenv("XLSLIBERATOR_APPLICATION_CONTAINER", "1")
+    monkeypatch.delenv("XLSLIBERATOR_MCP_TRUSTED_CONTAINER_PROXY", raising=False)
+
+    with pytest.raises(ValueError, match="trusted-container proxy"):
+        _serve(server, "0.0.0.0", 8010)
+
+    server.run.assert_not_called()
+
+
+def test_migration_mcp_allows_explicit_trusted_container_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = MagicMock()
+    monkeypatch.setenv("XLSLIBERATOR_APPLICATION_CONTAINER", "1")
+    monkeypatch.setenv("XLSLIBERATOR_MCP_TRUSTED_CONTAINER_PROXY", "1")
+
+    _serve(server, "0.0.0.0", 8010)
+
+    server.run.assert_called_once_with(transport="http", host="0.0.0.0", port=8010)
 
 
 def test_repair_service_cli_commands_are_registered() -> None:

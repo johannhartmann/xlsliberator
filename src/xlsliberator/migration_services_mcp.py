@@ -481,6 +481,13 @@ def serve_buildfarm(host: str = "127.0.0.1", port: int = 8020) -> None:
 
 def _serve(server: FastMCP, host: str, port: int) -> None:
     require_application_container()
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise ValueError("trusted-local MCP may bind only to a loopback address")
+    trusted_container_proxy = (
+        host in {"0.0.0.0", "::"}  # nosec B104
+        and os.environ.get("XLSLIBERATOR_MCP_TRUSTED_CONTAINER_PROXY") == "1"
+    )
+    if host not in {"127.0.0.1", "localhost", "::1"} and not trusted_container_proxy:
+        raise ValueError(
+            "trusted-local MCP may bind only to loopback unless the explicit "
+            "trusted-container proxy boundary is enabled"
+        )
     server.run(transport="http", host=host, port=port)
