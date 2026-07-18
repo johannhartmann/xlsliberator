@@ -73,15 +73,17 @@ def test_report_api_404_when_no_report(tmp_path: Path) -> None:
     app = create_app(WebSettings(data_dir=tmp_path))
     store = app.state.job_store
     job_id = "55555555-5555-4555-8555-555555555555"
+    job_dir = tmp_path / "jobs" / job_id
+    job_dir.mkdir(parents=True)
     store.create_job(
         job_id=job_id,
         original_filename="book.xlsx",
-        input_path=tmp_path / "input.xlsx",
-        output_path=tmp_path / "output.ods",
-        report_json_path=tmp_path / "missing-report.json",
-        report_md_path=tmp_path / "report.md",
-        log_bundle_path=tmp_path / "logs.zip",
-        profile_dir=tmp_path / "profile",
+        input_path=job_dir / "input.xlsx",
+        output_path=job_dir / "output.ods",
+        report_json_path=job_dir / "missing-report.json",
+        report_md_path=job_dir / "report.md",
+        log_bundle_path=job_dir / "logs.zip",
+        profile_dir=job_dir / "profile",
     )
     store.add_event(job_id, phase=JobPhase.QUEUED, step="queued", message="queued")
 
@@ -100,15 +102,17 @@ def test_download_rejects_completed_phase_without_operation_pass(tmp_path: Path)
     app = create_app(WebSettings(data_dir=tmp_path))
     store = app.state.job_store
     job_id = "66666666-6666-4666-8666-666666666666"
+    job_dir = tmp_path / "jobs" / job_id
+    job_dir.mkdir(parents=True)
     store.create_job(
         job_id=job_id,
         original_filename="book.xlsx",
-        input_path=tmp_path / "input.xlsx",
-        output_path=tmp_path / "output.ods",
-        report_json_path=tmp_path / "report.json",
-        report_md_path=tmp_path / "report.md",
-        log_bundle_path=tmp_path / "logs.zip",
-        profile_dir=tmp_path / "profile",
+        input_path=job_dir / "input.xlsx",
+        output_path=job_dir / "output.ods",
+        report_json_path=job_dir / "report.json",
+        report_md_path=job_dir / "report.md",
+        log_bundle_path=job_dir / "logs.zip",
+        profile_dir=job_dir / "profile",
     )
     store.add_event(
         job_id,
@@ -124,15 +128,17 @@ def test_incomplete_job_cannot_download(tmp_path: Path) -> None:
     app = create_app(WebSettings(data_dir=tmp_path))
     store = app.state.job_store
     job_id = "44444444-4444-4444-8444-444444444444"
+    job_dir = tmp_path / "jobs" / job_id
+    job_dir.mkdir(parents=True)
     store.create_job(
         job_id=job_id,
         original_filename="book.xlsx",
-        input_path=tmp_path / "input.xlsx",
-        output_path=tmp_path / "output.ods",
-        report_json_path=tmp_path / "report.json",
-        report_md_path=tmp_path / "report.md",
-        log_bundle_path=tmp_path / "logs.zip",
-        profile_dir=tmp_path / "profile",
+        input_path=job_dir / "input.xlsx",
+        output_path=job_dir / "output.ods",
+        report_json_path=job_dir / "report.json",
+        report_md_path=job_dir / "report.md",
+        log_bundle_path=job_dir / "logs.zip",
+        profile_dir=job_dir / "profile",
     )
     store.add_event(job_id, phase=JobPhase.QUEUED, step="queued", message="queued")
 

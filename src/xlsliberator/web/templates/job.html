@@ -4,12 +4,25 @@
 <section class="panel" id="job" data-job-id="{{ job.id }}">
   <h1>{{ job.original_filename }}</h1>
   <p>Status: <strong id="status">{{ job.status.value }}</strong></p>
+  {% if job.remote_thread_id %}
+  <p class="meta">Workbook thread: <code>{{ job.remote_thread_id }}</code></p>
+  {% endif %}
   {% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
   <div id="downloads" class="{% if job.status.value != 'completed' %}hidden{% endif %}">
     <a href="/jobs/{{ job.id }}/download">Download ODS</a>
     <a href="/jobs/{{ job.id }}/report.json">Report JSON</a>
     <a href="/jobs/{{ job.id }}/report.md">Report Markdown</a>
   </div>
+  {% if job.artifacts %}
+  <section>
+    <h2>Deliverables and evidence</h2>
+    <ul>
+      {% for artifact in job.artifacts %}
+      <li><a href="/jobs/{{ job.id }}/artifacts/{{ artifact.id }}">{{ artifact.name }}</a> ({{ artifact.kind }})</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   {% if report_summary %}
   <section class="summary">
     <h2>Report</h2>
@@ -39,6 +52,23 @@
     <li class="{{ event.level }}"><span>{{ event.phase.value }}</span>{{ event.message }}</li>
     {% endfor %}
   </ol>
+  {% if job.status.value not in ["cancelled", "failed"] %}
+  <section>
+    <h2>Continue this migration</h2>
+    <form action="/jobs/{{ job.id }}/follow-up" method="post" enctype="multipart/form-data">
+      <label for="requirements">Follow-up requirements</label>
+      <textarea id="requirements" name="requirements" maxlength="20000"></textarea>
+      <label for="dependency">Optional dependency</label>
+      <input id="dependency" name="file" type="file">
+      <button type="submit">Send to workbook thread</button>
+    </form>
+    {% if job.status.value not in ["completed"] %}
+    <form action="/jobs/{{ job.id }}/cancel" method="post">
+      <button type="submit">Cancel migration</button>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
   <noscript><p class="meta">Refresh this page to update progress.</p></noscript>
 </section>
 {% endblock %}

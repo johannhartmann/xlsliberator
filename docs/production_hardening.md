@@ -1,19 +1,23 @@
 # Web App Production Hardening
 
-Do not expose the upload service publicly without additional controls.
+Do not expose the upload service publicly without these controls:
 
-Checklist:
+- Put the app behind an authenticated reverse proxy with TLS and rate limits.
+- Map each tenant to a stable, non-user-controlled
+  `XLSLIBERATOR_OPEN_SWE_OWNER_ID`.
+- Store `XLSLIBERATOR_OPEN_SWE_TOKEN` in a secret manager and rotate it.
+- Permit egress only to the configured Open-SWE endpoint.
+- Keep the web container unprivileged and never mount a Docker socket into it.
+- Enforce upload limits at both proxy and app; scan files before migration.
+- Keep `XLSLIBERATOR_WEB_WORKERS` bounded to protect the Open-SWE service.
+- Configure CPU, memory, PID, and request-duration limits.
+- Keep local job cleanup and Open-SWE owner/retention enforcement enabled.
+- Verify source/dependency deletion before a migration is marked complete.
+- Avoid logging bearer tokens, workbook content, internal paths, prompts,
+  hidden tests, or model reasoning.
+- Expose only the fixed, owner-checked artifact allowlist with `nosniff`.
+- Back up deliverables only under an explicit retention and access policy.
 
-- Put the app behind a reverse proxy with TLS.
-- Require authentication outside a trusted LAN.
-- Enforce upload size limits at the proxy and app.
-- Keep `XLSLIBERATOR_WEB_WORKERS=1` unless LibreOffice isolation is load-tested.
-- Configure CPU and memory limits in Compose or the orchestrator.
-- Keep per-job LibreOffice profiles enabled.
-- Never enable global macro security mutation for the web path.
-- Add antivirus or sandbox scanning before conversion.
-- Keep job retention cleanup enabled and verify it cannot delete outside `/data`.
-- Run the container as a non-root user.
-- Store `ANTHROPIC_API_KEY` in a secret manager, not Compose files or logs.
-- Avoid logging raw filesystem paths, secrets, or workbook contents.
-- Decide whether generated reports need backup or should expire with uploads.
+LibreOffice `26.2.4.2`, its bundled Python, UNO, and PyUNO execute only in the
+pinned office image controlled by Open-SWE. The web app must fail closed when
+Open-SWE is unconfigured or unavailable; there is no local conversion fallback.

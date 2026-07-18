@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from xlsliberator.validation_models import GateExecutionStatus
-from xlsliberator.web.jobs import JobPhase, JobStore
+from xlsliberator.web.jobs import JobArtifact, JobPhase, JobStore
 
 
 def _create_job(store: JobStore, tmp_path: Path) -> str:
@@ -100,3 +100,44 @@ def test_completed_job_cannot_cancel(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         store.request_cancel(job_id)
+
+
+def test_job_store_persists_remote_mapping_and_artifacts(tmp_path: Path) -> None:
+    job_id = "77777777-7777-4777-8777-777777777777"
+    job_dir = tmp_path / "jobs" / job_id
+    job_dir.mkdir(parents=True)
+    store = JobStore(tmp_path)
+    store.create_job(
+        job_id=job_id,
+        original_filename="book.xlsx",
+        input_path=job_dir / "input.xlsx",
+        output_path=job_dir / "output.ods",
+        report_json_path=job_dir / "report.json",
+        report_md_path=job_dir / "report.md",
+        log_bundle_path=job_dir / "logs.zip",
+        profile_dir=job_dir / "profile",
+    )
+    store.set_remote(
+        job_id,
+        thread_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        run_id="run-1",
+    )
+    store.set_artifacts(
+        job_id,
+        [
+            JobArtifact(
+                id="a" * 24,
+                name="target.ods",
+                kind="ods",
+                media_type="application/vnd.oasis.opendocument.spreadsheet",
+                path=job_dir / "output.ods",
+            )
+        ],
+    )
+
+    reloaded = JobStore(tmp_path).get_job(job_id)
+
+    assert reloaded is not None
+    assert reloaded.remote_thread_id == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert reloaded.artifacts[0].id == "a" * 24
+    assert (job_dir / "job.json").stat().st_mode & 0o777 == 0o600

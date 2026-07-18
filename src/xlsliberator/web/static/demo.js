@@ -74,6 +74,19 @@
     polling: false,
   };
 
+  // The bundled workbooks exercise transport and the basic migration pipeline;
+  // they are intentionally not presented as serious migration evidence.
+  els.samples.forEach(function (card) {
+    var details = card.querySelector("div");
+    if (!details) return;
+    var label = document.createElement("div");
+    label.textContent = "LEVEL 0 · BASIS-PIPELINE";
+    label.style.cssText =
+      "font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;" +
+      "letter-spacing:0.04em;color:#7C828A;margin-top:7px;";
+    details.appendChild(label);
+  });
+
   // ---- helpers -------------------------------------------------------------
 
   function extOf(name) {

@@ -6,12 +6,14 @@ import json
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, ConfigDict, Field
 
 from xlsliberator.validation_models import GateExecutionStatus
 from xlsliberator.web.jobs import JobPhase, JobStore, WebJob, public_job_dict
+from xlsliberator.web.open_swe import OpenSWEError
 from xlsliberator.web.runner import WebJobRunner
 from xlsliberator.web.schemas import WebSettings
 from xlsliberator.web.security import (
@@ -26,6 +28,14 @@ from xlsliberator.web.security import (
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 GITHUB_URL = "https://github.com/johannhartmann/xlsliberator"
+
+
+class FollowUpMessage(BaseModel):
+    """Bounded message for an existing workbook thread."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=20_000)
 
 
 def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) -> APIRouter:
@@ -112,7 +122,98 @@ def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) 
             raise HTTPException(status_code=404, detail="Unknown job") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return public_job_dict(job)
+        try:
+            runner.cancel(job_id)
+        except OpenSWEError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return store.public_job(job_id) or public_job_dict(job)
+
+    @router.post("/jobs/{job_id}/cancel")
+    def cancel_job_form(job_id: str) -> RedirectResponse:
+        cancel_job(job_id)
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @router.post("/api/jobs/{job_id}/messages")
+    def add_message(job_id: str, body: FollowUpMessage) -> dict[str, Any]:
+        _get_job_or_404(store, job_id)
+        try:
+            runner.follow_up(job_id, requirements=body.message)
+            runner.resume(job_id)
+        except OpenSWEError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return store.public_job(job_id) or {}
+
+    @router.post("/jobs/{job_id}/follow-up")
+    async def add_message_form(
+        job_id: str,
+        requirements: Annotated[str, Form()],
+        file: Annotated[UploadFile | None, File()] = None,
+    ) -> RedirectResponse:
+        dependency = None
+        media_type = "application/octet-stream"
+        if file is not None and file.filename:
+            dependency = await _write_dependency(file, store, job_id, settings.max_upload_mb)
+            media_type = file.content_type or media_type
+        if not requirements.strip() and dependency is None:
+            raise HTTPException(status_code=400, detail="Message or dependency is required")
+        try:
+            runner.follow_up(
+                job_id,
+                requirements=requirements,
+                dependency=dependency,
+                media_type=media_type,
+            )
+            runner.resume(job_id)
+        except (KeyError, OpenSWEError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @router.post("/api/jobs/{job_id}/dependencies")
+    async def add_dependency(
+        job_id: str,
+        file: Annotated[UploadFile, File()],
+    ) -> dict[str, Any]:
+        dependency = await _write_dependency(file, store, job_id, settings.max_upload_mb)
+        try:
+            runner.follow_up(
+                job_id,
+                dependency=dependency,
+                media_type=file.content_type or "application/octet-stream",
+            )
+            runner.resume(job_id)
+        except (KeyError, OpenSWEError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return store.public_job(job_id) or {}
+
+    @router.get("/api/jobs/{job_id}/artifacts")
+    def list_artifacts(job_id: str) -> list[dict[str, str]]:
+        job = _get_job_or_404(store, job_id)
+        return [
+            {
+                "id": artifact.id,
+                "name": artifact.name,
+                "kind": artifact.kind,
+                "media_type": artifact.media_type,
+                "download": f"/jobs/{job_id}/artifacts/{artifact.id}",
+            }
+            for artifact in job.artifacts
+        ]
+
+    @router.get("/jobs/{job_id}/artifacts/{artifact_id}")
+    def download_artifact(job_id: str, artifact_id: str) -> FileResponse:
+        job = _get_job_or_404(store, job_id)
+        artifact = next(
+            (candidate for candidate in job.artifacts if candidate.id == artifact_id),
+            None,
+        )
+        if artifact is None or not artifact.path.is_file():
+            raise HTTPException(status_code=404, detail="Requested artifact is missing")
+        return FileResponse(
+            artifact.path,
+            media_type=artifact.media_type,
+            filename=artifact.name,
+            headers={"X-Content-Type-Options": "nosniff"},
+        )
 
     @router.get("/jobs/{job_id}/download")
     def download_ods(job_id: str) -> FileResponse:
@@ -210,6 +311,29 @@ async def _write_upload(file: UploadFile, destination: Path, max_upload_mb: int)
                 raise UploadValidationError(f"Upload exceeds {max_upload_mb} MB limit")
             handle.write(chunk)
     return total
+
+
+async def _write_dependency(
+    file: UploadFile,
+    store: JobStore,
+    job_id: str,
+    max_upload_mb: int,
+) -> Path:
+    job = _get_job_or_404(store, job_id)
+    filename = file.filename or ""
+    if not filename or Path(filename).name != filename or any(
+        character in filename for character in ("/", "\\", "\x00")
+    ):
+        raise HTTPException(status_code=400, detail="Invalid dependency filename")
+    dependency_dir = job.input_path.parent / "dependencies"
+    dependency_dir.mkdir(parents=True, exist_ok=True)
+    destination = dependency_dir / filename
+    try:
+        await _write_upload(file, destination, max_upload_mb)
+    except UploadValidationError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return destination
 
 
 def _get_job_or_404(store: JobStore, job_id: str) -> WebJob:

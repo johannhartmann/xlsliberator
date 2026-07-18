@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -40,6 +41,16 @@ class JobEvent(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class JobArtifact(BaseModel):
+    """One owner-checked Open-SWE deliverable stored in the local job workspace."""
+
+    id: str
+    name: str
+    kind: str
+    media_type: str
+    path: Path
+
+
 class WebJob(BaseModel):
     """Internal web job state."""
 
@@ -58,14 +69,19 @@ class WebJob(BaseModel):
     error: str | None = None
     cancellation_requested: bool = False
     operation_status: GateExecutionStatus = GateExecutionStatus.NOT_RUN
+    remote_thread_id: str | None = None
+    remote_run_id: str | None = None
+    artifacts: list[JobArtifact] = Field(default_factory=list)
 
 
 class JobStore:
     """In-memory job store protected by a lock."""
 
-    def __init__(self) -> None:
+    def __init__(self, data_dir: Path | None = None) -> None:
         self._jobs: dict[str, WebJob] = {}
         self._lock = RLock()
+        self._data_dir = data_dir.resolve() if data_dir is not None else None
+        self._load_persisted_jobs()
 
     def create_job(
         self,
@@ -93,6 +109,7 @@ class JobStore:
                 status=JobPhase.UPLOADED,
             )
             self._jobs[job_id] = job
+            self._persist(job)
             return job.model_copy(deep=True)
 
     def get_job(self, job_id: str) -> WebJob | None:
@@ -128,6 +145,7 @@ class JobStore:
             job.events.append(event)
             job.status = normalized
             job.updated_at = event.timestamp
+            self._persist(job)
             return event.model_copy(deep=True)
 
     def mark_failed(self, job_id: str, error: str) -> WebJob:
@@ -137,6 +155,7 @@ class JobStore:
             job = self._require_job(job_id)
             job.error = error
             job.operation_status = GateExecutionStatus.FAILED
+            self._persist(job)
             return job.model_copy(deep=True)
 
     def mark_completed(self, job_id: str) -> WebJob:
@@ -151,6 +170,53 @@ class JobStore:
         with self._lock:
             job = self._require_job(job_id)
             job.operation_status = GateExecutionStatus.PASSED
+            self._persist(job)
+            return job.model_copy(deep=True)
+
+    def mark_cancelled(self, job_id: str) -> WebJob:
+        """Mark a local job cancelled after Open-SWE accepts cancellation."""
+        self.add_event(
+            job_id,
+            phase=JobPhase.CANCELLED,
+            step="cancelled",
+            message="Migration cancelled",
+            level="warning",
+        )
+        with self._lock:
+            job = self._require_job(job_id)
+            job.cancellation_requested = True
+            job.operation_status = GateExecutionStatus.SKIPPED
+            self._persist(job)
+            return job.model_copy(deep=True)
+
+    def set_remote(
+        self,
+        job_id: str,
+        *,
+        thread_id: str,
+        run_id: str | None,
+        reset_delivery: bool = False,
+    ) -> WebJob:
+        """Attach a local web job to its deterministic Open-SWE thread."""
+        with self._lock:
+            job = self._require_job(job_id)
+            job.remote_thread_id = thread_id
+            job.remote_run_id = run_id
+            if reset_delivery:
+                job.operation_status = GateExecutionStatus.NOT_RUN
+                job.artifacts = []
+                job.error = None
+            job.updated_at = datetime.now(UTC)
+            self._persist(job)
+            return job.model_copy(deep=True)
+
+    def set_artifacts(self, job_id: str, artifacts: list[JobArtifact]) -> WebJob:
+        """Replace the local delivery manifest with downloaded artifacts."""
+        with self._lock:
+            job = self._require_job(job_id)
+            job.artifacts = [artifact.model_copy(deep=True) for artifact in artifacts]
+            job.updated_at = datetime.now(UTC)
+            self._persist(job)
             return job.model_copy(deep=True)
 
     def request_cancel(self, job_id: str) -> WebJob:
@@ -164,6 +230,7 @@ class JobStore:
                 job.status = JobPhase.CANCELLED
                 job.operation_status = GateExecutionStatus.SKIPPED
             job.updated_at = datetime.now(UTC)
+            self._persist(job)
         self.add_event(
             job_id,
             phase=JobPhase.CANCELLED if job.status == JobPhase.CANCELLED else job.status,
@@ -192,6 +259,58 @@ class JobStore:
             raise KeyError(job_id)
         return job
 
+    def _load_persisted_jobs(self) -> None:
+        if self._data_dir is None:
+            return
+        jobs_root = self._data_dir / "jobs"
+        if not jobs_root.is_dir():
+            return
+        for manifest in jobs_root.glob("*/job.json"):
+            try:
+                job = WebJob.model_validate_json(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if self._valid_persisted_job(job, manifest.parent):
+                self._jobs[job.id] = job
+
+    def _valid_persisted_job(self, job: WebJob, job_dir: Path) -> bool:
+        if self._data_dir is None or job.id != job_dir.name:
+            return False
+        expected_root = (self._data_dir / "jobs").resolve()
+        resolved_dir = job_dir.resolve()
+        if resolved_dir.parent != expected_root:
+            return False
+        private_paths = [
+            job.input_path,
+            job.output_path,
+            job.report_json_path,
+            job.report_md_path,
+            job.log_bundle_path,
+            job.profile_dir,
+            *[artifact.path for artifact in job.artifacts],
+        ]
+        return all(_is_within(path, resolved_dir) for path in private_paths)
+
+    def _persist(self, job: WebJob) -> None:
+        if self._data_dir is None:
+            return
+        job_dir = job.input_path.parent.resolve()
+        if not self._valid_persisted_job(job, job_dir):
+            raise ValueError("Refusing to persist a job outside the configured data directory")
+        manifest = job_dir / "job.json"
+        temporary = job_dir / ".job.json.tmp"
+        temporary.write_text(job.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        temporary.replace(manifest)
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root)
+    except ValueError:
+        return False
+    return True
+
 
 def public_job_dict(job: WebJob) -> dict[str, Any]:
     """Serialize a job without leaking server filesystem paths."""
@@ -205,6 +324,7 @@ def public_job_dict(job: WebJob) -> dict[str, Any]:
         "updated_at": job.updated_at.isoformat(),
         "error": job.error,
         "cancellation_requested": job.cancellation_requested,
+        "thread_id": job.remote_thread_id,
         "events": [
             {
                 "index": index,
@@ -219,6 +339,16 @@ def public_job_dict(job: WebJob) -> dict[str, Any]:
             }
             for index, event in enumerate(job.events)
         ],
+        "artifacts": [
+            {
+                "id": artifact.id,
+                "name": artifact.name,
+                "kind": artifact.kind,
+                "media_type": artifact.media_type,
+                "download": f"/jobs/{job.id}/artifacts/{artifact.id}",
+            }
+            for artifact in job.artifacts
+        ],
         "downloads": _download_links(job),
     }
 
@@ -230,6 +360,7 @@ def _download_links(job: WebJob) -> dict[str, str]:
         "ods": f"/jobs/{job.id}/download",
         "report_json": f"/jobs/{job.id}/report.json",
         "report_md": f"/jobs/{job.id}/report.md",
+        "artifacts": f"/api/jobs/{job.id}/artifacts",
     }
 
 

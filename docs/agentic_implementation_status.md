@@ -254,18 +254,18 @@ when applicable, and ledger update are linked.
 | 04 — transactional `odstool` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | scenario schema, deterministic target traces, fail-closed negatives, mutation evidence |
 | 06 — stateful LibreOffice MCP | COMPLETE; REMOTE CI GREEN AT `15a28ea` | session lifecycle, isolation, runtime integration evidence |
-| 07 — thin Open-SWE fork | PENDING | separate repository, upstream record, sync procedure |
-| 08 — sandbox snapshot | PENDING | image/SBOM, tool versions, sandbox smoke |
-| 09 — triggers and hydration | PENDING | attachment tests, artifact hashes, durable-thread evidence |
-| 10 — Deep Agents skills | PENDING | skill discovery/loading tests and isolation proof |
-| 11 — forensics/planning/testing/package skills | PENDING | skill fixtures and trajectory tests |
-| 12 — migration-specialist skills | PENDING | formula/VBA/UI/dependency/LO skill tests |
-| 13 — specialist subagents and routing | PENDING | routing tests, model config, isolated skill/tool scopes |
-| 14 — curated MCP tools | PENDING | allowlist, typed failures, integration traces |
-| 15 — deterministic middleware | PENDING | checkpoint and anti-fake-success/anti-test-weakening tests |
-| 16 — migration lead | PENDING | workflow tests and end-to-end thread trajectory |
-| 17 — independent reviewer | PENDING | separate reviewer identity, hidden/mutation gate evidence |
-| 18 — web to Open-SWE threads | PENDING | job/thread mapping, resume, artifact delivery tests |
+| 07 — thin Open-SWE fork | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `27d2aa19` | separate repository, upstream record, sync procedure |
+| 08 — sandbox snapshot | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `84d22454` | image/SBOM, tool versions, sandbox smoke |
+| 09 — triggers and hydration | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `f513e485` | attachment tests, artifact hashes, durable-thread evidence |
+| 10 — Deep Agents skills | COMPLETE ACROSS BOTH REPOSITORIES | skill discovery/loading tests, isolation proof and migration-only wiring |
+| 11 — forensics/planning/testing/package skills | COMPLETE; REMOTE CI GREEN AT `0fc39e5` | skill fixtures and trajectory tests |
+| 12 — migration-specialist skills | COMPLETE; REMOTE CI GREEN AT `0fc39e5` | formula/VBA/UI/dependency/LO skill tests |
+| 13 — specialist subagents and routing | COMPLETE IN `xlsliberator-swe` AT `886a23dc` | routing tests, model config, isolated skill/tool scopes |
+| 14 — curated MCP tools | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `37c52efa` | allowlist, typed failures, integration traces |
+| 15 — deterministic middleware | COMPLETE IN `xlsliberator-swe` AT `49164719` | checkpoint and anti-fake-success/anti-test-weakening tests |
+| 16 — migration lead | COMPLETE IN `xlsliberator-swe` AT `18e0d770` | workflow tests and end-to-end thread trajectory |
+| 17 — independent reviewer | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `7c7ee4c8` | separate reviewer identity, hidden/mutation gate evidence; Agent and sandbox runs `29654989184` and `29654989178` |
+| 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI EVIDENCE PENDING | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
 | 19 — serious demos and corpus | PENDING | representative episodes and corpus metadata |
 | 20 — repair promotion/build farm | PENDING | generic repair PR flow and build-farm contract/tests |
 | 21 — execution hardening | PENDING | threat-model tests, sandbox/network/secret controls |
@@ -274,7 +274,6 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Begin **Prompt 07 — thin Open-SWE fork** in the separate
-`johannhartmann/xlsliberator-swe` repository while preserving upstream Open-SWE
-history and recording the exact fork point. Local commands continue exclusively
-in Docker; no local Python or office fallback is permitted.
+Obtain blocking remote CI evidence for Prompt 18, then begin **Prompt 19 —
+serious demos and corpus**. Local commands continue exclusively in Docker; no
+local Python or office fallback is permitted.

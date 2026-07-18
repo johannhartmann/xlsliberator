@@ -1,10 +1,11 @@
+import io
 import zipfile
 from pathlib import Path
 from typing import Any
 
-from xlsliberator.report import ConversionReport
+from xlsliberator.validation_models import GateExecutionStatus
 from xlsliberator.web.jobs import JobPhase, JobStore
-from xlsliberator.web.runner import WebJobRunner, _phase_from_core
+from xlsliberator.web.runner import WebJobRunner, _phase_from_remote_stage
 from xlsliberator.web.schemas import WebSettings
 
 
@@ -27,75 +28,190 @@ def _store_with_job(tmp_path: Path) -> tuple[JobStore, str]:
     return store, job_id
 
 
-def test_runner_calls_convert_and_writes_reports(tmp_path: Path, monkeypatch: Any) -> None:
-    store, job_id = _store_with_job(tmp_path)
-    calls: dict[str, Any] = {}
+def _ods_bytes() -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
+    return output.getvalue()
 
-    def fake_convert(input_path: Path, output_path: Path, **kwargs: Any) -> ConversionReport:
-        calls.update(kwargs)
-        with zipfile.ZipFile(output_path, "w") as archive:
-            archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
-        kwargs["progress_callback"]("converting", "Converting", {})
-        return ConversionReport(
-            input_file=str(input_path),
-            output_file=str(output_path),
-            success=True,
-            sheet_count=2,
+
+class FakeOpenSWE:
+    def __init__(self, status: str = "complete") -> None:
+        self.operation_status = status
+        self.cancelled: list[str] = []
+        self.follow_ups: list[dict[str, Any]] = []
+
+    def create_migration(self, workbook: Path, requirements: str = "") -> dict[str, Any]:
+        assert workbook.name == "input.xlsx"
+        assert requirements == ""
+        return {"thread_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "run_id": "run-1"}
+
+    def status(self, thread_id: str) -> dict[str, Any]:
+        assert thread_id
+        return {
+            "thread_id": thread_id,
+            "status": self.operation_status,
+            "artifacts": [
+                {
+                    "id": "a" * 24,
+                    "name": "target.ods",
+                    "kind": "ods",
+                    "media_type": "application/vnd.oasis.opendocument.spreadsheet",
+                },
+                {
+                    "id": "b" * 24,
+                    "name": "bridge.py",
+                    "kind": "generated",
+                    "media_type": "text/x-python",
+                },
+                {
+                    "id": "c" * 24,
+                    "name": "save-reopen.json",
+                    "kind": "evidence",
+                    "media_type": "application/json",
+                },
+            ],
+        }
+
+    def events(self, thread_id: str, since: int) -> dict[str, Any]:
+        assert thread_id
+        events = [
+            {
+                "index": 0,
+                "stage": "plan",
+                "message": "Behavioral migration plan is ready",
+                "status": "complete",
+            },
+            {
+                "index": 1,
+                "stage": "reviewer",
+                "message": "Independent behavior review has reported",
+                "status": "complete",
+            },
+        ]
+        return {"events": events[since:], "next": len(events)}
+
+    def follow_up(
+        self,
+        thread_id: str,
+        *,
+        requirements: str = "",
+        dependency: Path | None = None,
+        media_type: str = "application/octet-stream",
+    ) -> dict[str, Any]:
+        self.follow_ups.append(
+            {
+                "thread_id": thread_id,
+                "requirements": requirements,
+                "dependency": dependency,
+                "media_type": media_type,
+            }
         )
+        return {"thread_id": thread_id, "run_id": "run-2"}
 
-    monkeypatch.setattr("xlsliberator.web.runner.convert", fake_convert)
+    def cancel(self, thread_id: str) -> dict[str, Any]:
+        self.cancelled.append(thread_id)
+        return {"thread_id": thread_id, "status": "cancelled"}
 
-    WebJobRunner(store, WebSettings(data_dir=tmp_path)).run_job(job_id)
+    def download_artifact(self, thread_id: str, artifact_id: str) -> bytes:
+        assert thread_id
+        return {
+            "a" * 24: _ods_bytes(),
+            "b" * 24: b"def migrate(): return True\n",
+            "c" * 24: b'{"status":"passed"}',
+        }[artifact_id]
+
+
+def test_runner_uses_open_swe_and_downloads_delivery_bundle(tmp_path: Path) -> None:
+    store, job_id = _store_with_job(tmp_path)
+    fake = FakeOpenSWE()
+    settings = WebSettings(
+        data_dir=tmp_path,
+        open_swe_poll_seconds=0.1,
+        open_swe_job_timeout_seconds=30,
+    )
+
+    WebJobRunner(store, settings, client=fake).run_job(job_id)
     job = store.get_job(job_id)
 
     assert job is not None
     assert job.status == JobPhase.COMPLETED
+    assert job.remote_thread_id == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert zipfile.is_zipfile(job.output_path)
+    assert not job.input_path.exists()
     assert job.report_json_path.exists()
-    assert str(tmp_path) not in job.report_json_path.read_text()
-    assert calls["allow_global_macro_security_change"] is False
-    assert calls["user_installation_dir"] == tmp_path / "profile"
+    assert {artifact.name for artifact in job.artifacts} == {
+        "target.ods",
+        "bridge.py",
+        "save-reopen.json",
+    }
+    assert any(event.step == "reviewer" for event in job.events)
 
 
-def test_runner_failure_marks_job_failed(tmp_path: Path, monkeypatch: Any) -> None:
+def test_runner_never_falls_back_to_local_conversion(tmp_path: Path) -> None:
     store, job_id = _store_with_job(tmp_path)
-
-    def fake_convert(*_args: Any, **_kwargs: Any) -> ConversionReport:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr("xlsliberator.web.runner.convert", fake_convert)
 
     WebJobRunner(store, WebSettings(data_dir=tmp_path)).run_job(job_id)
     job = store.get_job(job_id)
 
     assert job is not None
     assert job.status == JobPhase.FAILED
-    assert job.error == "boom"
+    assert job.error is not None
+    assert "local conversion is disabled" in job.error
 
 
-def test_runner_rejects_non_package_output_even_when_report_claims_success(
-    tmp_path: Path,
-    monkeypatch: Any,
-) -> None:
+def test_runner_propagates_remote_failure(tmp_path: Path) -> None:
     store, job_id = _store_with_job(tmp_path)
+    fake = FakeOpenSWE(status="failed")
 
-    def fake_convert(input_path: Path, output_path: Path, **_kwargs: Any) -> ConversionReport:
-        output_path.write_text("not an ODS package")
-        return ConversionReport(
-            input_file=str(input_path),
-            output_file=str(output_path),
-            success=True,
-        )
-
-    monkeypatch.setattr("xlsliberator.web.runner.convert", fake_convert)
-
-    WebJobRunner(store, WebSettings(data_dir=tmp_path)).run_job(job_id)
+    WebJobRunner(store, WebSettings(data_dir=tmp_path), client=fake).run_job(job_id)
     job = store.get_job(job_id)
 
     assert job is not None
-    assert job.status is JobPhase.FAILED
-    assert job.operation_status.value == "failed"
-    assert job.error == "Conversion output is not a valid ODS ZIP package"
+    assert job.status == JobPhase.FAILED
+    assert job.error == "Open-SWE migration ended as failed"
 
 
-def test_completed_progress_event_remains_non_terminal_until_package_check() -> None:
-    assert _phase_from_core("completed") is JobPhase.VERIFYING
+def test_follow_up_stays_on_attached_thread(tmp_path: Path) -> None:
+    store, job_id = _store_with_job(tmp_path)
+    fake = FakeOpenSWE()
+    runner = WebJobRunner(store, WebSettings(data_dir=tmp_path), client=fake)
+    store.set_remote(
+        job_id,
+        thread_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        run_id="run-1",
+    )
+    store.mark_completed(job_id)
+
+    runner.follow_up(job_id, requirements="Preserve quarterly import behavior")
+
+    assert fake.follow_ups[0]["thread_id"] == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert fake.follow_ups[0]["requirements"] == "Preserve quarterly import behavior"
+    job = store.get_job(job_id)
+    assert job is not None
+    assert job.remote_run_id == "run-2"
+    assert job.operation_status == GateExecutionStatus.NOT_RUN
+
+
+def test_cancel_propagates_to_attached_thread(tmp_path: Path) -> None:
+    store, job_id = _store_with_job(tmp_path)
+    fake = FakeOpenSWE()
+    runner = WebJobRunner(store, WebSettings(data_dir=tmp_path), client=fake)
+    store.set_remote(
+        job_id,
+        thread_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        run_id="run-1",
+    )
+
+    runner.cancel(job_id)
+
+    assert fake.cancelled == ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]
+    job = store.get_job(job_id)
+    assert job is not None
+    assert job.status == JobPhase.CANCELLED
+
+
+def test_remote_stages_map_to_non_terminal_local_phases() -> None:
+    assert _phase_from_remote_stage("plan") == (JobPhase.CONVERTING, 50)
+    assert _phase_from_remote_stage("reviewer") == (JobPhase.VERIFYING, 80)
+    assert _phase_from_remote_stage("final") == (JobPhase.VERIFYING, 95)

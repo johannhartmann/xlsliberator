@@ -105,19 +105,17 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       XLSLIBERATOR_DATA_DIR: /data
-      XLSLIBERATOR_RUNTIME_TEMP_ROOT: /runtime-tmp
-      XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
-      XLSLIBERATOR_WORKSPACE_ROOTS: /data
-      XLSLIBERATOR_SESSION_ROOT: /data/runtime-sessions
-      XLSLIBERATOR_MAX_UPLOAD_MB: "100"
+      XLSLIBERATOR_OPEN_SWE_URL: ${XLSLIBERATOR_OPEN_SWE_URL:-}
+      XLSLIBERATOR_OPEN_SWE_TOKEN: ${XLSLIBERATOR_OPEN_SWE_TOKEN:-}
+      XLSLIBERATOR_OPEN_SWE_OWNER_ID: ${XLSLIBERATOR_OPEN_SWE_OWNER_ID:-xlsliberator-web}
+      XLSLIBERATOR_OPEN_SWE_POLL_SECONDS: ${XLSLIBERATOR_OPEN_SWE_POLL_SECONDS:-1}
+      XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS: ${XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS:-60}
+      XLSLIBERATOR_OPEN_SWE_JOB_TIMEOUT_SECONDS: ${XLSLIBERATOR_OPEN_SWE_JOB_TIMEOUT_SECONDS:-3600}
+      XLSLIBERATOR_MAX_UPLOAD_MB: "64"
       XLSLIBERATOR_WEB_WORKERS: "1"
       XLSLIBERATOR_JOB_RETENTION_HOURS: "24"
     volumes:
       - xlsliberator-data:/data
-      - ./artifacts/runtime-tmp:/runtime-tmp
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "${DOCKER_GID:-0}"
     restart: unless-stopped
 
   # Trusted local MCP orchestration boundary. The container may create office
