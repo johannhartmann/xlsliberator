@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -78,9 +79,13 @@ class WebJobRunner:
             report.input_file = job.original_filename
             report.output_file = f"{safe_download_stem(job.original_filename)}.ods"
             _write_reports(report, job.report_json_path, job.report_md_path)
-            if report.success and job.output_path.exists():
+            valid_output = job.output_path.is_file() and zipfile.is_zipfile(job.output_path)
+            if report.success and valid_output:
                 self.store.mark_completed(job_id)
             else:
+                if not valid_output and not report.errors:
+                    report.errors.append("Conversion output is not a valid ODS ZIP package")
+                    _write_reports(report, job.report_json_path, job.report_md_path)
                 error = report.errors[-1] if report.errors else "Conversion failed"
                 self.store.mark_failed(job_id, error)
         except Exception as exc:
@@ -102,7 +107,9 @@ def _phase_from_core(phase: str) -> JobPhase:
     if phase.startswith("verifying"):
         return JobPhase.VERIFYING
     if phase == "completed":
-        return JobPhase.COMPLETED
+        # A core progress event is not terminal proof. The runner promotes the
+        # job only after the report and output package have both been checked.
+        return JobPhase.VERIFYING
     if phase == "failed":
         return JobPhase.FAILED
     return JobPhase.ANALYZING

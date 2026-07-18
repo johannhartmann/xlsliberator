@@ -79,11 +79,17 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
-      - run: docker compose --profile ci-orchestrator build test-orchestrator
+      - name: Build Docker orchestrator with retained logs
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator build test-orchestrator \
+            2>&1 | tee artifacts/ci/office-build.log
       - name: Run Docker-contained orchestrator and disposable office jobs
-        run: >-
-          docker compose --profile ci-orchestrator run --rm
-          test-orchestrator python tools/ci_check.py office
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator run --rm \
+            test-orchestrator python tools/ci_check.py office \
+            2>&1 | tee artifacts/ci/office-integration.log
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -104,10 +110,17 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
-      - run: docker compose --profile ci-orchestrator build test-orchestrator
-      - run: >-
-          docker compose --profile ci-orchestrator run --rm
-          test-orchestrator python tools/ci_check.py docker-web
+      - name: Build Docker web orchestrator with retained logs
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator build test-orchestrator \
+            2>&1 | tee artifacts/ci/docker-web-build.log
+      - name: Run blocking Docker web smoke
+        run: |
+          set -o pipefail
+          docker compose --profile ci-orchestrator run --rm \
+            test-orchestrator python tools/ci_check.py docker-web \
+            2>&1 | tee artifacts/ci/docker-web.log
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

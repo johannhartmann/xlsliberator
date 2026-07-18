@@ -207,9 +207,9 @@ class ValidationRunner:
         if self.plan.output_path is None or not self.plan.output_path.exists():
             return ValidationGateResult(
                 gate_name="macro",
-                status=GateExecutionStatus.SKIPPED,
-                severity=ValidationSeverity.WARNING,
-                message="Macro gate skipped because no output ODS exists",
+                status=GateExecutionStatus.FAILED,
+                severity=ValidationSeverity.ERROR,
+                message="Macro validation failed because no output ODS exists",
             )
 
         try:
@@ -258,9 +258,9 @@ class ValidationRunner:
         if self.plan.output_path is None or not self.plan.output_path.exists():
             return ValidationGateResult(
                 gate_name="control",
-                status=GateExecutionStatus.SKIPPED,
-                severity=ValidationSeverity.WARNING,
-                message="Control gate skipped because no output ODS exists",
+                status=GateExecutionStatus.FAILED,
+                severity=ValidationSeverity.ERROR,
+                message="Control validation failed because no output ODS exists",
             )
 
         controls, event_bindings = extract_controls_and_bindings_from_ods(self.plan.output_path)
@@ -338,11 +338,12 @@ class ValidationRunner:
             status = GateExecutionStatus.FAILED
             stage["error"] = f"Worker returned unknown status: {raw_status}"
         if validation_error and status == GateExecutionStatus.NOT_RUN:
-            status = (
-                GateExecutionStatus.UNAVAILABLE
-                if evidence.get("identity") is None
-                else GateExecutionStatus.FAILED
-            )
+            if evidence.get("output_missing"):
+                status = GateExecutionStatus.FAILED
+            elif evidence.get("identity") is None:
+                status = GateExecutionStatus.UNAVAILABLE
+            else:
+                status = GateExecutionStatus.FAILED
         if stage_name == "package" and (evidence.get("validation") or {}).get("source_mutated"):
             status = GateExecutionStatus.FAILED
             stage["error"] = "Target validation mutated the source output"
@@ -777,6 +778,11 @@ class ValidationRunner:
                 "target_trace_id": (
                     self.plan.target_trace.trace_id if self.plan.target_trace else None
                 ),
+                "conversion_report": (
+                    json.loads(self.plan.conversion_report.to_json())
+                    if self.plan.conversion_report is not None
+                    else None
+                ),
             },
         )
         return CertificationReport(certification=certification)
@@ -818,7 +824,12 @@ class ValidationRunner:
             "identity_error": None,
             "validation": None,
             "validation_error": None,
+            "output_missing": False,
         }
+        output = self.plan.output_path
+        if output is None or not output.is_file():
+            evidence["output_missing"] = True
+            evidence["validation_error"] = "Target validation output is missing"
         try:
             identity = self.runtime.resolve_identity()
             evidence["identity"] = asdict(identity)
@@ -828,10 +839,7 @@ class ValidationRunner:
             self._write_target_evidence(evidence)
             return evidence
 
-        output = self.plan.output_path
-        if output is None or not output.is_file():
-            evidence["validation_error"] = "Target validation output is missing"
-        else:
+        if output is not None and output.is_file():
             try:
                 response = self.runtime.validate_document(output, image_id=identity.image_id)
                 if not response.get("success"):

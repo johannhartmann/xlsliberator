@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from xlsliberator.validation_models import GateExecutionStatus
 from xlsliberator.web.jobs import JobPhase, JobStore
 
 
@@ -30,6 +31,8 @@ def test_job_store_events_and_public_serialization(tmp_path: Path) -> None:
 
     assert public is not None
     assert public["status"] == "queued"
+    assert public["transport_success"] is True
+    assert public["operation_status"] == GateExecutionStatus.NOT_RUN.value
     assert [event["index"] for event in public["events"]] == [0, 1]
     assert str(tmp_path) not in str(public)
 
@@ -43,7 +46,26 @@ def test_job_store_completion_and_download_links(tmp_path: Path) -> None:
 
     assert public is not None
     assert public["status"] == "completed"
+    assert public["operation_status"] == GateExecutionStatus.PASSED.value
     assert public["downloads"]["ods"] == f"/jobs/{job_id}/download"
+
+
+def test_progress_event_cannot_expose_downloads_without_operation_pass(tmp_path: Path) -> None:
+    store = JobStore()
+    job_id = _create_job(store, tmp_path)
+
+    store.add_event(
+        job_id,
+        phase=JobPhase.COMPLETED,
+        step="completed",
+        message="Unverified progress event",
+    )
+    public = store.public_job(job_id)
+
+    assert public is not None
+    assert public["status"] == "completed"
+    assert public["operation_status"] == GateExecutionStatus.NOT_RUN.value
+    assert public["downloads"] == {}
 
 
 def test_job_store_cancel_rules(tmp_path: Path) -> None:
@@ -54,6 +76,7 @@ def test_job_store_cancel_rules(tmp_path: Path) -> None:
     cancelled = store.request_cancel(job_id)
 
     assert cancelled.status == JobPhase.CANCELLED
+    assert cancelled.operation_status is GateExecutionStatus.SKIPPED
     with pytest.raises(ValueError):
         store.request_cancel(job_id)
 

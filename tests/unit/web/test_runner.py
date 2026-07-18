@@ -1,9 +1,10 @@
+import zipfile
 from pathlib import Path
 from typing import Any
 
 from xlsliberator.report import ConversionReport
 from xlsliberator.web.jobs import JobPhase, JobStore
-from xlsliberator.web.runner import WebJobRunner
+from xlsliberator.web.runner import WebJobRunner, _phase_from_core
 from xlsliberator.web.schemas import WebSettings
 
 
@@ -32,7 +33,8 @@ def test_runner_calls_convert_and_writes_reports(tmp_path: Path, monkeypatch: An
 
     def fake_convert(input_path: Path, output_path: Path, **kwargs: Any) -> ConversionReport:
         calls.update(kwargs)
-        output_path.write_text("ods")
+        with zipfile.ZipFile(output_path, "w") as archive:
+            archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
         kwargs["progress_callback"]("converting", "Converting", {})
         return ConversionReport(
             input_file=str(input_path),
@@ -68,3 +70,32 @@ def test_runner_failure_marks_job_failed(tmp_path: Path, monkeypatch: Any) -> No
     assert job is not None
     assert job.status == JobPhase.FAILED
     assert job.error == "boom"
+
+
+def test_runner_rejects_non_package_output_even_when_report_claims_success(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    store, job_id = _store_with_job(tmp_path)
+
+    def fake_convert(input_path: Path, output_path: Path, **_kwargs: Any) -> ConversionReport:
+        output_path.write_text("not an ODS package")
+        return ConversionReport(
+            input_file=str(input_path),
+            output_file=str(output_path),
+            success=True,
+        )
+
+    monkeypatch.setattr("xlsliberator.web.runner.convert", fake_convert)
+
+    WebJobRunner(store, WebSettings(data_dir=tmp_path)).run_job(job_id)
+    job = store.get_job(job_id)
+
+    assert job is not None
+    assert job.status is JobPhase.FAILED
+    assert job.operation_status.value == "failed"
+    assert job.error == "Conversion output is not a valid ODS ZIP package"
+
+
+def test_completed_progress_event_remains_non_terminal_until_package_check() -> None:
+    assert _phase_from_core("completed") is JobPhase.VERIFYING

@@ -96,6 +96,30 @@ def test_downloads_for_completed_job(tmp_path: Path) -> None:
     assert client.get(f"/jobs/{job_id}/report.md").status_code == 200
 
 
+def test_download_rejects_completed_phase_without_operation_pass(tmp_path: Path) -> None:
+    app = create_app(WebSettings(data_dir=tmp_path))
+    store = app.state.job_store
+    job_id = "66666666-6666-4666-8666-666666666666"
+    store.create_job(
+        job_id=job_id,
+        original_filename="book.xlsx",
+        input_path=tmp_path / "input.xlsx",
+        output_path=tmp_path / "output.ods",
+        report_json_path=tmp_path / "report.json",
+        report_md_path=tmp_path / "report.md",
+        log_bundle_path=tmp_path / "logs.zip",
+        profile_dir=tmp_path / "profile",
+    )
+    store.add_event(
+        job_id,
+        phase=JobPhase.COMPLETED,
+        step="completed",
+        message="Unverified progress event",
+    )
+
+    assert TestClient(app).get(f"/jobs/{job_id}/download").status_code == 409
+
+
 def test_incomplete_job_cannot_download(tmp_path: Path) -> None:
     app = create_app(WebSettings(data_dir=tmp_path))
     store = app.state.job_store

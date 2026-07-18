@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from xlsliberator.validation_models import GateExecutionStatus
+
 
 class JobPhase(StrEnum):
     """Web conversion lifecycle phases."""
@@ -55,6 +57,7 @@ class WebJob(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     error: str | None = None
     cancellation_requested: bool = False
+    operation_status: GateExecutionStatus = GateExecutionStatus.NOT_RUN
 
 
 class JobStore:
@@ -133,6 +136,7 @@ class JobStore:
         with self._lock:
             job = self._require_job(job_id)
             job.error = error
+            job.operation_status = GateExecutionStatus.FAILED
             return job.model_copy(deep=True)
 
     def mark_completed(self, job_id: str) -> WebJob:
@@ -145,7 +149,9 @@ class JobStore:
             percent=100,
         )
         with self._lock:
-            return self._require_job(job_id).model_copy(deep=True)
+            job = self._require_job(job_id)
+            job.operation_status = GateExecutionStatus.PASSED
+            return job.model_copy(deep=True)
 
     def request_cancel(self, job_id: str) -> WebJob:
         """Request best-effort cancellation."""
@@ -156,6 +162,7 @@ class JobStore:
             job.cancellation_requested = True
             if job.status == JobPhase.QUEUED:
                 job.status = JobPhase.CANCELLED
+                job.operation_status = GateExecutionStatus.SKIPPED
             job.updated_at = datetime.now(UTC)
         self.add_event(
             job_id,
@@ -192,6 +199,8 @@ def public_job_dict(job: WebJob) -> dict[str, Any]:
         "id": job.id,
         "original_filename": job.original_filename,
         "status": job.status.value,
+        "transport_success": True,
+        "operation_status": job.operation_status.value,
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
         "error": job.error,
@@ -215,7 +224,10 @@ def public_job_dict(job: WebJob) -> dict[str, Any]:
 
 
 def _download_links(job: WebJob) -> dict[str, str]:
-    if job.status != JobPhase.COMPLETED:
+    if (
+        job.status != JobPhase.COMPLETED
+        or job.operation_status != GateExecutionStatus.PASSED
+    ):
         return {}
     return {
         "ods": f"/jobs/{job.id}/download",

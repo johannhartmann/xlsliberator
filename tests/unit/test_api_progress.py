@@ -1,3 +1,4 @@
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -14,9 +15,11 @@ def test_convert_progress_callback_order_and_failure_tolerance(
     input_path.write_text("placeholder")
     events: list[str] = []
 
-    monkeypatch.setattr(
-        api, "convert_native", lambda _input, _output, **_kwargs: output_path.write_text("ods")
-    )
+    def write_ods(_input: Path, _output: Path, **_kwargs: Any) -> None:
+        with zipfile.ZipFile(output_path, "w") as archive:
+            archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
+
+    monkeypatch.setattr(api, "convert_native", write_ods)
     monkeypatch.setattr(
         api,
         "extract_workbook",

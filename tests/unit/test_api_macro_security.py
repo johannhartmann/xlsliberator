@@ -1,5 +1,6 @@
 """Tests for safe macro security defaults in conversion."""
 
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +17,11 @@ class _DummyCtx:
 
 
 def _patch_minimal_convert(monkeypatch: Any, output_path: Path) -> None:
-    monkeypatch.setattr(
-        api, "convert_native", lambda _input, _output: output_path.write_text("ods")
-    )
+    def write_ods(_input: Path, _output: Path) -> None:
+        with zipfile.ZipFile(output_path, "w") as archive:
+            archive.writestr("mimetype", "application/vnd.oasis.opendocument.spreadsheet")
+
+    monkeypatch.setattr(api, "convert_native", write_ods)
     monkeypatch.setattr(
         api,
         "extract_workbook",

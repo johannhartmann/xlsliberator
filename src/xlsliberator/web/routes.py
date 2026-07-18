@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, Up
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from xlsliberator.validation_models import GateExecutionStatus
 from xlsliberator.web.jobs import JobPhase, JobStore, WebJob, public_job_dict
 from xlsliberator.web.runner import WebJobRunner
 from xlsliberator.web.schemas import WebSettings
@@ -220,7 +221,10 @@ def _get_job_or_404(store: JobStore, job_id: str) -> WebJob:
 
 def _completed_job_with_file(store: JobStore, job_id: str, kind: str) -> WebJob:
     job = _get_job_or_404(store, job_id)
-    if job.status != JobPhase.COMPLETED:
+    if (
+        job.status != JobPhase.COMPLETED
+        or job.operation_status != GateExecutionStatus.PASSED
+    ):
         raise HTTPException(status_code=409, detail="Job is not complete")
     path = {
         "ods": job.output_path,

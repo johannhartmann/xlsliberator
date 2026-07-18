@@ -1,6 +1,7 @@
 """Docker-only Excel to LibreOffice Calc conversion API."""
 
 import time
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -371,7 +372,11 @@ def convert(
 
         if not output_path.is_file():
             report.errors.append("Conversion did not produce an output file")
-        report.success = output_path.is_file() and not report.errors
+        elif not zipfile.is_zipfile(output_path):
+            report.errors.append("Conversion output is not a valid ODS ZIP package")
+        report.success = (
+            output_path.is_file() and zipfile.is_zipfile(output_path) and not report.errors
+        )
         report.duration_seconds = time.time() - start_time
         if report.success:
             _emit_progress(

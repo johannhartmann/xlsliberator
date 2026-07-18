@@ -1,5 +1,6 @@
 """High-level validated transformation API."""
 
+import json
 from pathlib import Path
 
 from xlsliberator.api import convert
@@ -82,6 +83,9 @@ def transform_validated(
             ],
         )
     ).run_all()
+    report.certification.metadata["conversion_report"] = json.loads(
+        conversion_report.to_json()
+    )
 
     if strict and not report.certification.certified:
         raise ValidatedTransformationError("Validated transformation failed", report)

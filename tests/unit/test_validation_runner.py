@@ -311,8 +311,8 @@ def test_artifact_coverage_gate_writes_source_target_and_diff_evidence(
     }
 
 
-def test_skipped_required_gate_blocks_certification(tmp_path: Path) -> None:
-    """A required skipped gate is never equivalent to passing."""
+def test_missing_output_fails_required_macro_gate(tmp_path: Path) -> None:
+    """A missing output is a failed macro check, not a skipped check."""
     report = ValidationRunner(
         ValidationPlan(
             input_path=tmp_path / "book.xlsx",
@@ -322,7 +322,21 @@ def test_skipped_required_gate_blocks_certification(tmp_path: Path) -> None:
     ).run_all()
 
     assert not report.certification.certified
-    assert report.certification.gate_results[0].status == GateExecutionStatus.SKIPPED
+    assert report.certification.gate_results[0].status == GateExecutionStatus.FAILED
+
+
+def test_missing_output_fails_required_control_gate(tmp_path: Path) -> None:
+    """A missing output is a failed control check, not a warning."""
+    report = ValidationRunner(
+        ValidationPlan(
+            input_path=tmp_path / "book.xlsx",
+            enabled_gates=["control"],
+            strict=False,
+        )
+    ).run_all()
+
+    assert not report.certification.certified
+    assert report.certification.gate_results[0].status == GateExecutionStatus.FAILED
 
 
 def test_parse_target_kind_rejects_removed_targets() -> None:
@@ -697,3 +711,44 @@ def test_target_package_gate_rejects_source_mutation(tmp_path: Path) -> None:
 
     assert gate.status == GateExecutionStatus.FAILED
     assert "mutated" in gate.message
+
+
+def test_missing_output_fails_target_package_even_when_runtime_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    """Missing target evidence is FAILED and cannot be hidden by runtime availability."""
+    runner = ValidationRunner(
+        ValidationPlan(input_path=tmp_path / "book.xlsx", output_path=tmp_path / "missing.ods"),
+        runtime=FakeRuntime(unavailable=True),  # type: ignore[arg-type]
+    )
+
+    gate = runner.run_target_stage_gate("package")
+
+    assert gate.status is GateExecutionStatus.FAILED
+    assert "missing" in gate.message
+
+
+def test_conversion_report_is_retained_in_certification_metadata(tmp_path: Path) -> None:
+    """The exact conversion result remains part of the validation report."""
+    output = tmp_path / "book.ods"
+    with output.open("wb") as handle:
+        handle.write(b"PK")
+    conversion = ConversionReport(
+        input_file="book.xlsx",
+        output_file=str(output),
+        success=False,
+        errors=["native conversion failed"],
+    )
+
+    report = ValidationRunner(
+        ValidationPlan(
+            input_path=tmp_path / "book.xlsx",
+            output_path=output,
+            conversion_report=conversion,
+            enabled_gates=["conversion"],
+        )
+    ).run_all()
+
+    retained = report.certification.metadata["conversion_report"]
+    assert retained["success"] is False
+    assert retained["errors"] == ["native conversion failed"]

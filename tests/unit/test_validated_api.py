@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from xlsliberator.certification_report import CertificationReport
+from xlsliberator.report import ConversionReport
 from xlsliberator.scenarios.models import (
     EnvironmentManifest,
     RuntimeIdentity,
@@ -43,30 +44,43 @@ class _FailingRunner:
         return CertificationReport(ValidationCertification(certified=False, errors=["failed gate"]))
 
 
+def _conversion_report(input_path: Path, output_path: Path) -> ConversionReport:
+    return ConversionReport(
+        input_file=str(input_path),
+        output_file=str(output_path),
+        success=True,
+    )
+
+
 def test_transform_validated_returns_report(tmp_path: Path, monkeypatch: Any) -> None:
     """Validated transform should compose convert and ValidationRunner."""
     calls: list[tuple[Path, Path]] = []
 
     import xlsliberator.validated_api as validated_module
 
-    monkeypatch.setattr(
-        validated_module,
-        "convert",
-        lambda input_path, output_path, **_kwargs: calls.append((input_path, output_path)),
-    )
+    def fake_convert(input_path: Path, output_path: Path, **_kwargs: Any) -> ConversionReport:
+        calls.append((input_path, output_path))
+        return _conversion_report(input_path, output_path)
+
+    monkeypatch.setattr(validated_module, "convert", fake_convert)
     monkeypatch.setattr(validated_module, "ValidationRunner", _PassingRunner)
 
     report = transform_validated(tmp_path / "in.xlsx", tmp_path / "out.ods")
 
     assert report.certification.certified
     assert calls == [(tmp_path / "in.xlsx", tmp_path / "out.ods")]
+    assert report.certification.metadata["conversion_report"]["success"] is True
 
 
 def test_transform_validated_strict_failure_raises(tmp_path: Path, monkeypatch: Any) -> None:
     """Strict validated transform should raise with evidence report."""
     import xlsliberator.validated_api as validated_module
 
-    monkeypatch.setattr(validated_module, "convert", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        validated_module,
+        "convert",
+        lambda input_path, output_path, **_kwargs: _conversion_report(input_path, output_path),
+    )
     monkeypatch.setattr(validated_module, "ValidationRunner", _FailingRunner)
 
     with pytest.raises(ValidatedTransformationError) as exc:
@@ -82,7 +96,11 @@ def test_transform_validated_non_strict_returns_failed_report(
     """Non-strict validated transform should return failed certification evidence."""
     import xlsliberator.validated_api as validated_module
 
-    monkeypatch.setattr(validated_module, "convert", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        validated_module,
+        "convert",
+        lambda input_path, output_path, **_kwargs: _conversion_report(input_path, output_path),
+    )
     monkeypatch.setattr(validated_module, "ValidationRunner", _FailingRunner)
 
     report = transform_validated(tmp_path / "in.xlsx", tmp_path / "out.ods", strict=False)
@@ -142,7 +160,11 @@ def test_transform_validated_runs_docker_target_scenario_from_source_evidence(
         def __init__(self, plan: object) -> None:
             captured["plan"] = plan
 
-    monkeypatch.setattr(validated_module, "convert", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        validated_module,
+        "convert",
+        lambda input_path, output_path, **_kwargs: _conversion_report(input_path, output_path),
+    )
     monkeypatch.setattr(validated_module, "LibreOfficeScenarioRunner", _ScenarioRunner)
     monkeypatch.setattr(validated_module, "ValidationRunner", _CapturingRunner)
     output = tmp_path / "out.ods"

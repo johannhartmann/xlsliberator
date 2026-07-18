@@ -55,6 +55,29 @@ not a project test failure:
 This record is not a passing baseline. Until Docker storage is repaired, all
 unexecuted gates remain `BLOCKED`, never `PASSED`.
 
+## Prompt 01 verification
+
+Prompt 01 is implemented on `feat/evidence-certification-system`; its remote
+Docker CI is pending. The implementation now requires both a successful
+`ConversionReport` and a structurally valid ODS ZIP package, retains that report
+in certification metadata, fails missing-output gates, separates transport from
+operation status in web responses, and blocks downloads until the operation is
+actually `PASSED`. Required office/web/package checks are part of `make all`,
+and required GitHub jobs retain logs without suppressing failures.
+
+| Exact command | Exit | Outcome |
+|---|---:|---|
+| `git diff --check` | 0 | Static patch integrity passed. |
+| `docker compose config --quiet` | 0 | Compose configuration parsed successfully. |
+| `docker compose build test` | 1 | **UNAVAILABLE**. Docker Desktop failed to write `/var/lib/desktop-containerd/daemon/io.containerd.metadata.v1.bolt/meta.db` with `input/output error`. |
+| `docker image ls --format '{{.Repository}}:{{.Tag}} {{.ID}}'` | 1 | **UNAVAILABLE**. Docker Desktop failed to open a content blob with `input/output error`. |
+| Docker lint, typecheck, unit, office, web, package | not run locally | **BLOCKED** by the Docker storage corruption; remote Docker CI is the required verification path. |
+
+The new fail-closed regression tests are
+`tests/unit/test_ci_truthfulness.py`, the conversion/validation tests in
+`tests/unit/test_validation_runner.py` and `tests/unit/test_validated_api.py`,
+and the web operation-status/package tests under `tests/unit/web/`.
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
@@ -92,8 +115,8 @@ when applicable, and ledger update are linked.
 | Prompt | Status | Required acceptance evidence |
 |---:|---|---|
 | 00 — baseline and architecture | COMPLETE WITH BLOCKED RUNTIME | this baseline; [migration architecture](architecture/open-swe-migration.md); [decision log](architecture/decision-log.md) |
-| 01 — truthful validation and CI | **NEXT** | fail-closed tests, aligned Docker CI commands, exact results |
-| 02 — extract model orchestration | PENDING | dependency/import audit, removed prohibited runtime/worker paths, tests |
+| 01 — truthful validation and CI | IMPLEMENTED; CI PENDING | fail-closed tests, aligned Docker CI commands, exact results |
+| 02 — extract model orchestration | **NEXT AFTER CI** | dependency/import audit, removed prohibited runtime/worker paths, tests |
 | 03 — `xlsprobe` dossier | PENDING | CLI/API schema, fixture snapshots, dossier evidence |
 | 04 — transactional `odstool` | PENDING | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | PENDING | scenario schema, target execution traces, negative cases |
@@ -118,6 +141,7 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Run **Prompt 01 — Make the current validation and CI truthful**. Docker-backed
-verification must be rerun after the Docker Desktop storage fault is repaired;
+Complete remote Docker CI for **Prompt 01**, then run **Prompt 02 — Extract
+model orchestration from the XLSLiberator core**. Docker-backed verification
+must also be rerun locally after the Docker Desktop storage fault is repaired;
 no local Python or office fallback is permitted.

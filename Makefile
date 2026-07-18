@@ -1,4 +1,4 @@
-.PHONY: help fmt lint typecheck test test-unit test-integration test-cov security audit bandit all clean install pre-commit
+.PHONY: help fmt lint typecheck test test-unit test-integration test-docker-web test-package test-cov security audit bandit all clean install pre-commit
 
 DOCKER_TEST := docker compose run --rm test
 DOCKER_ORCHESTRATOR := docker compose --profile ci-orchestrator run --rm test-orchestrator
@@ -15,6 +15,8 @@ help:
 	@echo "  make test         - Run all tests"
 	@echo "  make test-unit    - Run unit tests only"
 	@echo "  make test-integration - Run integration tests"
+	@echo "  make test-docker-web - Run the blocking Docker web smoke"
+	@echo "  make test-package - Build and validate distributions"
 	@echo "  make test-cov     - Run tests with coverage report"
 	@echo ""
 	@echo "Security:"
@@ -59,6 +61,18 @@ test-integration:
 	mkdir -p artifacts/runtime-tmp artifacts/pytest-tmp artifacts/ci
 	$(DOCKER_ORCHESTRATOR) python tools/ci_check.py office
 
+test-docker-web:
+	@echo "==> Running blocking Docker web smoke..."
+	mkdir -p artifacts/runtime-tmp artifacts/pytest-tmp artifacts/ci
+	docker compose --profile ci-orchestrator run --rm \
+		-e DOCKER_TESTS=1 -e XLSLIBERATOR_FAIL_ON_SKIP=1 \
+		test-orchestrator python tools/ci_check.py docker-web
+
+test-package:
+	@echo "==> Building and validating distributions..."
+	mkdir -p dist
+	$(DOCKER_TEST) python tools/ci_check.py package
+
 test-cov:
 	@echo "==> Running tests with coverage..."
 	$(DOCKER_TEST) pytest -v --cov=xlsliberator --cov-report=term --cov-report=html
@@ -81,7 +95,7 @@ pre-commit:
 	@echo "Pre-commit execution is containerized; host hook installation is intentionally disabled."
 	$(DOCKER_TEST) pre-commit run --all-files
 
-all: fmt lint typecheck test-unit security
+all: fmt lint typecheck test-unit test-integration test-docker-web test-package security
 	@echo ""
 	@echo "=========================================="
 	@echo "✓ All checks passed!"

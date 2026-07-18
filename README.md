@@ -12,15 +12,18 @@ XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.x
 ## Features
 
 - **Formula Translation**: Deterministic AST-based formula transformation for Excel→Calc compatibility
-- **VBA-to-Python-UNO Conversion**: Translates Excel VBA macros to Python-UNO scripts with 4-phase quality pipeline
-- **Translation Quality Assurance**: Reference-aware translation, syntax validation, reflection loop, and automated test generation
+- **Experimental VBA-to-Python-UNO Conversion**: The legacy provider-backed path
+  is not accepted unless deterministic validation and required target evidence pass
+- **Translation Evidence**: Records syntax, export, provenance, runtime, and
+  unresolved-artifact outcomes without promoting model confidence to success
 - **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
-- **Safe-by-Default Macros**: Embeds and validates Python macros in isolated LibreOffice profiles without changing your global macro security settings
+- **Safe-by-Default Macros**: Never changes host macro security; runtime checks,
+  when requested, run only in disposable Docker profiles
 - **Validated Transformation**: Experimental certification pipeline for the pinned LibreOffice Docker runtime; current measured capabilities are listed in the [capability matrix](docs/capability_matrix.md)
 - **Native LibreOffice Conversion**: Uses LibreOffice as the base converter; semantic equivalence requires scenario evidence
 - **Artifact Inventory**: Detects supported and unsupported workbook structures without claiming universal coverage
-- **High Performance**: Processes 27k+ cells in under 5 minutes
-- **🆕 MCP Server**: FastMCP 2.0 server for Claude Agent SDK integration with 19 tools
+- **MCP Server**: FastMCP server with explicit transport and operation status;
+  unimplemented capabilities return `UNAVAILABLE`
 
 ## Prerequisites
 
@@ -174,7 +177,7 @@ result = convert(
     "input.xlsm",
     "output.ods",
     embed_macros=True,   # translate and embed VBA macros (default)
-    use_agent=True,      # multi-agent rewriting for complex VBA (default)
+    use_agent=True,      # legacy compatibility option; not certification evidence
 )
 
 print(f"Conversion completed: {result.success}")
@@ -206,11 +209,12 @@ During conversion, XLSLiberator:
 - Rewrites event handlers in `content.xml` from `language=Basic` to `language=Python`
 - Loads documents only in the disposable pinned office worker container, where
   `MacroExecutionMode=4` is scoped to that isolated job profile
-- Runs runtime macro validation inside isolated, temporary LibreOffice profiles
+- Runs requested runtime macro checks inside isolated, temporary LibreOffice
+  profiles; an unavailable or skipped check does not pass validation
 
-**Your global LibreOffice macro security is not modified by default.** To actually run the embedded
-macros after opening the converted file in your own LibreOffice, configure macro security yourself (see
-below). The legacy behavior that lowers the *global* macro security level is opt-in only:
+**XLSLiberator does not modify global LibreOffice macro security.** The legacy
+option is retained only for API compatibility and reports that global mutation
+is unsupported:
 
 ```python
 from xlsliberator.api import convert
@@ -235,11 +239,12 @@ XLSLiberator uses a hybrid approach:
 
 1. **Native Conversion**: the pinned LibreOffice Docker runtime provides the base conversion; equivalence is evaluated separately
 2. **VBA Extraction**: Extracts VBA code from Excel files using oletools
-3. **LLM Translation**: Translates VBA to Python-UNO using Claude API with 4-phase quality pipeline:
+3. **Legacy LLM Translation**: Proposes VBA-to-Python-UNO candidates using the
+   currently configured provider:
    - Phase 1: Reference-aware translation (hybrid LLM + regex pattern detection)
    - Phase 2: Python-UNO syntax validation (AST parsing, compilation checks)
-   - Phase 3: Agentic reflection loop (self-evaluation and iterative refinement)
-   - Phase 4: Runtime execution testing (UNO script execution validation)
+   - Phase 3: legacy reflection and iterative refinement
+   - Phase 4: target runtime evidence when available
 4. **Macro Embedding**: Embeds translated Python macros into the ODS file via UNO
 5. **Event Handler Rewriting**: Updates VBA event handlers to point to Python functions
 6. **Isolated Runtime Validation**: Runs required validation in disposable, resource-limited LibreOffice containers and profiles
@@ -332,9 +337,11 @@ Measured results are generated from the conformance corpus and published in the
 [capability matrix](docs/capability_matrix.md) and generated
 [release-readiness report](docs/release_readiness.md); unavailable, skipped,
 unsupported, waived, and failed runs remain distinct from passing results.
-The current generated release decision is **NO**: three target-runtime cases are
-validated, while required XLSX/XLSM/security cases and all Excel source
-differentials are not yet green.
+The checked-in generated readiness report belongs to the earlier certification
+architecture. It is not evidence that the Open-SWE autonomous migration system
+is complete. The current Docker-backed baseline is blocked by a Docker Desktop
+storage I/O failure; see the
+[agentic implementation ledger](docs/agentic_implementation_status.md).
 
 ## Known Limitations
 
@@ -380,6 +387,6 @@ GitHub: [@johannhartmann](https://github.com/johannhartmann)
 
 ## Roadmap
 
-- [x] Support for more VBA patterns and validation (4-phase quality pipeline)
+- [ ] Migrate model orchestration and independent review to `xlsliberator-swe`
 - [ ] Enhanced formula repair logic
 - [ ] Integration tests for VBA quality pipeline
