@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "repair_id": "tdf-172479-text-functions",
+  "case_id": "tdf-172479-textafter-positive-match-end",
+  "source_report": "docs/capability_matrix.json",
+  "source_report_sha256": "6f79c2082c3097f611889b744a2a101accd7beac478f7ae94e913bc86fc14e1d",
+  "executions": [
+    {
+      "fixture_id": "public-tdf-172479",
+      "status": "passed",
+      "evidence_path": "office/libreoffice/conformance/evidence/tdf-172479.json"
+    },
+    {
+      "fixture_id": "regression-tdf-172479-minimized",
+      "status": "passed",
+      "evidence_path": "office/libreoffice/conformance/evidence/tdf-172479.json"
+    }
+  ]
+}

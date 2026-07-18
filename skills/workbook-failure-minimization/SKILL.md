@@ -59,3 +59,13 @@ record while preserving the same LibreOffice import assertion failure.
 
 Adversarial: delete the assertion that distinguishes wrong output and keep only
 the process exit code. Reject this as validator weakening, not minimization.
+
+## Promoted repair example
+
+The public `tdf-172479-text-functions` repair record demonstrates the complete
+promotion path: a synthetic multi-feature failure was reduced to one TEXTAFTER
+formula, the pinned stock LibreOffice source build failed, the same commit plus
+one upstreamable patch passed, the affected corpus retained the regression, and
+an independent deterministic reviewer verified the identities. Use
+`repairs/tdf-172479-text-functions/record.json` as the schema example; never copy
+its successful status to a new repair without new execution evidence.

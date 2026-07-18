@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0.0",
+  "repair_id": "tdf-172479-text-functions",
+  "reviewer": "deterministic-repair-policy-gate-v1",
+  "implementation_owner": "libreoffice-source-repair",
+  "verdict": "APPROVE",
+  "checks": {
+    "same_pinned_source_commit": true,
+    "stock_failed_as_expected": true,
+    "patched_passed_exact_scenario": true,
+    "minimized_fixture_retained": true,
+    "affected_corpus_recorded": true,
+    "validator_unchanged": true,
+    "patch_is_upstream_reviewed": true
+  },
+  "evidence": "office/libreoffice/conformance/evidence/tdf-172479.json",
+  "upstream_review": "https://gerrit.libreoffice.org/c/core/+/206776"
+}

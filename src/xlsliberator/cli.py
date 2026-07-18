@@ -540,6 +540,28 @@ def _serve_libreoffice_mcp(
         sys.exit(1)
 
 
+@cli.command(name="corpus-mcp-serve")
+@click.option("--host", default="127.0.0.1", help="Loopback address to bind to")
+@click.option("--port", default=8010, help="Port number")
+def corpus_mcp_serve_cmd(host: str, port: int) -> None:
+    """Start the public corpus and reviewer-gated hidden-suite MCP service."""
+    from xlsliberator.migration_services_mcp import serve_corpus
+
+    click.echo(f"Starting migration corpus MCP server on {host}:{port}")
+    serve_corpus(host, port)
+
+
+@cli.command(name="buildfarm-mcp-serve")
+@click.option("--host", default="127.0.0.1", help="Loopback address to bind to")
+@click.option("--port", default=8020, help="Port number")
+def buildfarm_mcp_serve_cmd(host: str, port: int) -> None:
+    """Start the authorized LibreOffice build-farm contract MCP service."""
+    from xlsliberator.migration_services_mcp import serve_buildfarm
+
+    click.echo(f"Starting LibreOffice build-farm MCP server on {host}:{port}")
+    serve_buildfarm(host, port)
+
+
 @cli.command(name="web-serve")
 @click.option("--host", default="0.0.0.0", help="Host address to bind to")  # nosec B104
 @click.option("--port", default=8080, help="Port number")

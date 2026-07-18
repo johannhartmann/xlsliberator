@@ -70,6 +70,7 @@ jobs:
           docker compose run --rm test pytest -p no:cacheprovider -q
           tests/unit/test_conformance_corpus.py
           tests/unit/test_demo_corpus.py
+          tests/unit/test_repair_promotion.py
           tests/unit/test_capability_matrix.py
       - name: Validate PR demo subset and generate not-measured capability report
         run: |
