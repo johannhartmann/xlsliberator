@@ -65,8 +65,8 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
     assert "Start &amp; play &lt;now&gt;" in serialized
     assert 'table:name="game &quot;certification&quot;"' in serialized
     assert 'form:name="Certification &quot;Button&quot;"' in serialized
-    assert 'form:delay-for-repeat="PT0.050000000S"' in serialized
-    assert 'xlink:href=""' in serialized
+    assert 'form:command-type="table"' not in serialized
+    assert "form:apply-filter" not in serialized
     assert "<table:shapes>" in serialized
 
 

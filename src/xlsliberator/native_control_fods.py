@@ -134,12 +134,7 @@ def _forms_xml(controls: list[tuple[NativeButton, str]]) -> str:
     return f"""    <office:forms form:automatic-focus="false" form:apply-design-mode="false">
      <form:form
       form:name="CertificationForm"
-      form:apply-filter="true"
-      form:command-type="table"
-      form:control-implementation="ooo:com.sun.star.form.component.Form"
-      office:target-frame=""
-      xlink:href=""
-      xlink:type="simple">
+      form:control-implementation="ooo:com.sun.star.form.component.Form">
 {buttons}     </form:form>
     </office:forms>
 """
@@ -153,19 +148,7 @@ def _button_xml(button: NativeButton, control_id: str) -> str:
        form:control-implementation="ooo:com.sun.star.form.component.CommandButton"
        xml:id="{control_id}"
        form:id="{control_id}"
-       form:label="{label}"
-       xlink:href=""
-       form:image-data=""
-       form:delay-for-repeat="PT0.050000000S"
-       form:image-position="center"
-       office:target-frame="">
-       <form:properties>
-        <form:property
-         form:property-name="DefaultControl"
-         office:value-type="string"
-         office:string-value="com.sun.star.form.control.CommandButton"/>
-       </form:properties>
-      </form:button>
+       form:label="{label}"/>
 """
 
 
