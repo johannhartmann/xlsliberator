@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -5,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from xlsliberator.report import ConversionReport
 from xlsliberator.web.app import create_app
-from xlsliberator.web.jobs import JobPhase
+from xlsliberator.web.jobs import JobArtifact, JobPhase
 from xlsliberator.web.schemas import WebSettings
 
 
@@ -153,6 +154,67 @@ def test_completed_page_displays_report_metrics(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "Formula match rate" in response.text
     assert "100.00%" in response.text
+
+
+def test_completed_showcase_replays_real_job_artifacts(tmp_path: Path) -> None:
+    client, job_id = _completed_client(tmp_path)
+    store = client.app.state.job_store
+    job = store.get_job(job_id)
+    assert job is not None
+    recording = job.input_path.parent / "keyboard-control.webm"
+    recording.write_bytes(b"real-webm-evidence")
+    result = job.input_path.parent / "keyboard-control-result.json"
+    result.write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "scenario_id": "keyboard-control",
+                "operations": [
+                    {
+                        "sequence": 1,
+                        "kind": "key",
+                        "status": "passed",
+                        "duration_ms": 125,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store.set_artifacts(
+        job_id,
+        [
+            JobArtifact(
+                id="a" * 24,
+                name=recording.name,
+                kind="showcase-recording",
+                media_type="video/webm",
+                path=recording,
+            ),
+            JobArtifact(
+                id="b" * 24,
+                name=result.name,
+                kind="showcase-result",
+                media_type="application/json",
+                path=result,
+            ),
+        ],
+    )
+
+    response = client.get(f"/jobs/{job_id}/showcase")
+
+    assert response.status_code == 200
+    assert "Interactive game · keyboard-control" in response.text
+    assert f"/jobs/{job_id}/artifacts/{'a' * 24}" in response.text
+    assert "operation.duration_ms" in response.text
+    assert client.get(f"/api/jobs/{job_id}").json()["downloads"]["showcase_replay"] == (
+        f"/jobs/{job_id}/showcase"
+    )
+
+    result.write_text('{"status":"failed"}', encoding="utf-8")
+    rejected = client.get(f"/jobs/{job_id}/showcase")
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Showcase result did not pass"
 
 
 def test_cancel_api_for_queued_job(tmp_path: Path, monkeypatch: Any) -> None:

@@ -361,6 +361,12 @@ def _download_links(job: WebJob) -> dict[str, str]:
         "report_json": f"/jobs/{job.id}/report.json",
         "report_md": f"/jobs/{job.id}/report.md",
         "artifacts": f"/api/jobs/{job.id}/artifacts",
+        **(
+            {"showcase_replay": f"/jobs/{job.id}/showcase"}
+            if {artifact.kind for artifact in job.artifacts}
+            >= {"showcase-recording", "showcase-result"}
+            else {}
+        ),
     }
 
 

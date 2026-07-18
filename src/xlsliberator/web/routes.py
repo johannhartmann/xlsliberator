@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -88,6 +90,24 @@ def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) 
                 "job": job,
                 "report_summary": _load_report_summary(job),
                 "public_job_json": json.dumps(public_job_dict(job)),
+            },
+        )
+
+    @router.get("/jobs/{job_id}/showcase", response_class=HTMLResponse)
+    def showcase_replay(request: Request, job_id: str) -> Response:
+        job = _get_job_or_404(store, job_id)
+        if (
+            job.status != JobPhase.COMPLETED
+            or job.operation_status != GateExecutionStatus.PASSED
+        ):
+            raise HTTPException(status_code=409, detail="Showcase evidence is not complete")
+        replay = _load_showcase_replay(job)
+        return templates.TemplateResponse(
+            request,
+            "showcase.html",
+            {
+                "job": job,
+                "replay": replay,
             },
         )
 
@@ -357,6 +377,88 @@ def _completed_job_with_file(store: JobStore, job_id: str, kind: str) -> WebJob:
     if not path.exists():
         raise HTTPException(status_code=404, detail="Requested artifact is missing")
     return job
+
+
+def _load_showcase_replay(job: WebJob) -> dict[str, Any]:
+    recordings = [
+        artifact for artifact in job.artifacts if artifact.kind == "showcase-recording"
+    ]
+    results = [artifact for artifact in job.artifacts if artifact.kind == "showcase-result"]
+    if len(recordings) != 1 or len(results) != 1:
+        raise HTTPException(status_code=409, detail="Showcase evidence manifest is ambiguous")
+    recording = recordings[0]
+    result = results[0]
+    if recording.media_type != "video/webm" or result.media_type != "application/json":
+        raise HTTPException(status_code=409, detail="Showcase evidence media types are invalid")
+    if not _is_job_artifact(job, recording.path) or not _is_job_artifact(job, result.path):
+        raise HTTPException(status_code=409, detail="Showcase evidence path is invalid")
+    if not recording.path.is_file() or recording.path.stat().st_size == 0:
+        raise HTTPException(status_code=404, detail="Showcase recording is missing")
+    if (
+        not result.path.is_file()
+        or result.path.stat().st_size == 0
+        or result.path.stat().st_size > 2 * 1024 * 1024
+    ):
+        raise HTTPException(status_code=409, detail="Showcase result is missing or oversized")
+    try:
+        raw = json.loads(result.path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=409, detail="Showcase result is not valid JSON") from exc
+    if not isinstance(raw, dict) or raw.get("status") != "passed":
+        raise HTTPException(status_code=409, detail="Showcase result did not pass")
+    scenario_id = raw.get("scenario_id")
+    if not isinstance(scenario_id, str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", scenario_id) is None:
+        raise HTTPException(status_code=409, detail="Showcase scenario identifier is invalid")
+    raw_operations = raw.get("operations")
+    if not isinstance(raw_operations, list) or not 1 <= len(raw_operations) <= 100:
+        raise HTTPException(status_code=409, detail="Showcase operation evidence is invalid")
+
+    operations: list[dict[str, int | float | str]] = []
+    for expected_sequence, raw_operation in enumerate(raw_operations, start=1):
+        if not isinstance(raw_operation, dict):
+            raise HTTPException(status_code=409, detail="Showcase operation is invalid")
+        sequence = raw_operation.get("sequence")
+        kind = raw_operation.get("kind")
+        status = raw_operation.get("status")
+        duration_ms = raw_operation.get("duration_ms")
+        if (
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or sequence != expected_sequence
+        ):
+            raise HTTPException(status_code=409, detail="Showcase operation sequence is invalid")
+        if not isinstance(kind, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", kind) is None:
+            raise HTTPException(status_code=409, detail="Showcase operation kind is invalid")
+        if status != "passed":
+            raise HTTPException(status_code=409, detail="Showcase operation did not pass")
+        if (
+            not isinstance(duration_ms, (int, float))
+            or isinstance(duration_ms, bool)
+            or not math.isfinite(duration_ms)
+            or not 0 <= duration_ms <= 300_000
+        ):
+            raise HTTPException(status_code=409, detail="Showcase operation duration is invalid")
+        operations.append(
+            {
+                "sequence": sequence,
+                "kind": kind,
+                "status": status,
+                "duration_ms": duration_ms,
+            }
+        )
+    return {
+        "scenario_id": scenario_id,
+        "operations": operations,
+        "recording_url": f"/jobs/{job.id}/artifacts/{recording.id}",
+    }
+
+
+def _is_job_artifact(job: WebJob, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(job.input_path.parent.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _load_report_summary(job: WebJob) -> dict[str, Any] | None:

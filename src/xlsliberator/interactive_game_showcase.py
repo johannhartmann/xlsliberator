@@ -38,6 +38,7 @@ def run_gui_scenario(
     evidence_archive: Path,
     actions: list[dict[str, Any]],
     *,
+    scenario_id: str | None = None,
     timer_enabled: bool = True,
     timeout_seconds: int = 180,
 ) -> dict[str, Any]:
@@ -51,6 +52,7 @@ def run_gui_scenario(
             "op": "run_gui_scenario",
             "ods_path": str(target),
             "output_path": str(evidence_archive),
+            "scenario_id": scenario_id or evidence_archive.stem,
             "adapter": "interactive-game",
             "actions": actions,
             "timer_enabled": timer_enabled,

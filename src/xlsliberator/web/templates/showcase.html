@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Interactive game replay · XLSLiberator{% endblock %}
+{% block content %}
+<section class="card">
+  <p class="eyebrow">Recorded LibreOffice evidence</p>
+  <h1>Interactive game · {{ replay.scenario_id }}</h1>
+  <p>
+    This is a replay of real X11 input against LibreOffice 26.2.4.2.
+    The video and operation evidence were delivered by the same completed migration job.
+  </p>
+  <video id="showcase-recording" controls preload="metadata" style="width:100%">
+    <source src="{{ replay.recording_url }}" type="video/webm">
+  </video>
+  <h2>Replay timeline</h2>
+  <ol id="showcase-timeline"></ol>
+  <p>
+    <a class="button" href="/jobs/{{ job.id }}/download">Download the playable ODS</a>
+    <a class="button secondary" href="/jobs/{{ job.id }}">Back to migration evidence</a>
+  </p>
+</section>
+<script id="showcase-evidence" type="application/json">{{ replay.operations | tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+  const operations = JSON.parse(document.getElementById("showcase-evidence").textContent);
+  const recording = document.getElementById("showcase-recording");
+  const timeline = document.getElementById("showcase-timeline");
+  let elapsed = 0;
+  operations.forEach((operation) => {
+    const start = elapsed;
+    elapsed += operation.duration_ms / 1000;
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${operation.sequence}. ${operation.kind} — ${operation.status}`;
+    button.addEventListener("click", () => {
+      recording.currentTime = Math.min(
+        start,
+        Number.isFinite(recording.duration) ? recording.duration : start,
+      );
+      recording.play();
+    });
+    item.appendChild(button);
+    timeline.appendChild(item);
+  });
+</script>
+{% endblock %}

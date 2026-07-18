@@ -51,6 +51,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     actions = request.get("actions")
     if not isinstance(actions, list) or not 1 <= len(actions) <= 100:
         raise ValueError("run_gui_scenario requires between 1 and 100 actions")
+    scenario_id = _safe_name(request.get("scenario_id"), "scenario_id")
 
     display = str(os.environ.get("DISPLAY") or "")
     if not re.fullmatch(r":\d{1,5}", display):
@@ -172,6 +173,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("GUI recording was not produced")
     response: dict[str, Any] = {
         "status": "passed",
+        "scenario_id": scenario_id,
         "event_layer": "xvfb-openbox-xdotool",
         "display": display,
         "source_sha256": _sha256_file(source),
