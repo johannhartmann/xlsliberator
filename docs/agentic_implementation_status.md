@@ -182,12 +182,45 @@ Prompt 06 now routes target execution through the stateful runtime service.
 | `docker compose run --rm test python tools/ci_check.py package` | 0 | Wheel and sdist built; the packaged startup guard and metadata passed. |
 | `docker compose run --rm test python -m xlsliberator.migration_check --help` | 0 | All five required commands were exposed from the current source. |
 
+## Prompt 06 verification
+
+Prompt 06 is implemented and verified in
+[remote Docker CI run 29649373322](https://github.com/johannhartmann/xlsliberator/actions/runs/29649373322)
+at commit `15a28ea`. The runtime boundary exposes exactly the 19 curated stateful
+LibreOffice operations. Every operation requires an explicit session ID and
+reports transport state separately from operation status. Sessions receive an
+isolated LibreOffice profile, port, display, working copy, log directory, and
+the exact pinned office build. Workspace-root policy, localhost-only transport,
+timeouts, forced container cleanup, retained failure evidence, truthful
+unavailable UI behavior, and disposable source-preserving document copies are
+enforced by the service.
+
+The migration checker and scenario runner use the stateful service rather than
+starting LibreOffice directly. The stable entry point is
+`xlsliberator libreoffice-mcp-serve`; the historical MCP command is a deprecated
+wrapper. Unit coverage includes fake backend and fake client transport tests,
+session correlation, isolation, cleanup, path rejection, timeout handling, and
+scenario evidence. The blocking integration job exercises the real
+LibreOffice 26.2.4.2 image entirely through Docker.
+
+| Exact CI command | Exit | Outcome |
+|---|---:|---|
+| `docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=1g,mode=1777 --volume "$PWD:/workspace" --workdir /workspace xlsliberator-test:py3.11 pytest -p no:cacheprovider -m "not integration" --junitxml=artifacts/pytest-unit-3.11.xml` | 0 | Python 3.11 office-free unit matrix passed. |
+| `docker run --rm --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=1g,mode=1777 --volume "$PWD:/workspace" --workdir /workspace xlsliberator-test:py3.12 pytest -p no:cacheprovider -m "not integration" --junitxml=artifacts/pytest-unit-3.12.xml` | 0 | Python 3.12 office-free unit matrix passed. |
+| `docker compose run --rm test ruff format --no-cache --check .` | 0 | Formatting gate passed. |
+| `docker compose run --rm test ruff check --no-cache .` | 0 | Lint gate passed. |
+| `docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/` | 0 | Strict typing gate passed. |
+| `docker compose --profile ci-orchestrator run --rm test-orchestrator python tools/ci_check.py office` | 0 | Blocking disposable-office integration passed against LibreOffice 26.2.4.2 and uploaded retained evidence. |
+| `docker compose --profile ci-orchestrator run --rm test-orchestrator python tools/ci_check.py docker-web` | 0 | Blocking Docker web smoke passed and uploaded its attestation and test report. |
+| `docker compose --profile ci-orchestrator run --rm security-audit python tools/ci_check.py security` | 0 | Docker security gate passed. |
+| `docker compose run --rm test python tools/ci_check.py package` | 0 | Wheel, sdist, packaged startup guard, and metadata checks passed. |
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
 |---|---|---|
 | Legacy provider code | deprecated modules remain available only under the optional `xlsliberator.legacy_agent` extra for migration compatibility | remove after all downstream users have moved to `xlsliberator-swe` |
-| Core deterministic surface | typed primitives, `xlsprobe`, transactional `odstool`, and fail-closed `migration-check` exist; the target runner is still one-shot | Prompt 06 replaces the one-shot target boundary with a stateful runtime service |
+| Core deterministic surface | typed primitives, `xlsprobe`, transactional `odstool`, fail-closed `migration-check`, and the stateful target runtime exist | Prompt 07 composes them from the thin Open-SWE fork |
 | Fail-open or ambiguous validation states | macro/control gates can report `SKIPPED` for missing output; legacy translation fallbacks return source text; some test paths accept skipped live behavior | Prompt 01 makes required gates reject `SKIPPED`, `UNAVAILABLE`, `NOT_RUN`, timeouts, and transport-only success |
 | Integration coverage is incomplete outside CI | GitHub office and web jobs are now blocking with `XLSLIBERATOR_FAIL_ON_SKIP=1`, but `make all` omits office, web, and package gates; multiple integration modules still contain permissive skips outside that mode | Prompt 01 aligns local and CI truth and separates explicitly optional live-provider tests |
 | Placeholder or inaccurate tools | `take_screenshot` and keyboard input are registered MCP tools but only return unavailable; “click” resolves a handler and invokes a script rather than dispatching a GUI click; `test_placeholder.py` adds no behavior coverage | Prompt 01 corrects naming/status; Prompts 04 and 06 expose only operations with truthful semantics |
@@ -220,7 +253,7 @@ when applicable, and ledger update are linked.
 | 03 — `xlsprobe` dossier | COMPLETE; REMOTE CI GREEN AT `9cce352` | CLI/API schema, fixture snapshots, dossier evidence |
 | 04 — transactional `odstool` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | scenario schema, deterministic target traces, fail-closed negatives, mutation evidence |
-| 06 — stateful LibreOffice MCP | IMPLEMENTED; REMOTE CI REQUIRED | session lifecycle, isolation, runtime integration evidence |
+| 06 — stateful LibreOffice MCP | COMPLETE; REMOTE CI GREEN AT `15a28ea` | session lifecycle, isolation, runtime integration evidence |
 | 07 — thin Open-SWE fork | PENDING | separate repository, upstream record, sync procedure |
 | 08 — sandbox snapshot | PENDING | image/SBOM, tool versions, sandbox smoke |
 | 09 — triggers and hydration | PENDING | attachment tests, artifact hashes, durable-thread evidence |
@@ -241,9 +274,7 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Commit and push Prompt 06 so remote Docker CI can execute the real pinned
-LibreOffice lifecycle and timeout-cleanup tests, then begin **Prompt 07 — thin
-Open-SWE fork**. Local commands continue exclusively in Docker. A separate
-BuildKit builder is used for fresh image builds because the default Docker
-content store contains a zero-filled cached base layer; no local Python or
-office fallback is permitted.
+Begin **Prompt 07 — thin Open-SWE fork** in the separate
+`johannhartmann/xlsliberator-swe` repository while preserving upstream Open-SWE
+history and recording the exact fork point. Local commands continue exclusively
+in Docker; no local Python or office fallback is permitted.
