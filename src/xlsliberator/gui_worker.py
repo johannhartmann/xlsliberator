@@ -40,8 +40,18 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
         _sha256_file,
     )
 
-    source = _job_path(request["ods_path"], must_exist=True)
-    archive_path = _job_path(request["output_path"], must_exist=False)
+    source = _confined_path(
+        request["ods_path"],
+        root=Path(os.environ.get("XLSLIBERATOR_INPUT_DIR", "/input")),
+        must_exist=True,
+        label="GUI scenario input",
+    )
+    archive_path = _confined_path(
+        request["output_path"],
+        root=Path(os.environ.get("XLSLIBERATOR_JOB_DIR", "/job")),
+        must_exist=False,
+        label="GUI scenario output",
+    )
     if archive_path.suffix.lower() != ".zip":
         raise ValueError("GUI scenario output must be a ZIP evidence bundle")
     output_dir = archive_path.parent / f".{archive_path.stem}-gui-evidence"
@@ -263,11 +273,17 @@ def _require_gui_container() -> None:
         raise RuntimeError("real UI events require the dedicated pinned Docker GUI runtime")
 
 
-def _job_path(raw: object, *, must_exist: bool) -> Path:
-    root = Path(os.environ.get("XLSLIBERATOR_JOB_DIR", "/job")).resolve()
+def _confined_path(
+    raw: object,
+    *,
+    root: Path,
+    must_exist: bool,
+    label: str,
+) -> Path:
+    root = root.resolve()
     path = Path(str(raw)).resolve()
     if path != root and root not in path.parents:
-        raise ValueError("GUI scenario paths must remain inside the container job directory")
+        raise ValueError(f"{label} must remain inside {root}")
     if must_exist and not path.is_file():
         raise FileNotFoundError(path)
     return path
