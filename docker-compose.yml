@@ -36,7 +36,7 @@ services:
       XLSLIBERATOR_APPLICATION_CONTAINER: "1"
       XLSLIBERATOR_OFFICE_CONTAINER: "0"
       XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
-      XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}
+      XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}:/tmp/pytest-tmp
       PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp
     volumes:
       - .:${PWD}

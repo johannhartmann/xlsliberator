@@ -145,7 +145,7 @@ def test_office_source_build_uses_pinned_bundled_nss_crypto_backend() -> None:
 def test_orchestrator_uses_shared_workspace_for_pytest_and_office_jobs() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}" in compose
+    assert "XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}:/tmp/pytest-tmp" in compose
     assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
     assert "XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp" in compose
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -77,20 +78,29 @@ def office() -> None:
 
 def docker_web() -> None:
     """Build and smoke-test the web image."""
+    docker_web_temp = ARTIFACTS / "docker-web-tmp"
+    shutil.rmtree(docker_web_temp, ignore_errors=True)
+    docker_web_temp.mkdir(parents=True)
     env = dict(os.environ)
     env["DOCKER_TESTS"] = "1"
     env["XLSLIBERATOR_FAIL_ON_SKIP"] = "1"
-    run(
-        [
-            "pytest",
-            "-p",
-            "no:cacheprovider",
-            "tests/integration/test_docker_web.py",
-            "--junitxml",
-            str(ARTIFACTS / "pytest-docker-web.xml"),
-        ],
-        env=env,
-    )
+    # Nested Docker bind mounts must originate from the host-visible checkout,
+    # not from the test-orchestrator container's private /tmp filesystem.
+    env["PYTEST_ADDOPTS"] = f"--basetemp={docker_web_temp}"
+    try:
+        run(
+            [
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "tests/integration/test_docker_web.py",
+                "--junitxml",
+                str(ARTIFACTS / "pytest-docker-web.xml"),
+            ],
+            env=env,
+        )
+    finally:
+        shutil.rmtree(docker_web_temp, ignore_errors=True)
 
 
 def package() -> None:
