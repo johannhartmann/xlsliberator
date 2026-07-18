@@ -1,0 +1,283 @@
+{
+  "schema_version": "1.0.0",
+  "episode_id": "interactive-game",
+  "inventory_kind": "source_derived_only",
+  "certification_status": "not_run",
+  "inventory_basis": [
+    "static repository file inspection",
+    "static workbook package inventory",
+    "exported VBA source inspection",
+    "public task and acceptance contract inspection"
+  ],
+  "claims_excluded": [
+    "migration execution",
+    "target existence",
+    "LibreOffice runtime success",
+    "public acceptance pass",
+    "hidden acceptance pass",
+    "mutation pass",
+    "independent reviewer approval"
+  ],
+  "source": {
+    "path": "demos/interactive-game/source/TetrisGameDemo.xlsb",
+    "format": "xlsb",
+    "size_bytes": 69074,
+    "sha256": "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1",
+    "immutable": true,
+    "contains_vba_project": true,
+    "vba_project_part": "xl/vbaProject.bin"
+  },
+  "provenance": {
+    "project": "zq99/tetris-game-excel-vba",
+    "repository": "https://github.com/zq99/tetris-game-excel-vba",
+    "commit": "83d3c4ab9b5bc8629aa0f520ca4ea668a6ff05eb",
+    "source_license": "MIT",
+    "source_copyright": "Copyright 2020 zq99",
+    "corpus_metadata_license": "GPL-3.0-or-later"
+  },
+  "modules": [
+    {
+      "name": "ModGame",
+      "kind": "standard_module",
+      "path": "demos/interactive-game/dependencies/ModGame.bas",
+      "size_bytes": 37833,
+      "sha256": "7472d37222f4609f620a39cfc2d30c11b79ba620057f1a5ea7fc3fc907e34745",
+      "procedures": [
+        "DrawBrick",
+        "Run",
+        "StartGame",
+        "ResetBoard",
+        "checkForCompleteLines",
+        "updateScore",
+        "About_Game",
+        "ViewHighScores",
+        "ViewGameScreen",
+        "ShowPreview",
+        "Rotate",
+        "TestForClashes"
+      ]
+    },
+    {
+      "name": "ModHighScore",
+      "kind": "standard_module",
+      "path": "demos/interactive-game/dependencies/ModHighScore.bas",
+      "size_bytes": 7153,
+      "sha256": "9cddafc74dd75967827c4ae2b6bd66104b1f43d7e95be4e6c28752db3946dda0",
+      "procedures": [
+        "login",
+        "AddScore",
+        "GetScores",
+        "GetLowestScoreIndex",
+        "NumberOfRecords"
+      ]
+    },
+    {
+      "name": "Sheet1",
+      "kind": "worksheet_class",
+      "sheet": "Game",
+      "path": "demos/interactive-game/dependencies/Sheet1.cls",
+      "size_bytes": 670,
+      "sha256": "50f3f28dd6941389f5e8de7ee144ad721849782d6dc7733e746dc905304f7ae1",
+      "procedures": [
+        "Worksheet_SelectionChange"
+      ]
+    },
+    {
+      "name": "Sheet2",
+      "kind": "worksheet_class",
+      "sheet": "Score",
+      "path": "demos/interactive-game/dependencies/Sheet2.cls",
+      "size_bytes": 680,
+      "sha256": "de5e5267f7de9ce2c5e219e292e41d3629e7fb95b32b60dfa7a0e21bf1e66723",
+      "procedures": [
+        "Worksheet_Activate",
+        "Worksheet_SelectionChange"
+      ]
+    },
+    {
+      "name": "ThisWorkbook",
+      "kind": "workbook_class",
+      "path": "demos/interactive-game/dependencies/ThisWorkbook.cls",
+      "size_bytes": 767,
+      "sha256": "f89828b776b0c1ceb0c09d145ed166557c8690ddcbfc6fc498a464f7f9a10214",
+      "procedures": [
+        "Workbook_BeforeClose",
+        "Workbook_Open"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "name": "cmdStartStop",
+      "sheet": "Game",
+      "source_binding": "Run",
+      "source_role": "start_stop"
+    },
+    {
+      "name": "cmdAbout",
+      "sheet": "Game",
+      "source_binding": "About_Game",
+      "source_role": "about"
+    },
+    {
+      "name": "cmdHighScores",
+      "sheet": "Game",
+      "source_binding": "ViewHighScores",
+      "source_role": "show_high_scores"
+    },
+    {
+      "name": "cmdReturn",
+      "sheet": "Score",
+      "source_binding": "ViewGameScreen",
+      "source_role": "return_to_game"
+    }
+  ],
+  "events": [
+    {
+      "event": "Workbook_Open",
+      "module": "ThisWorkbook",
+      "behavior": "select Game sheet and A32"
+    },
+    {
+      "event": "Workbook_BeforeClose",
+      "module": "ThisWorkbook",
+      "behavior": "set workbook Saved flag true"
+    },
+    {
+      "event": "Worksheet_SelectionChange",
+      "module": "Sheet1",
+      "behavior": "guard Score, totalRows, and D26"
+    },
+    {
+      "event": "Worksheet_Activate",
+      "module": "Sheet2",
+      "behavior": "select A1"
+    },
+    {
+      "event": "Worksheet_SelectionChange",
+      "module": "Sheet2",
+      "behavior": "guard HighScores"
+    },
+    {
+      "event": "keyboard_poll",
+      "module": "ModGame",
+      "behavior": "left/right/down movement and up-or-Control rotation through GetAsyncKeyState"
+    },
+    {
+      "event": "blocking_timer_loop",
+      "module": "ModGame",
+      "behavior": "DoEvents and Sleep loop with row-count-dependent delay"
+    }
+  ],
+  "state_and_rules": {
+    "playfield": "M4:AA31",
+    "named_ranges": [
+      "HighScores",
+      "Score",
+      "ScoreColumn",
+      "ScoreData",
+      "bottomboundary",
+      "leftboundary",
+      "previewblock",
+      "rightboundary",
+      "topboundary",
+      "totalRows"
+    ],
+    "piece_variants": 9,
+    "scoring": {
+      "fast_down_points": 1,
+      "landed_piece_points": 5,
+      "completed_row_points": 100,
+      "completed_row_count_increment": 1
+    },
+    "timer_delay_milliseconds": {
+      "initial": 160,
+      "minimum": 40,
+      "basis": "completed row count"
+    }
+  },
+  "dependencies": [
+    {
+      "kind": "windows_api",
+      "source": "user32.dll!GetAsyncKeyState",
+      "purpose": "keyboard polling",
+      "disposition": "remove_and_replace_with_declared_target_native_input"
+    },
+    {
+      "kind": "windows_api",
+      "source": "kernel32!Sleep",
+      "purpose": "game-loop timing",
+      "disposition": "remove_and_replace_with_bounded_cancellable_nonblocking_scheduling"
+    },
+    {
+      "kind": "windows_api",
+      "source": "winmm.dll!PlaySoundA",
+      "purpose": "landing and line-collapse sounds",
+      "disposition": "unresolved_optional_without_portable_capability"
+    },
+    {
+      "kind": "excel_object_model",
+      "source": "Shapes, Range, Union, Interior.ColorIndex, WorksheetFunction",
+      "purpose": "controls, board state, formatting, and score operations",
+      "disposition": "remove_and_replace_with_direct_python_uno_or_target_native_operations"
+    },
+    {
+      "kind": "ambient_identity",
+      "source": "Environ(username) and Application.UserName",
+      "purpose": "high-score identity",
+      "disposition": "remove_or_replace_with_explicit_bounded_value"
+    },
+    {
+      "kind": "arbitrary_filesystem",
+      "source": "ThisWorkbook.Path plus ExceltrisHighScores.txt",
+      "purpose": "Windows random-access high-score persistence",
+      "disposition": "replace_with_document_contained_or_job_confined_persistence"
+    }
+  ],
+  "sound_assets": [
+    {
+      "path": "demos/interactive-game/dependencies/land.wav",
+      "size_bytes": 3322,
+      "sha256": "b3930b57c02444d6edcb42ad6acc92fd325b8e62161d745149ecdf84a22faa57",
+      "disposition": "source_evidence_only_unresolved_optional"
+    },
+    {
+      "path": "demos/interactive-game/dependencies/collapse.wav",
+      "size_bytes": 34982,
+      "sha256": "a39041f2cc70db03c0761e3e49d33447d2305e2b2174cd4a5bd8a3c27778734e",
+      "disposition": "source_evidence_only_unresolved_optional"
+    }
+  ],
+  "acceptance_sources": [
+    {
+      "path": "demos/interactive-game/task.md",
+      "sha256": "b4547477b414421f008155607b042ea31e8251e543e61e11ba192d8cdf72676e"
+    },
+    {
+      "path": "demos/interactive-game/acceptance.yaml",
+      "sha256": "b142966ebb470c03e9f8ba0430bd4d662259fb56b27fb5b6286bf151d3163a31",
+      "scenario_ids": [
+        "keyboard-control",
+        "timer-tick",
+        "native-controls",
+        "document-events",
+        "line-collapse"
+      ]
+    },
+    {
+      "path": "demos/interactive-game/restrictions.md",
+      "sha256": "d7636c5ff1bcff0aa94ee1b237d40ed78a8971dc4ff9bfe03cb986305b843d74"
+    },
+    {
+      "path": "demos/interactive-game/PROVENANCE.md",
+      "sha256": "d1e19c6fcec94eb89edeebe260087bf8d4abfd5f0aa71dc60d79df960b1b88d1"
+    }
+  ],
+  "target_contract": {
+    "target": "libreoffice",
+    "full_build": "26.2.4.2",
+    "runtime_platform": "pinned Docker runtime only",
+    "target_status": "not_run"
+  },
+  "immutable_source_statement": "The original workbook and supplied upstream modules and assets are immutable inputs. Migration and evidence generation must operate on copies and must not rewrite these source files."
+}
