@@ -12,6 +12,8 @@ from loguru import logger
 
 from xlsliberator.container_boundary import require_application_container
 from xlsliberator.libreoffice_mcp import (
+    build_interactive_game_target,
+    bundle_interactive_game_replays,
     capture_screenshot,
     close,
     collect_logs,
@@ -28,6 +30,7 @@ from xlsliberator.libreoffice_mcp import (
     read_cells,
     recalculate,
     reopen,
+    run_interactive_game_scenario,
     save,
     send_keyboard_event,
     write_cells,
@@ -55,6 +58,9 @@ for tool in (
     reopen,
     collect_logs,
     destroy_session,
+    build_interactive_game_target,
+    run_interactive_game_scenario,
+    bundle_interactive_game_replays,
 ):
     mcp.tool(tool)
 
