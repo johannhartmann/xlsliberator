@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: docker compose build test
-      - run: docker compose run --rm test ruff format --no-cache --check .
+      - run: docker compose run --rm test ruff format --no-cache --check --diff .
       - run: docker compose run --rm test ruff check --no-cache .
       - run: docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/
       - run: docker compose run --rm test python -m xlsliberator.skill_validation skills
