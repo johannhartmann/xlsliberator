@@ -472,25 +472,34 @@ def _land_and_spawn(state: GameState) -> GameState:
     completed_lines = state.completed_lines + removed_lines
     following, advanced = _draw_piece(state)
     spawned = _spawn_piece(state.next_piece)
-    common = {
-        "settled": settled,
-        "score": score,
-        "completed_lines": completed_lines,
-        "high_score": max(state.high_score, score),
-        "tick_index": state.tick_index + 1,
-        "event_index": state.event_index + 1,
-        "next_piece": following,
-        "rng_state": advanced.rng_state,
-        "draw_index": advanced.draw_index,
-    }
     if not _piece_fits(spawned, settled):
         return replace(
             state,
             phase=GamePhase.GAME_OVER,
+            settled=settled,
             active=None,
-            **common,
+            next_piece=following,
+            score=score,
+            completed_lines=completed_lines,
+            high_score=max(state.high_score, score),
+            tick_index=state.tick_index + 1,
+            event_index=state.event_index + 1,
+            rng_state=advanced.rng_state,
+            draw_index=advanced.draw_index,
         )
-    return replace(state, active=spawned, **common)
+    return replace(
+        state,
+        settled=settled,
+        active=spawned,
+        next_piece=following,
+        score=score,
+        completed_lines=completed_lines,
+        high_score=max(state.high_score, score),
+        tick_index=state.tick_index + 1,
+        event_index=state.event_index + 1,
+        rng_state=advanced.rng_state,
+        draw_index=advanced.draw_index,
+    )
 
 
 def _collapse_complete_lines(

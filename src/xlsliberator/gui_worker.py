@@ -167,7 +167,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
     if not recording.is_file() or recording.stat().st_size == 0:
         raise RuntimeError("GUI recording was not produced")
-    response = {
+    response: dict[str, Any] = {
         "status": "passed",
         "event_layer": "xvfb-openbox-xdotool",
         "display": display,
@@ -329,7 +329,7 @@ def _observe(document: Any, action: dict[str, Any]) -> dict[str, Any]:
     if not sheets.hasByName(sheet_name):
         raise ValueError(f"observation sheet is missing: {sheet_name}")
     cell = sheets.getByName(sheet_name).getCellRangeByName(address)
-    result = {
+    result: dict[str, Any] = {
         "sheet": sheet_name,
         "address": address,
         "string": str(cell.getString()),
