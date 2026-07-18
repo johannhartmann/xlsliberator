@@ -18,9 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: docker compose build test
-      - run: docker compose run --rm test ruff format --check .
-      - run: docker compose run --rm test ruff check .
-      - run: docker compose run --rm test mypy src/
+      - run: docker compose run --rm test ruff format --no-cache --check .
+      - run: docker compose run --rm test ruff check --no-cache .
+      - run: docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/
 
   unit:
     name: Unit tests (Python ${{ matrix.python }}, Docker)
@@ -48,7 +48,8 @@ jobs:
           --tmpfs /tmp:rw,noexec,nosuid,size=1g,mode=1777
           --volume "$PWD:/workspace" --workdir /workspace
           xlsliberator-test:py${{ matrix.python }}
-          pytest -m "not integration" --junitxml=artifacts/pytest-unit-${{ matrix.python }}.xml
+          pytest -p no:cacheprovider -m "not integration"
+          --junitxml=artifacts/pytest-unit-${{ matrix.python }}.xml
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -65,7 +66,7 @@ jobs:
       - run: docker compose build test
       - name: Verify corpus, minimizer, fuzz accounting, and release fail-closed behavior
         run: >-
-          docker compose run --rm test pytest -q
+          docker compose run --rm test pytest -p no:cacheprovider -q
           tests/unit/test_conformance_corpus.py
           tests/unit/test_capability_matrix.py
 
