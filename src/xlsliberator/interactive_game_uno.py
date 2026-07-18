@@ -90,7 +90,6 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         if document is None:
             raise RuntimeError("LibreOffice did not create the interactive-game target")
         try:
-            _initialize_document(document, session["uno"])
             document.storeAsURL(
                 session["uno"].systemPathToFileUrl(str(output)),
                 (
@@ -98,6 +97,11 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
                     _property_value("Overwrite", True),
                 ),
             )
+            _initialize_document(document, session["uno"])
+            document.store()
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
         finally:
             _close_document(document, save=False)
     if not output.is_file():
