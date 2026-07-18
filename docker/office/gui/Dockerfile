@@ -4,7 +4,9 @@ FROM ${XLSLIBERATOR_OFFICE_IMAGE}
 USER 0:0
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && apt-get \
+       -o Dpkg::Options::=--force-confold \
+       install -y --no-install-recommends \
        dbus-x11 ffmpeg openbox scrot x11-utils xdotool xvfb \
     && rm -rf /var/lib/apt/lists/*
 
