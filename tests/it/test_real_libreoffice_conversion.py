@@ -74,6 +74,34 @@ def test_convert_xlsx_to_ods_reopens_in_real_libreoffice(
 
 @pytest.mark.integration
 @pytest.mark.docker
+def test_native_control_fixture_serializes_in_real_libreoffice(
+    tmp_path: Path,
+    skip_if_no_lo: None,
+) -> None:
+    """Create and reopen a native Calc control using the pinned Docker runtime."""
+    output_path = tmp_path / "controls.ods"
+    runtime = LibreOfficeDockerRuntime()
+
+    created = runtime.request(
+        {
+            "op": "create_controls_fixture",
+            "output_path": str(output_path),
+        }
+    )
+
+    assert created["success"] is True, created
+    assert created["data"]["button_name"] == "CertificationButton"
+    assert output_path.is_file()
+
+    validation = runtime.validate_document(output_path)
+    assert validation["success"] is True, validation
+    assert all(
+        stage["status"] == "passed" for stage in validation["data"]["stages"].values()
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.docker
 def test_document_inspection_and_repairs_run_in_disposable_container(
     tmp_path: Path,
     skip_if_no_lo: None,

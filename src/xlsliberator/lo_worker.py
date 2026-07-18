@@ -303,11 +303,6 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             )
 
             draw_page = sheet.getDrawPage()
-            forms = draw_page.getForms()
-            form = document.createInstance("com.sun.star.form.component.DataForm")
-            form.Name = "CertificationForm"
-            forms.insertByIndex(0, form)
-
             shape = document.createInstance("com.sun.star.drawing.ControlShape")
             position = session["uno"].createUnoStruct("com.sun.star.awt.Point")
             position.X = 1000
@@ -322,6 +317,11 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             button.Name = button_name
             button.Label = "Run certification event"
             shape.setControl(button)
+
+            forms = draw_page.getForms()
+            form = document.createInstance("com.sun.star.form.component.DataForm")
+            form.Name = "CertificationForm"
+            forms.insertByIndex(0, form)
             form.insertByIndex(0, button)
             draw_page.add(shape)
 
