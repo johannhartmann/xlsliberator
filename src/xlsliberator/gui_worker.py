@@ -673,7 +673,8 @@ def _find_control_model(document: Any, name: str) -> Any:
             form = forms.getByIndex(form_index)
             for control_index in range(form.getCount()):
                 control = form.getByIndex(control_index)
-                if getattr(control, "Name", None) == name:
+                logical_name = str(getattr(control, "Tag", "") or "")
+                if (logical_name or str(getattr(control, "Name", "") or "")) == name:
                     return control
     raise ValueError(f"control was not found: {name}")
 

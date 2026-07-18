@@ -17,7 +17,7 @@ from xlsliberator.interactive_game_showcase import (
     bundle_gui_replays,
     run_gui_scenario,
 )
-from xlsliberator.interactive_game_uno import SOURCE_SHA256
+from xlsliberator.interactive_game_uno import SOURCE_SHA256, _control_logical_name
 
 
 class _FakeRuntime:
@@ -149,3 +149,11 @@ def test_source_identity_is_bound_to_the_real_public_workbook() -> None:
 
     assert source.is_file()
     assert hashlib.sha256(source.read_bytes()).hexdigest() == SOURCE_SHA256
+
+
+def test_native_control_logical_name_prefers_tag_and_supports_legacy_name() -> None:
+    tagged = type("Control", (), {"Name": "Control1", "Tag": "GameStart"})()
+    legacy = type("Control", (), {"Name": "GameStart", "Tag": ""})()
+
+    assert _control_logical_name(tagged) == "GameStart"
+    assert _control_logical_name(legacy) == "GameStart"

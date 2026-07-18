@@ -239,12 +239,14 @@ def _add_button_form(
 ) -> None:
     draw_page = sheet.getDrawPage()
     forms = draw_page.getForms()
+    control_index = forms.getCount() + 1
     form = document.createInstance("com.sun.star.form.component.DataForm")
-    form.Name = f"ControlForm{forms.getCount() + 1}"
+    form.Name = f"ControlForm{control_index}"
     forms.insertByIndex(forms.getCount(), form)
 
     model = document.createInstance("com.sun.star.form.component.CommandButton")
-    model.Name = name
+    model.Name = f"Control{control_index}"
+    model.Tag = name
     model.Label = label
     shape = document.createInstance("com.sun.star.drawing.ControlShape")
     position = uno.createUnoStruct("com.sun.star.awt.Point")
@@ -499,9 +501,15 @@ def _find_control_model(document: Any, name: str) -> Any:
             form = forms.getByIndex(form_index)
             for control_index in range(form.getCount()):
                 control = form.getByIndex(control_index)
-                if getattr(control, "Name", None) == name:
+                if _control_logical_name(control) == name:
                     return control
     raise ValueError(f"interactive-game native control is missing: {name}")
+
+
+def _control_logical_name(model: Any) -> str:
+    """Return the public control ID without relying on fragile UNO model names."""
+    tag = str(getattr(model, "Tag", "") or "")
+    return tag or str(getattr(model, "Name", "") or "")
 
 
 def _listener_types() -> tuple[type[Any], type[Any], type[Any]]:
@@ -514,7 +522,7 @@ def _listener_types() -> tuple[type[Any], type[Any], type[Any]]:
 
         def actionPerformed(self, event: Any) -> None:  # noqa: N802
             model = getattr(event.Source, "Model", None)
-            name = str(getattr(model, "Name", ""))
+            name = _control_logical_name(model)
             self.adapter.action(name)
 
         def disposing(self, _event: Any) -> None:
