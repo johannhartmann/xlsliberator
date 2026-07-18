@@ -1,8 +1,9 @@
 # XLSLiberator domain skills
 
 This directory is the trusted, project-owned source for Deep Agents workbook
-migration skills. Prompt 10 reserves the skill names below; Prompts 11 and 12
-replace each placeholder with a validated `SKILL.md` and supporting resources.
+migration skills. The catalog covers forensics, planning, testing, package
+surgery, source-to-target migration, dependency liberation, debugging, and
+upstream repair.
 
 Skill files are progressively disclosed by `xlsliberator-swe`. They must pass
 `make skill-lint`, contain no customer workbook content, and target the

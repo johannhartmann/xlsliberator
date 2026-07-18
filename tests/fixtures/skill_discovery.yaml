@@ -1,0 +1,32 @@
+- query: inventoried trustworthy migration dossier
+  expected: workbook-forensics
+- query: target-native LibreOffice migration plan specialists risks acceptance
+  expected: migration-planning
+- query: public acceptance scenarios source behavior generated implementation
+  expected: migration-test-design
+- query: detect plausible mistranslations generated Python formulas event wiring
+  expected: migration-mutation-testing
+- query: narrow transactional XML manifest script event-binding modification preservation
+  expected: ods-package-surgery
+- query: reduced smallest redistributable workbook regression still fails
+  expected: workbook-failure-minimization
+- query: untrusted workbook execute sandbox capabilities resource limits prompt-injection
+  expected: secure-workbook-execution
+- query: appearance interactive screenshot stable-region review deterministic acceptance
+  expected: visual-validation
+- query: complete VBA project liberated direct Python UNO behavior
+  expected: vba-to-python-uno
+- query: Excel formulas inspected translated recalculated native LibreOffice formulas
+  expected: formula-migration
+- query: VBA UserForms native UNO dialogs sidebars local web interface
+  expected: userform-to-uno
+- query: ActiveX Excel Form controls replaced native LibreOffice controls listeners
+  expected: activex-to-open-controls
+- query: Windows COM Office automation databases HTTP XLL proprietary add-ins
+  expected: windows-dependency-replacement
+- query: import recalculation interaction serialization runtime evidence isolate defect
+  expected: libreoffice-debugging
+- query: minimized regression LibreOffice upstreamable source patch stock-versus-patched validation
+  expected: libreoffice-core-patching
+- query: reusable target-native external service explicit capabilities providers deterministic mocks
+  expected: open-service-adapter
