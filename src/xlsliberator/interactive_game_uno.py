@@ -16,8 +16,6 @@ from pathlib import Path
 from typing import Any, Final
 
 from xlsliberator.interactive_game_engine import (
-    BOARD_COLUMNS,
-    BOARD_ROWS,
     GamePhase,
     GameState,
     move_left,
