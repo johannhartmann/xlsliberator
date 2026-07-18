@@ -105,9 +105,7 @@ class LibreOfficeSessionScenarioRunner:
                             str(collected.get("operation_log") or ""),
                         ]
                     )
-                    attachments = [
-                        str(item) for item in collected.get("attachments") or []
-                    ]
+                    attachments = [str(item) for item in collected.get("attachments") or []]
                 except Exception as exc:
                     logs.append(f"session log collection failed: {type(exc).__name__}: {exc}")
 
