@@ -43,9 +43,7 @@ class AgentEvaluatorResult(BaseModel):
     evaluator: AgentEvaluatorName
     status: AgentEvaluationStatus
     reason: str = Field(min_length=1, max_length=1000)
-    evidence_path: str = Field(
-        pattern=r"^migration/evidence/[a-z0-9][a-z0-9._/-]{0,255}$"
-    )
+    evidence_path: str = Field(pattern=r"^migration/evidence/[a-z0-9][a-z0-9._/-]{0,255}$")
     required: bool = True
     score: float | None = Field(default=None, ge=0.0, le=1.0)
 
@@ -73,14 +71,9 @@ class AgentPartitionSummary(BaseModel):
         if any(count < 0 for count in self.counts.values()):
             raise ValueError("partition status counts cannot be negative")
         decisive = (
-            self.counts[AgentEvaluationStatus.PASSED]
-            + self.counts[AgentEvaluationStatus.FAILED]
+            self.counts[AgentEvaluationStatus.PASSED] + self.counts[AgentEvaluationStatus.FAILED]
         )
-        expected = (
-            self.counts[AgentEvaluationStatus.PASSED] / decisive
-            if decisive
-            else None
-        )
+        expected = self.counts[AgentEvaluationStatus.PASSED] / decisive if decisive else None
         if self.decisive_pass_rate != expected:
             raise ValueError("decisive pass rate must derive from passed and failed only")
         return self
@@ -148,9 +141,7 @@ class AgentBenchmarkReport(BaseModel):
     def groupings_and_release_gates_are_complete(self) -> Self:
         configurations = {case.team_configuration for case in self.cases}
         source_formats = {case.source_format for case in self.cases}
-        feature_families = {
-            family for case in self.cases for family in case.feature_families
-        }
+        feature_families = {family for case in self.cases for family in case.feature_families}
         for expected, public, hidden, label in (
             (
                 configurations,
@@ -182,9 +173,7 @@ class AgentBenchmarkReport(BaseModel):
 
 def load_agent_benchmark_report(path: Path) -> AgentBenchmarkReport:
     """Load and validate a privacy-safe Open-SWE benchmark artifact."""
-    return AgentBenchmarkReport.model_validate(
-        json.loads(path.read_text(encoding="utf-8"))
-    )
+    return AgentBenchmarkReport.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
 
 def require_agent_benchmark_release(path: Path) -> AgentBenchmarkReport:
