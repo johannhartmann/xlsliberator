@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from xml.sax.saxutils import escape
 
 
 @dataclass(frozen=True)
@@ -38,6 +37,16 @@ class NativeSheet:
     name: str
     buttons: tuple[NativeButton, ...] = ()
     hidden: bool = False
+
+
+def _xml_attr(value: str) -> str:
+    """Encode text for a double-quoted XML attribute without parsing XML."""
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
@@ -87,7 +96,7 @@ def _sheet_xml(
     visibility = ' table:visibility="collapse"' if sheet.hidden else ""
     forms = _forms_xml(controls) if controls else ""
     shapes = "".join(_shape_xml(button, control_id) for button, control_id in controls)
-    return f"""   <table:table table:name="{escape(sheet.name)}"{visibility}>
+    return f"""   <table:table table:name="{_xml_attr(sheet.name)}"{visibility}>
 {forms}    <table:table-column table:number-columns-repeated="32"/>
     <table:table-row>
      <table:table-cell>
@@ -106,23 +115,26 @@ def _forms_xml(controls: list[tuple[NativeButton, str]]) -> str:
       form:apply-filter="true"
       form:command-type="table"
       form:control-implementation="ooo:com.sun.star.form.component.Form"
-      office:target-frame="">
+      office:target-frame=""
+      xlink:href=""
+      xlink:type="simple">
 {buttons}     </form:form>
     </office:forms>
 """
 
 
 def _button_xml(button: NativeButton, control_id: str) -> str:
-    name = escape(button.name)
-    label = escape(button.label)
-    tag = escape(button.tag)
+    name = _xml_attr(button.name)
+    label = _xml_attr(button.label)
     return f"""      <form:button
        form:name="{name}"
        form:control-implementation="ooo:com.sun.star.form.component.CommandButton"
        xml:id="{control_id}"
        form:id="{control_id}"
        form:label="{label}"
-       form:button-type="push"
+       xlink:href=""
+       form:image-data=""
+       form:delay-for-repeat="PT0.050000000S"
        form:image-position="center"
        office:target-frame="">
        <form:properties>
@@ -130,10 +142,6 @@ def _button_xml(button: NativeButton, control_id: str) -> str:
          form:property-name="DefaultControl"
          office:value-type="string"
          office:string-value="com.sun.star.form.control.CommandButton"/>
-        <form:property
-         form:property-name="Tag"
-         office:value-type="string"
-         office:string-value="{tag}"/>
        </form:properties>
       </form:button>
 """
@@ -142,7 +150,7 @@ def _button_xml(button: NativeButton, control_id: str) -> str:
 def _shape_xml(button: NativeButton, control_id: str) -> str:
     return f"""      <draw:control
        draw:z-index="0"
-       draw:name="{escape(button.name)}"
+       draw:name="{_xml_attr(button.name)}"
        svg:width="{_cm(button.width)}"
        svg:height="{_cm(button.height)}"
        svg:x="{_cm(button.x)}"

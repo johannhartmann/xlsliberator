@@ -19,12 +19,12 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
         seed,
         (
             NativeSheet(
-                name="game",
+                name='game "certification"',
                 buttons=(
                     NativeButton(
-                        name="CertificationButton",
-                        label="Start & play",
-                        tag="GameStart",
+                        name='Certification "Button"',
+                        label="Start & play <now>",
+                        tag='GameStart "safe"',
                         x=1_000,
                         y=2_000,
                         width=5_000,
@@ -53,7 +53,12 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
     assert shape is not None
     form_id = button.attrib["{urn:oasis:names:tc:opendocument:xmlns:form:1.0}id"]
     assert shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}control"] == form_id
-    assert "Start &amp; play" in seed.read_text(encoding="utf-8")
+    serialized = seed.read_text(encoding="utf-8")
+    assert "Start &amp; play &lt;now&gt;" in serialized
+    assert 'table:name="game &quot;certification&quot;"' in serialized
+    assert 'form:name="Certification &quot;Button&quot;"' in serialized
+    assert 'form:delay-for-repeat="PT0.050000000S"' in serialized
+    assert 'xlink:href=""' in serialized
 
 
 def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
