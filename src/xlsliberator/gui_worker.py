@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -43,7 +44,9 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     archive_path = _job_path(request["output_path"], must_exist=False)
     if archive_path.suffix.lower() != ".zip":
         raise ValueError("GUI scenario output must be a ZIP evidence bundle")
-    output_dir = archive_path.parent / ".gui-evidence"
+    output_dir = archive_path.parent / f".{archive_path.stem}-gui-evidence"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     actions = request.get("actions")
     if not isinstance(actions, list) or not 1 <= len(actions) <= 100:
@@ -186,6 +189,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
         json.dumps(response, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    _write_replay_html(output_dir, response)
     with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         for path in sorted(output_dir.rglob("*")):
             if path.is_file():
@@ -195,6 +199,57 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     response["evidence_archive_sha256"] = _sha256_file(archive_path)
     response["evidence_archive_bytes"] = archive_path.stat().st_size
     return response
+
+
+def _write_replay_html(output_dir: Path, response: dict[str, Any]) -> None:
+    payload = json.dumps(response, sort_keys=True).replace("<", "\\u003c")
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XLSLiberator interactive-game replay</title>
+  <style>
+    :root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
+    body {{ max-width: 72rem; margin: 0 auto; padding: 2rem; background: #111827; color: #f8fafc; }}
+    video {{ width: 100%; border: 1px solid #475569; background: #020617; }}
+    ol {{ padding: 0; list-style: none; display: grid; gap: .5rem; }}
+    button {{ width: 100%; padding: .7rem; text-align: left; color: inherit; background: #1e293b;
+      border: 1px solid #475569; border-radius: .4rem; cursor: pointer; }}
+    button:hover {{ border-color: #38bdf8; }}
+    code {{ color: #7dd3fc; }}
+  </style>
+</head>
+<body>
+  <h1>Interactive game — recorded LibreOffice replay</h1>
+  <p>Real X11 input in LibreOffice <code>26.2.4.2</code>. Select an operation to seek.</p>
+  <video id="recording" controls preload="metadata" src="recording.webm"></video>
+  <ol id="timeline"></ol>
+  <script id="evidence" type="application/json">{payload}</script>
+  <script>
+    const evidence = JSON.parse(document.getElementById("evidence").textContent);
+    const video = document.getElementById("recording");
+    const timeline = document.getElementById("timeline");
+    let elapsed = 0;
+    evidence.operations.forEach((operation) => {{
+      const start = elapsed;
+      elapsed += operation.duration_ms / 1000;
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `${{operation.sequence}}. ${{operation.kind}} — ${{operation.status}}`;
+      button.addEventListener("click", () => {{
+        video.currentTime = Math.min(start, Number.isFinite(video.duration) ? video.duration : start);
+        video.play();
+      }});
+      item.appendChild(button);
+      timeline.appendChild(item);
+    }});
+  </script>
+</body>
+</html>
+"""
+    (output_dir / "replay.html").write_text(html, encoding="utf-8")
 
 
 def _require_gui_container() -> None:

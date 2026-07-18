@@ -77,6 +77,7 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
             names = set(archive.namelist())
             assert "result.json" in names
             assert "recording.webm" in names
+            assert "replay.html" in names
             assert any(name.endswith(".png") for name in names)
             assert "working-copy.ods" in names
 
