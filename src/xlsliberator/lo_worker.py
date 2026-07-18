@@ -1086,6 +1086,19 @@ def _scenario_action(
     session: dict[str, Any],
     environment: dict[str, Any],
 ) -> tuple[Any, Path, list[str]]:
+    if kind == "execute_python_macro":
+        kind = "invoke_macro"
+    elif kind == "dispatch_control_event":
+        raise _ScenarioUnavailable(
+            "control dispatch requires the verified UI/event session layer from Prompt 06"
+        )
+    elif kind == "send_keyboard_event":
+        raise _ScenarioUnavailable(
+            "keyboard dispatch requires the verified UI/event session layer from Prompt 06"
+        )
+    elif kind == "export_pdf":
+        kind = "export"
+        parameters = {**parameters, "format": "pdf"}
     if kind == "open":
         if document is not None:
             raise RuntimeError("document is already open")
@@ -1423,7 +1436,7 @@ def _scenario_observation(
     current_path: Path,
     environment: dict[str, Any],
 ) -> dict[str, Any]:
-    if kind == "cell":
+    if kind in {"cell", "cell_value"}:
         if document is None:
             raise RuntimeError("cell observation requires an open document")
         cell = _scenario_cell(document, selector)
@@ -1447,7 +1460,52 @@ def _scenario_observation(
             formula=formula,
             cell_type=cell_type,
         )
-    if kind == "sheets":
+    if kind in {"cell_formula", "cell_type", "cell_error"}:
+        if document is None:
+            raise RuntimeError(f"{kind} observation requires an open document")
+        cell = _scenario_cell(document, selector)
+        cell_type = _cell_type_name(cell.getType())
+        error_code = int(cell.getError())
+        if kind == "cell_formula":
+            formula = cell.getFormula() if cell_type == "FORMULA" else ""
+            return _scenario_normalized_value(formula, environment, cell_type=cell_type)
+        if kind == "cell_type":
+            return {"kind": "string", "value": cell_type, "cell_type": cell_type}
+        if not error_code:
+            return {"kind": "empty_cell", "value": None, "cell_type": cell_type}
+        display = cell.getString()
+        return {
+            "kind": "error",
+            "value": display or error_code,
+            "error_type": display if display.startswith("#") else f"libreoffice:{error_code}",
+            "cell_type": cell_type,
+            "metadata": {"libreoffice_error_code": error_code},
+        }
+    if kind == "range_values":
+        if document is None:
+            raise RuntimeError("range observation requires an open document")
+        target = _scenario_cell(document, selector)
+        rows = target.getRows().getCount()
+        columns = target.getColumns().getCount()
+        values = [
+            [
+                _scenario_normalized_value(
+                    _scenario_cell_value(
+                        document,
+                        target.getCellByPosition(column, row),
+                        _cell_type_name(target.getCellByPosition(column, row).getType()),
+                    )
+                    if _cell_type_name(target.getCellByPosition(column, row).getType()) != "EMPTY"
+                    else None,
+                    environment,
+                    cell_type=_cell_type_name(target.getCellByPosition(column, row).getType()),
+                )
+                for column in range(columns)
+            ]
+            for row in range(rows)
+        ]
+        return {"kind": "array", "value": values}
+    if kind in {"sheets", "sheet_state"}:
         if document is None:
             raise RuntimeError("sheet observation requires an open document")
         sheets = document.getSheets()
@@ -1469,12 +1527,18 @@ def _scenario_observation(
         return {"kind": "object", "value": {"named_ranges": inventory}}
     if kind == "embedded_scripts":
         return {"kind": "object", "value": _scenario_script_inventory(current_path)}
-    if kind == "controls_events":
+    if kind in {"controls_events", "controls_bindings"}:
         return {"kind": "object", "value": _scenario_control_event_inventory(current_path)}
     if kind == "package_hash":
         return {"kind": "string", "value": _sha256_file(current_path)}
     if kind == "artifact_inventory":
         return {"kind": "object", "value": _scenario_package_inventory(current_path)}
+    if kind == "runtime_errors":
+        return {"kind": "array", "value": []}
+    if kind in {"files_created", "mocked_calls", "screenshots"}:
+        raise _ScenarioUnavailable(
+            f"{kind} observation requires the stateful runtime evidence layer from Prompt 06"
+        )
     raise _ScenarioUnavailable(f"unknown LibreOffice observation kind: {kind}")
 
 

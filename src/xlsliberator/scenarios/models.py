@@ -51,6 +51,11 @@ class ActionKind(StrEnum):
     SET_CELL = "set_cell"
     SET_RANGE = "set_range"
     RECALCULATE = "recalculate"
+    EXECUTE_PYTHON_MACRO = "execute_python_macro"
+    DISPATCH_CONTROL_EVENT = "dispatch_control_event"
+    SEND_KEYBOARD_EVENT = "send_keyboard_event"
+    EXPORT_PDF = "export_pdf"
+    # Compatibility actions retained for existing scenario fixtures.
     INVOKE_MACRO = "invoke_macro"
     ACTIVATE_SHEET = "activate_sheet"
     COPY_SHEET = "copy_sheet"
@@ -66,6 +71,18 @@ class ActionKind(StrEnum):
 
 
 class ObservationKind(StrEnum):
+    CELL_VALUE = "cell_value"
+    CELL_FORMULA = "cell_formula"
+    CELL_TYPE = "cell_type"
+    CELL_ERROR = "cell_error"
+    RANGE_VALUES = "range_values"
+    SHEET_STATE = "sheet_state"
+    CONTROLS_BINDINGS = "controls_bindings"
+    FILES_CREATED = "files_created"
+    MOCKED_CALLS = "mocked_calls"
+    SCREENSHOTS = "screenshots"
+    RUNTIME_ERRORS = "runtime_errors"
+    # Compatibility observations retained for existing scenario fixtures.
     CELL = "cell"
     SHEETS = "sheets"
     NAMED_RANGES = "named_ranges"
@@ -135,6 +152,27 @@ class ComparisonRules(StrictModel):
     string_case_sensitive: bool = True
 
 
+class ObservationValue(StrictModel):
+    """Typed observation value that never collapses spreadsheet scalar semantics."""
+
+    kind: ValueKind
+    value: Any = None
+    error_type: str | None = None
+    date_system: Literal["1900", "1904"] | None = None
+    timezone: str | None = None
+    formula: str | None = None
+    cell_type: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def typed_metadata_is_complete(self) -> ObservationValue:
+        if self.kind is ValueKind.ERROR and not self.error_type:
+            raise ValueError("error observations require error_type")
+        if self.kind in {ValueKind.DATE, ValueKind.DATETIME} and not self.date_system:
+            raise ValueError("date observations require date_system")
+        return self
+
+
 class Action(StrictModel):
     kind: ActionKind
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -147,6 +185,7 @@ class ObservationRequest(StrictModel):
     selector: dict[str, Any] = Field(default_factory=dict)
     required: bool = True
     comparison: ComparisonRules = Field(default_factory=ComparisonRules)
+    expected: ObservationValue | None = None
 
 
 class ScenarioStep(StrictModel):
@@ -177,23 +216,33 @@ class Scenario(StrictModel):
         return self
 
 
-class ObservationValue(StrictModel):
-    kind: ValueKind
-    value: Any = None
-    error_type: str | None = None
-    date_system: Literal["1900", "1904"] | None = None
-    timezone: str | None = None
-    formula: str | None = None
-    cell_type: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+class MigrationMetadata(StrictModel):
+    """Authored and independently reviewed migration acceptance metadata."""
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    source_workbook: str | None = None
+    target_workbook: str | None = None
+    authored_by: str = Field(min_length=1)
+    reviewed_by: str = Field(min_length=1)
+    requirements: list[str] = Field(min_length=1)
+    oracle_policy: Literal["authored_acceptance_requirements"] = "authored_acceptance_requirements"
 
     @model_validator(mode="after")
-    def typed_metadata_is_complete(self) -> ObservationValue:
-        if self.kind is ValueKind.ERROR and not self.error_type:
-            raise ValueError("error observations require error_type")
-        if self.kind in {ValueKind.DATE, ValueKind.DATETIME} and not self.date_system:
-            raise ValueError("date observations require date_system")
+    def reviewer_is_independent(self) -> MigrationMetadata:
+        if self.authored_by.strip().casefold() == self.reviewed_by.strip().casefold():
+            raise ValueError("acceptance author and reviewer must be independent")
         return self
+
+
+class AcceptanceDefinition(StrictModel):
+    """Complete public acceptance contract in YAML or JSON form."""
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    migration: MigrationMetadata
+    environment: EnvironmentManifest = Field(default_factory=EnvironmentManifest)
+    scenario: Scenario
 
 
 class StepResult(StrictModel):
@@ -242,6 +291,32 @@ class RuntimeTrace(StrictModel):
     error: dict[str, Any] | None = None
 
 
+class AssertionResult(StrictModel):
+    """One evaluated observation assertion."""
+
+    step_id: str
+    observation_id: str
+    phase: Literal["before", "after"]
+    required: bool
+    status: GateExecutionStatus
+    expected: ObservationValue | None = None
+    actual: ObservationValue | None = None
+    reason: str | None = None
+
+
+class AcceptanceEvaluation(StrictModel):
+    """Fail-closed evaluation of one execution trace."""
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    migration_id: str
+    scenario_id: str
+    trace_id: str
+    status: GateExecutionStatus
+    action_statuses: dict[str, GateExecutionStatus] = Field(default_factory=dict)
+    assertions: list[AssertionResult] = Field(default_factory=list)
+    required_failures: list[str] = Field(default_factory=list)
+
+
 class ObservationDifference(StrictModel):
     step_id: str
     observation_id: str
@@ -286,3 +361,51 @@ class EvidenceBundleManifest(StrictModel):
     attachments: list[str] = Field(default_factory=list)
     schema_versions: dict[str, str] = Field(default_factory=dict)
     granted_capabilities: list[str] = Field(default_factory=list)
+
+
+class AcceptanceEvidenceManifest(StrictModel):
+    """Content-addressed machine-readable manifest for one acceptance run."""
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    evidence_id: str
+    created_at: datetime
+    migration_id: str
+    scenario_id: str
+    status: GateExecutionStatus
+    workbook: str
+    workbook_sha256: str
+    acceptance_definition: str
+    execution_trace: str
+    evaluation: str
+    markdown_report: str
+    file_sha256: dict[str, str] = Field(default_factory=dict)
+
+
+class MutationOutcome(StrEnum):
+    KILLED = "killed"
+    SURVIVED = "survived"
+    INCONCLUSIVE = "inconclusive"
+
+
+class MutationCaseResult(StrictModel):
+    """One isolated mutation and its public-acceptance outcome."""
+
+    id: str
+    kind: Literal["python", "formula"]
+    target: str
+    mutant_workbook: str
+    mutant_sha256: str
+    trace: str | None = None
+    evaluation: str | None = None
+    outcome: MutationOutcome
+    reason: str
+
+
+class MutationCampaign(StrictModel):
+    """Aggregate mutation-test evidence."""
+
+    schema_version: Literal["1.0.0"] = "1.0.0"
+    migration_id: str
+    source_workbook_sha256: str
+    status: GateExecutionStatus
+    cases: list[MutationCaseResult] = Field(default_factory=list)

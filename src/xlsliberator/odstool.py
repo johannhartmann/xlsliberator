@@ -146,6 +146,7 @@ class EventBindingSpec(BaseModel):
 
 ReplacementMap = Mapping[str, bytes | None]
 MutationBuilder = Callable[[zipfile.ZipFile], ReplacementMap]
+MemberTransform = Callable[[bytes], bytes]
 
 
 def list_package(path: str | Path) -> PackageVerification:
@@ -226,6 +227,37 @@ def verify_package(path: str | Path) -> PackageVerification:
 def inspect_scripts(path: str | Path) -> PackageVerification:
     """Return verified embedded-script metadata."""
     return verify_package(path)
+
+
+def transform_package_member(
+    path: str | Path,
+    member: str,
+    transform: MemberTransform,
+    *,
+    expect_sha256: str | None = None,
+    dry_run: bool = False,
+) -> MutationResult:
+    """Transactionally transform one existing member while verifying the full package."""
+    _validate_member_path(member)
+
+    def build(archive: zipfile.ZipFile) -> ReplacementMap:
+        if member not in archive.namelist():
+            raise OdsToolError(f"Package member does not exist: {member}")
+        original = archive.read(member)
+        replacement = transform(original)
+        if not isinstance(replacement, bytes):
+            raise OdsToolError("Package member transform must return bytes")
+        if replacement == original:
+            raise OdsToolError(f"Package member transform made no change: {member}")
+        return {member: replacement}
+
+    return _mutate_package(
+        Path(path),
+        operation=f"transform-member:{member}",
+        build_replacements=build,
+        expect_sha256=expect_sha256,
+        dry_run=dry_run,
+    )
 
 
 def upsert_scripts(

@@ -1,0 +1,65 @@
+schema_version: 1.0.0
+migration:
+  schema_version: 1.0.0
+  id: reviewed-calculation
+  title: Reviewed calculation acceptance
+  source_workbook: source.xlsx
+  target_workbook: output.ods
+  authored_by: migration-author@example.invalid
+  reviewed_by: independent-reviewer@example.invalid
+  requirements:
+    - The total in Summary!B10 is 42 after recalculation.
+    - The result persists across save, close, and reopen.
+  oracle_policy: authored_acceptance_requirements
+environment:
+  schema_version: 1.0.0
+  locale: en-US
+  timezone: UTC
+  calculation_mode: automatic
+scenario:
+  schema_version: 1.0.0
+  id: save-close-reopen
+  description: Recalculate and prove that the reviewed result persists.
+  steps:
+    - id: open
+      action:
+        kind: open
+    - id: recalculate
+      action:
+        kind: recalculate
+      observations_after:
+        - id: calculated-total
+          kind: cell_value
+          selector:
+            sheet: Summary
+            address: B10
+          expected:
+            kind: number
+            value: 42
+          comparison:
+            absolute_tolerance: 0.000001
+            relative_tolerance: 0.000001
+    - id: save
+      action:
+        kind: save
+    - id: close
+      action:
+        kind: close
+    - id: reopen
+      action:
+        kind: reopen
+      observations_after:
+        - id: persisted-total
+          kind: cell_value
+          selector:
+            sheet: Summary
+            address: B10
+          expected:
+            kind: number
+            value: 42
+          comparison:
+            absolute_tolerance: 0.000001
+            relative_tolerance: 0.000001
+    - id: export-pdf
+      action:
+        kind: export_pdf

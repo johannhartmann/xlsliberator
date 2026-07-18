@@ -196,13 +196,12 @@ def test_package_gate_is_offline_and_build_backend_is_in_test_image() -> None:
     assert 'pip install --no-cache-dir ".[web,dev,legacy-agent]"' in test_dockerfile
     assert "pip install --no-cache-dir -e" not in app_dockerfile
     assert "pip install --no-cache-dir -e" not in test_dockerfile
-    assert (
-        "cmp -s /app/src/sitecustomize.py /usr/local/lib/python3.11/site-packages/sitecustomize.py"
-    ) in app_dockerfile
-    assert (
-        "cmp -s /build/src/sitecustomize.py "
-        "/usr/local/lib/python3.11/site-packages/sitecustomize.py"
-    ) in test_dockerfile
+    assert "cmp -s /app/src/sitecustomize.py" in app_dockerfile
+    assert "cmp -s /build/src/sitecustomize.py" in test_dockerfile
+    assert "site.getsitepackages()[0]" in app_dockerfile
+    assert "site.getsitepackages()[0]" in test_dockerfile
+    assert "')/sitecustomize.py\"" in app_dockerfile
+    assert "')/sitecustomize.py\"" in test_dockerfile
     assert '"build", "--no-isolation"' in ci_check
     assert '("*.whl", "*.tar.gz")' in ci_check
     assert 'archive.read("sitecustomize.py")' in ci_check

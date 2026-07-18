@@ -16,17 +16,27 @@ from xlsliberator.scenarios.models import (
 from xlsliberator.validation_models import GateExecutionStatus
 
 
-def diff_traces(source: RuntimeTrace, target: RuntimeTrace, scenario: Scenario) -> TraceDiff:
+def diff_traces(
+    source: RuntimeTrace,
+    target: RuntimeTrace,
+    scenario: Scenario | None = None,
+) -> TraceDiff:
     """Compare matching observation IDs from two executions of one scenario."""
-    if source.scenario_id != scenario.id or target.scenario_id != scenario.id:
+    if source.scenario_id != target.scenario_id:
+        raise ValueError("trace scenario IDs do not match")
+    if scenario is not None and source.scenario_id != scenario.id:
         raise ValueError("trace scenario IDs do not match the supplied scenario")
     source_steps = {step.step_id: step for step in source.steps}
     target_steps = {step.step_id: step for step in target.steps}
-    rules = {
-        request.id: request.comparison
-        for step in scenario.steps
-        for request in (*step.observations_before, *step.observations_after)
-    }
+    rules = (
+        {
+            request.id: request.comparison
+            for step in scenario.steps
+            for request in (*step.observations_before, *step.observations_after)
+        }
+        if scenario is not None
+        else {}
+    )
     differences: list[ObservationDifference] = []
     for step_id in sorted(set(source_steps) & set(target_steps)):
         source_values = {
@@ -40,7 +50,7 @@ def diff_traces(source: RuntimeTrace, target: RuntimeTrace, scenario: Scenario) 
         for observation_id in sorted(set(source_values) | set(target_values)):
             source_value = source_values.get(observation_id)
             target_value = target_values.get(observation_id)
-            matched, reason = _values_equal(
+            matched, reason = compare_values(
                 source_value, target_value, rules.get(observation_id, ComparisonRules())
             )
             differences.append(
@@ -75,11 +85,12 @@ def diff_traces(source: RuntimeTrace, target: RuntimeTrace, scenario: Scenario) 
     )
 
 
-def _values_equal(
+def compare_values(
     source: ObservationValue | None,
     target: ObservationValue | None,
     rules: ComparisonRules,
 ) -> tuple[bool, str | None]:
+    """Compare two normalized values without collapsing spreadsheet types."""
     if source is None or target is None:
         return False, "observation missing from one trace"
     if {source.kind, target.kind} == {ValueKind.EMPTY_CELL, ValueKind.EMPTY_STRING}:

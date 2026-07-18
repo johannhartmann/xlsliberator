@@ -152,12 +152,42 @@ to this single transactional implementation.
 | `docker compose run --rm test bandit -r src -c pyproject.toml` | 0 | No security issues were identified. |
 | `docker compose run --rm test odstool --help` | 0 | The installed CLI exposed all nine required commands. |
 
+## Prompt 05 verification
+
+Prompt 05 is implemented and locally verified in Docker. `migration-check`
+loads strict versioned YAML/JSON metadata, environments, scenarios, actions,
+observations, step results, traces, assertions, and evidence manifests.
+Required actions and observations fail closed across all five execution states.
+Typed values preserve empty cells, empty strings, zero, Booleans, and formula
+errors; numeric comparisons use only declared absolute and relative tolerances.
+
+The CLI exposes `run`, `inspect`, `diff`, `mutate`, and `report`. Acceptance
+runs produce content-addressed JSON and Markdown evidence. Mutation campaigns
+modify embedded Python and ODF formulas only in copied, transactionally
+verified ODS packages; infrastructure unavailability is inconclusive rather
+than a killed mutant. The checked-in YAML example treats save, close, and
+reopen as explicit actions. Expectations are authored from requirements and
+independently reviewed; cached Excel values are not an authoritative oracle.
+The one-shot pinned Docker runner remains the target boundary until Prompt 06
+replaces it with the stateful runtime service.
+
+| Exact command | Exit | Outcome |
+|---|---:|---|
+| `docker compose run --rm test pytest -q tests/unit/test_migration_check.py` | 0 | 9 focused schema, status, assertion, evidence, CLI, lifecycle, mutation, and report tests passed. |
+| `docker compose run --rm test pytest -q tests/unit` | 0 | 450 passed and 5 explicitly declared live/fixture skips. |
+| `docker compose run --rm test mypy src` | 0 | Strict typing passed for 93 source files. |
+| `docker compose run --rm test ruff check src tests` | 0 | Lint passed. |
+| `docker compose run --rm test ruff format --check .` | 0 | All 178 files were formatted. |
+| `docker compose run --rm test bandit -q -r src -c pyproject.toml` | 0 | No security issues were identified. |
+| `docker compose run --rm test python tools/ci_check.py package` | 0 | Wheel and sdist built; the packaged startup guard and metadata passed. |
+| `docker compose run --rm test python -m xlsliberator.migration_check --help` | 0 | All five required commands were exposed from the current source. |
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
 |---|---|---|
 | Legacy provider code | deprecated modules remain available only under the optional `xlsliberator.legacy_agent` extra for migration compatibility | remove after all downstream users have moved to `xlsliberator-swe` |
-| Core deterministic surface | typed primitives, `xlsprobe`, and transactional `odstool` exist, but acceptance scenarios and stateful runtime tools are not yet implemented | Prompts 05–06 complete those deterministic tools |
+| Core deterministic surface | typed primitives, `xlsprobe`, transactional `odstool`, and fail-closed `migration-check` exist; the target runner is still one-shot | Prompt 06 replaces the one-shot target boundary with a stateful runtime service |
 | Fail-open or ambiguous validation states | macro/control gates can report `SKIPPED` for missing output; legacy translation fallbacks return source text; some test paths accept skipped live behavior | Prompt 01 makes required gates reject `SKIPPED`, `UNAVAILABLE`, `NOT_RUN`, timeouts, and transport-only success |
 | Integration coverage is incomplete outside CI | GitHub office and web jobs are now blocking with `XLSLIBERATOR_FAIL_ON_SKIP=1`, but `make all` omits office, web, and package gates; multiple integration modules still contain permissive skips outside that mode | Prompt 01 aligns local and CI truth and separates explicitly optional live-provider tests |
 | Placeholder or inaccurate tools | `take_screenshot` and keyboard input are registered MCP tools but only return unavailable; “click” resolves a handler and invokes a script rather than dispatching a GUI click; `test_placeholder.py` adds no behavior coverage | Prompt 01 corrects naming/status; Prompts 04 and 06 expose only operations with truthful semantics |
@@ -185,11 +215,11 @@ when applicable, and ledger update are linked.
 | Prompt | Status | Required acceptance evidence |
 |---:|---|---|
 | 00 — baseline and architecture | COMPLETE WITH BLOCKED RUNTIME | this baseline; [migration architecture](architecture/open-swe-migration.md); [decision log](architecture/decision-log.md) |
-| 01 — truthful validation and CI | IMPLEMENTED; REMOTE CI RERUN REQUIRED | fail-closed tests, aligned Docker CI commands, exact results |
-| 02 — extract model orchestration | COMPLETE LOCALLY; REMOTE CI RERUN REQUIRED | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
-| 03 — `xlsprobe` dossier | COMPLETE LOCALLY; REMOTE CI REQUIRED | CLI/API schema, fixture snapshots, dossier evidence |
+| 01 — truthful validation and CI | COMPLETE; REMOTE CI GREEN AT `9cce352` | fail-closed tests, aligned Docker CI commands, exact results |
+| 02 — extract model orchestration | COMPLETE; REMOTE CI GREEN AT `9cce352` | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
+| 03 — `xlsprobe` dossier | COMPLETE; REMOTE CI GREEN AT `9cce352` | CLI/API schema, fixture snapshots, dossier evidence |
 | 04 — transactional `odstool` | COMPLETE LOCALLY; REMOTE CI REQUIRED | mutation-plan, rollback, preservation and conflict tests |
-| 05 — `migration-check` | PENDING | scenario schema, target execution traces, negative cases |
+| 05 — `migration-check` | COMPLETE LOCALLY; REMOTE CI REQUIRED | scenario schema, deterministic target traces, fail-closed negatives, mutation evidence |
 | 06 — stateful LibreOffice MCP | PENDING | session lifecycle, isolation, runtime integration evidence |
 | 07 — thin Open-SWE fork | PENDING | separate repository, upstream record, sync procedure |
 | 08 — sandbox snapshot | PENDING | image/SBOM, tool versions, sandbox smoke |
@@ -211,8 +241,8 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Commit and push Prompt 04 so remote Docker CI can verify Prompts 01–04, then
-begin **Prompt 05 — `migration-check` acceptance scenarios**. Local commands
-continue exclusively in Docker. A separate BuildKit builder is used for fresh
-image builds because the default Docker content store contains a zero-filled
-cached base layer; no local Python or office fallback is permitted.
+Commit and push Prompt 05 so remote Docker CI can verify Prompts 04–05, then
+begin **Prompt 06 — stateful LibreOffice runtime MCP**. Local commands continue
+exclusively in Docker. A separate BuildKit builder is used for fresh image
+builds because the default Docker content store contains a zero-filled cached
+base layer; no local Python or office fallback is permitted.

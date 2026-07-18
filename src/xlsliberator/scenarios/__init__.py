@@ -1,13 +1,22 @@
 """Versioned scenario, trace, and evidence models."""
 
-from xlsliberator.scenarios.diff import diff_traces
+from xlsliberator.scenarios.assertions import evaluate_trace
+from xlsliberator.scenarios.diff import compare_values, diff_traces
 from xlsliberator.scenarios.evidence import EvidenceBundleWriter
 from xlsliberator.scenarios.models import (
+    AcceptanceDefinition,
+    AcceptanceEvaluation,
+    AcceptanceEvidenceManifest,
     Action,
     ActionKind,
+    AssertionResult,
     ComparisonRules,
     EnvironmentManifest,
     EvidenceBundleManifest,
+    MigrationMetadata,
+    MutationCampaign,
+    MutationCaseResult,
+    MutationOutcome,
     ObservationKind,
     ObservationRequest,
     ObservationValue,
@@ -20,12 +29,20 @@ from xlsliberator.scenarios.models import (
 )
 
 __all__ = [
+    "AcceptanceDefinition",
+    "AcceptanceEvaluation",
+    "AcceptanceEvidenceManifest",
     "Action",
     "ActionKind",
+    "AssertionResult",
     "ComparisonRules",
     "EnvironmentManifest",
     "EvidenceBundleManifest",
     "EvidenceBundleWriter",
+    "MigrationMetadata",
+    "MutationCampaign",
+    "MutationCaseResult",
+    "MutationOutcome",
     "ObservationKind",
     "ObservationRequest",
     "ObservationValue",
@@ -35,5 +52,7 @@ __all__ = [
     "ScenarioStep",
     "StepResult",
     "TraceDiff",
+    "compare_values",
     "diff_traces",
+    "evaluate_trace",
 ]

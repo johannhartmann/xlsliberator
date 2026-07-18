@@ -147,6 +147,42 @@ Mutation results include member-level diffs and explicitly report invalidated
 package signatures. A failed validation, write, binding resolution, or
 precondition leaves the original untouched.
 
+### Public migration acceptance
+
+`migration-check` loads a strict, versioned YAML or JSON contract containing
+independently reviewed migration metadata, the declared environment and
+capability grants, and an action/observation scenario. Required actions and
+assertions fail closed: `UNAVAILABLE`, `SKIPPED`, and `NOT_RUN` can never
+produce a passing acceptance result. Typed observations keep empty cells,
+empty strings, numbers, Booleans, and formula errors distinct, with explicitly
+declared absolute and relative numeric tolerances.
+
+```bash
+# Execute only through the trusted Docker orchestrator; LibreOffice remains in
+# the pinned office worker image.
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  migration-check run "$PWD/public-acceptance.yaml" "$PWD/output.ods" \
+  --output "$PWD/artifacts/acceptance-evidence"
+
+docker compose run --rm test \
+  migration-check inspect "$PWD/artifacts/acceptance-evidence"
+docker compose run --rm test \
+  migration-check diff "$PWD/trace-a.json" "$PWD/trace-b.json"
+
+# Mutants are generated only from copies under <migration-dir>/mutations.
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  migration-check mutate "$PWD/migration"
+docker compose run --rm test migration-check report "$PWD/migration"
+```
+
+Each run emits content-addressed JSON plus a Markdown report. Mutation campaigns
+change one embedded Python module or ODF formula at a time and pass only when
+the public acceptance detects every executable mutant. Runtime unavailability
+is inconclusive, never a killed mutant. Expected results come from the authored
+requirements and independent review; cached Excel values are explicitly not an
+authoritative oracle. Real target execution currently uses the isolated
+one-shot Docker runner and moves to the stateful service in Prompt 06.
+
 ### Provider-neutral MCP Server
 
 Start the MCP server for any MCP-compatible orchestrator:
