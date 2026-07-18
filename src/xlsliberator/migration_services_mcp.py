@@ -445,7 +445,7 @@ async def collect_build_logs(repair_id: str) -> dict[str, Any]:
 
 
 corpus_mcp = FastMCP(name="XLSLiberator Migration Corpus")
-for _tool in (
+for _corpus_tool in (
     search_public_fixtures,
     search_prior_failures,
     run_public_suite,
@@ -454,10 +454,10 @@ for _tool in (
     capability_report,
     run_hidden_acceptance,
 ):
-    corpus_mcp.tool(_tool)
+    corpus_mcp.tool(_corpus_tool)
 
 buildfarm_mcp = FastMCP(name="XLSLiberator LibreOffice Build Farm")
-for _tool in (
+for _buildfarm_tool in (
     create_source_worktree,
     apply_patch,
     build_component,
@@ -466,7 +466,7 @@ for _tool in (
     compare_stock_patched,
     collect_build_logs,
 ):
-    buildfarm_mcp.tool(_tool)
+    buildfarm_mcp.tool(_buildfarm_tool)
 
 
 def serve_corpus(host: str = "127.0.0.1", port: int = 8010) -> None:
