@@ -90,6 +90,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         if document is None:
             raise RuntimeError("LibreOffice did not create the interactive-game target")
         try:
+            game = _prepare_game_sheet(document)
             document.storeAsURL(
                 session["uno"].systemPathToFileUrl(str(output)),
                 (
@@ -97,7 +98,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
                     _property_value("Overwrite", True),
                 ),
             )
-            _initialize_document(document, session["uno"])
+            _initialize_document(document, game, session["uno"])
             _store_checkpoint(document, "final-render")
         except Exception:
             output.unlink(missing_ok=True)
@@ -119,11 +120,16 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _initialize_document(document: Any, uno: Any) -> None:
+def _prepare_game_sheet(document: Any) -> Any:
     sheets = document.getSheets()
-    first = sheets.getByIndex(0)
-    first.setName(GAME_SHEET)
-    game = sheets.getByName(GAME_SHEET)
+    game = sheets.getByIndex(0)
+    game.setName(GAME_SHEET)
+    _set_cell(game, "A1", "XLSLiberator interactive game target")
+    return game
+
+
+def _initialize_document(document: Any, game: Any, uno: Any) -> None:
+    sheets = document.getSheets()
     _add_game_controls(document, game, uno)
 
     sheets.insertNewByName(SCORE_SHEET, 1)
