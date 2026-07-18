@@ -309,13 +309,13 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             button = document.createInstance("com.sun.star.form.component.CommandButton")
             button.Name = button_name
             button.Label = "Run certification event"
-            shape.setControl(button)
 
             forms = draw_page.getForms()
             form = document.createInstance("com.sun.star.form.component.DataForm")
             form.Name = "CertificationForm"
-            forms.insertByIndex(0, form)
-            form.insertByIndex(0, button)
+            forms.insertByName("CertificationForm", form)
+            form.insertByName(button_name, button)
+            shape.setControl(button)
             draw_page.add(shape)
 
             document.storeAsURL(

@@ -266,16 +266,16 @@ def _add_button_form(
     model = document.createInstance("com.sun.star.form.component.CommandButton")
     model.Name = _CONTROL_MODEL_NAMES[name]
     model.Label = label
-    shape.setControl(model)
 
     forms = draw_page.getForms()
     if forms.getCount() == 0:
         form = document.createInstance("com.sun.star.form.component.DataForm")
         form.Name = "CertificationForm"
-        forms.insertByIndex(0, form)
+        forms.insertByName("CertificationForm", form)
     else:
         form = forms.getByIndex(0)
-    form.insertByIndex(form.getCount(), model)
+    form.insertByName(model.Name, model)
+    shape.setControl(model)
     draw_page.add(shape)
 
 
