@@ -181,7 +181,7 @@ class OpenSWEClient:
                 content = response.read(_MAX_RESPONSE_BYTES + 1)
                 if len(content) > _MAX_RESPONSE_BYTES:
                     raise OpenSWEError("Open-SWE response exceeded the safety limit")
-                return content
+                return bytes(content)
         except HTTPError as exc:
             detail = _safe_http_error(exc)
             raise OpenSWEError(detail) from exc
