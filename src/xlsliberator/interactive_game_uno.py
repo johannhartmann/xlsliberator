@@ -98,7 +98,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
             _initialize_document(document, session["uno"])
-            document.store()
+            _store_checkpoint(document, "final-render")
         except Exception:
             output.unlink(missing_ok=True)
             raise
@@ -168,6 +168,7 @@ def _initialize_document(document: Any, uno: Any) -> None:
     _set_cell(state_sheet, "A5", TARGET_BUILD)
     state_sheet.IsVisible = False
 
+    _store_checkpoint(document, "base-document")
     _add_form(document, game, score, uno)
     controller = InteractiveGameController({}, document, enable_timer=False)
     try:
@@ -186,6 +187,7 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
     game_form = document.createInstance("com.sun.star.form.component.DataForm")
     game_form.Name = "XLSLiberatorGameControls"
     game_forms.insertByIndex(game_forms.getCount(), game_form)
+    _store_checkpoint(document, "game-form")
     for index, (name, label) in enumerate(
         (
             ("GameStart", "Start"),
@@ -205,12 +207,14 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             y=4_500 + index * 1_250,
             width=4_000,
         )
+        _store_checkpoint(document, f"control-{name}")
 
     score_draw_page = score.getDrawPage()
     score_forms = score_draw_page.getForms()
     score_form = document.createInstance("com.sun.star.form.component.DataForm")
     score_form.Name = "XLSLiberatorScoreControls"
     score_forms.insertByIndex(score_forms.getCount(), score_form)
+    _store_checkpoint(document, "score-form")
     _add_button(
         document,
         score,
@@ -222,6 +226,7 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
         y=5_000,
         width=4_000,
     )
+    _store_checkpoint(document, "control-ScoreReturn")
 
 
 def _add_button(
@@ -252,6 +257,13 @@ def _add_button(
     shape.setControl(model)
     form.insertByIndex(form.getCount(), model)
     sheet.getDrawPage().add(shape)
+
+
+def _store_checkpoint(document: Any, stage: str) -> None:
+    try:
+        document.store()
+    except Exception as exc:
+        raise RuntimeError(f"interactive-game store checkpoint failed: {stage}") from exc
 
 
 class InteractiveGameController:
