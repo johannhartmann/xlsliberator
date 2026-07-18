@@ -726,5 +726,112 @@ def corpus_report_cmd(
         output.write_text(rendered, encoding="utf-8")
 
 
+@cli.command(name="demo-corpus-validate")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("tests/corpus/manifests/episodes.json"),
+    show_default=True,
+)
+@click.option(
+    "--search-index",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("tests/corpus/manifests/search-index.json"),
+    show_default=True,
+)
+def demo_corpus_validate_cmd(manifest_path: Path, search_index: Path) -> None:
+    """Validate serious episode layout, integrity, and search metadata."""
+    from xlsliberator.demo_corpus import DemoCorpusManifest
+
+    try:
+        manifest = DemoCorpusManifest.load(manifest_path)
+        repository_root = manifest_path.resolve().parents[3]
+        errors = manifest.verify(repository_root)
+        checked_index = json.loads(search_index.read_text(encoding="utf-8"))
+        if checked_index != manifest.search_index():
+            errors.append("checked-in search index does not match episode manifest")
+        if errors:
+            raise ValueError("; ".join(errors))
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Validated {len(manifest.episodes)} serious migration episodes")
+
+
+@cli.command(name="demo-corpus-search")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("tests/corpus/manifests/episodes.json"),
+    show_default=True,
+)
+@click.option("--query", required=True)
+@click.option("--subset", type=click.Choice(["pr", "nightly", "security"]))
+def demo_corpus_search_cmd(
+    manifest_path: Path,
+    query: str,
+    subset: str | None,
+) -> None:
+    """Search public corpus metadata for migration candidates."""
+    from typing import cast
+
+    from xlsliberator.demo_corpus import (
+        DemoCorpusManifest,
+        SubsetName,
+        search_demo_corpus,
+    )
+
+    try:
+        manifest = DemoCorpusManifest.load(manifest_path)
+        matches = search_demo_corpus(
+            manifest,
+            query=query,
+            subset=cast(SubsetName | None, subset),
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps({"matches": matches}, indent=2, sort_keys=True))
+
+
+@cli.command(name="demo-corpus-report")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=Path("tests/corpus/manifests/episodes.json"),
+    show_default=True,
+)
+@click.option(
+    "--results",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+)
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path))
+def demo_corpus_report_cmd(
+    manifest_path: Path,
+    results: Path,
+    output: Path | None,
+) -> None:
+    """Generate feature and format dispositions from serious episode results."""
+    from xlsliberator.demo_corpus import (
+        DemoCorpusManifest,
+        generate_demo_corpus_report,
+        load_demo_results,
+    )
+
+    try:
+        manifest = DemoCorpusManifest.load(manifest_path)
+        report = generate_demo_corpus_report(manifest, load_demo_results(results))
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    rendered = report.model_dump_json(indent=2) + "\n"
+    if output is None:
+        click.echo(rendered, nl=False)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
+
+
 if __name__ == "__main__":
     cli()

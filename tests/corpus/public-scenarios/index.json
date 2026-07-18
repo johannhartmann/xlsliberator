@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "visibility": "public",
+  "hidden_acceptance_present": false,
+  "episodes": {
+    "addin-replacement": "demos/addin-replacement/acceptance.yaml",
+    "database-dashboard": "demos/database-dashboard/acceptance.yaml",
+    "dependency-liberation": "demos/dependency-liberation/acceptance.yaml",
+    "hostile-workbook": "demos/hostile-workbook/acceptance.yaml",
+    "interactive-game": "demos/interactive-game/acceptance.yaml",
+    "invoice-workflow": "demos/invoice-workflow/acceptance.yaml",
+    "legacy-xls-application": "demos/legacy-xls-application/acceptance.yaml",
+    "xlsb-operations-model": "demos/xlsb-operations-model/acceptance.yaml"
+  }
+}

@@ -265,8 +265,8 @@ when applicable, and ledger update are linked.
 | 15 — deterministic middleware | COMPLETE IN `xlsliberator-swe` AT `49164719` | checkpoint and anti-fake-success/anti-test-weakening tests |
 | 16 — migration lead | COMPLETE IN `xlsliberator-swe` AT `18e0d770` | workflow tests and end-to-end thread trajectory |
 | 17 — independent reviewer | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `7c7ee4c8` | separate reviewer identity, hidden/mutation gate evidence; Agent and sandbox runs `29654989184` and `29654989178` |
-| 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI EVIDENCE PENDING | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
-| 19 — serious demos and corpus | PENDING | representative episodes and corpus metadata |
+| 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI FINALIZATION IN PROGRESS | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
+| 19 — serious demos and corpus | IMPLEMENTED; CI EVIDENCE PENDING | eight licensed episodes, behavioral public scenarios, corpus search/subsets, evidence-derived feature report |
 | 20 — repair promotion/build farm | PENDING | generic repair PR flow and build-farm contract/tests |
 | 21 — execution hardening | PENDING | threat-model tests, sandbox/network/secret controls |
 | 22 — LangSmith evaluations | PENDING | datasets, evaluators, thresholds, release gate |
@@ -274,6 +274,6 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Obtain blocking remote CI evidence for Prompt 18, then begin **Prompt 19 —
-serious demos and corpus**. Local commands continue exclusively in Docker; no
-local Python or office fallback is permitted.
+Obtain blocking remote CI evidence for Prompts 18–19, then begin **Prompt 20 —
+repair promotion and the build-farm contract**. Local commands continue
+exclusively in Docker; no local Python or office fallback is permitted.

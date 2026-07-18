@@ -1,0 +1,23 @@
+schema_version: 1.0.0
+visibility: public
+episode_id: legacy-xls-application
+target: libreoffice
+target_version: 26.2.4.2
+expected_restrictions:
+  - The original BIFF8 workbook is read-only input.
+  - Unsupported legacy macro behavior is reported, never silently discarded.
+scenarios:
+  - scenario_id: biff8-inventory
+    title: BIFF8 workbook inventory is complete
+    feature: biff8-import
+    action: Inventory sheets, formulas, names, and macro streams before migration.
+    assertions:
+      - Inventory values identify every source sheet and formula record.
+      - Macro stream state is reported as preserved, replaced, unsupported, or unavailable.
+  - scenario_id: legacy-reopen
+    title: Migrated legacy calculation survives reopen
+    feature: save-reopen
+    action: Run the public macro-equivalent action, save, close, reopen, and recalculate.
+    assertions:
+      - The output value matches the public expected result after recalculation.
+      - The migrated formula and state values remain stable after reopen.

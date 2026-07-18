@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/tmp/home
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends docker-cli git \
+    && apt-get install -y --no-install-recommends docker-cli git zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build

@@ -1,0 +1,23 @@
+schema_version: 1.0.0
+visibility: public
+episode_id: addin-replacement
+target: libreoffice
+target_version: 26.2.4.2
+expected_restrictions:
+  - Native XLL binaries are not loaded or executed.
+  - Replacement functions use only the pinned LibreOffice runtime and packaged extension code.
+scenarios:
+  - scenario_id: udf-values
+    title: Replaced UDFs preserve public values
+    feature: udf-replacement
+    action: Recalculate the public Roman numeral and number-name examples through the replacement.
+    assertions:
+      - Each formula result value matches the public expected value table.
+      - Invalid argument values return the documented spreadsheet error value.
+  - scenario_id: extension-reopen
+    title: LibreOffice add-in remains available after reopen
+    feature: extension-packaging
+    action: Install the generated extension in the disposable office profile, save, close, and reopen.
+    assertions:
+      - Formula results remain available after document reopen and recalculation.
+      - The extension output records its package identity without loading an XLL process.

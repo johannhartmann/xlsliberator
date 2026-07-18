@@ -22,7 +22,19 @@ jobs:
       - name: Run deterministic generators, metamorphic tests, and minimizer
         run: >-
           docker compose --profile ci-orchestrator run --rm test-orchestrator
-          pytest -q tests/unit/test_conformance_corpus.py tests/unit/test_capability_matrix.py
+          pytest -q tests/unit/test_conformance_corpus.py tests/unit/test_demo_corpus.py
+          tests/unit/test_capability_matrix.py
+      - name: Rebuild generated demo workbooks inside Docker
+        run: >-
+          docker compose --profile ci-orchestrator run --rm test-orchestrator
+          sh tools/build_demo_workbooks.sh
+      - name: Validate and index the nightly serious episode subset
+        run: |
+          docker compose --profile ci-orchestrator run --rm test-orchestrator \
+            xlsliberator demo-corpus-validate
+          docker compose --profile ci-orchestrator run --rm test-orchestrator \
+            xlsliberator demo-corpus-search --query "" --subset nightly \
+            > artifacts/corpus/nightly-subset.json
       - name: Run pinned LibreOffice differential and integration matrix
         run: >-
           docker compose --profile ci-orchestrator run --rm test-orchestrator
@@ -34,7 +46,10 @@ jobs:
           xlsliberator corpus-report
           --executions artifacts/certification/corpus_executions.json
           --previous docs/corpus_statistics.json
-          --output artifacts/corpus/statistics.json'
+          --output artifacts/corpus/statistics.json &&
+          xlsliberator demo-corpus-report
+          --results tests/corpus/manifests/not-run-results.json
+          --output artifacts/corpus/demo-capabilities.json'
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

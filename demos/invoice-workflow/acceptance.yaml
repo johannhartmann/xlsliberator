@@ -1,0 +1,37 @@
+schema_version: 1.0.0
+visibility: public
+episode_id: invoice-workflow
+target: libreoffice
+target_version: 26.2.4.2
+expected_restrictions:
+  - Outlook COM must be replaced with a portable message artifact or mailto handoff.
+  - PDF and spreadsheet output must stay inside the episode artifact directory.
+scenarios:
+  - scenario_id: customer-form
+    title: Customer form creates and edits master data
+    feature: userform
+    action: Add a customer, edit its company, and cancel a second edit through native controls.
+    assertions:
+      - The customer record values are added once and the company value is updated once.
+      - Cancelling the second control event leaves all record values unchanged.
+  - scenario_id: worksheet-search-event
+    title: Invoice customer search reacts to cell edits
+    feature: worksheet-events
+    action: Enter a partial customer name in the invoice search cell and choose one result.
+    assertions:
+      - The worksheet change event exposes only matching customer records.
+      - Selecting a result writes the expected customer value into the invoice row.
+  - scenario_id: pdf-export
+    title: Invoice creation produces a valid PDF
+    feature: pdf-export
+    action: Select the public open invoice and invoke the migrated Create Invoice control.
+    assertions:
+      - The output PDF contains the invoice number, customer value, and total value.
+      - The invoice status value changes only after PDF output succeeds.
+  - scenario_id: portable-email
+    title: Outlook automation is replaced without sending mail
+    feature: outlook-replacement
+    action: Invoke Create Email after generating the public invoice.
+    assertions:
+      - A portable message output contains recipient, subject, body, and PDF attachment reference.
+      - No Outlook COM control, network send, or host process is invoked.
