@@ -51,9 +51,7 @@ def _tools(metadata: dict[str, Any], path: Path) -> list[str]:
     elif isinstance(value, list) and all(isinstance(tool, str) for tool in value):
         tools = [tool.strip() for tool in value if tool.strip()]
     else:
-        raise SkillValidationError(
-            f"{path}: allowed-tools or recommended-tools must declare tools"
-        )
+        raise SkillValidationError(f"{path}: allowed-tools or recommended-tools must declare tools")
     if not tools or any(not _TOOL_NAME.fullmatch(tool) for tool in tools):
         raise SkillValidationError(f"{path}: tool declarations contain invalid names")
     return tools
@@ -75,9 +73,7 @@ def validate_skill(path: Path) -> dict[str, Any]:
 
     name = _required_string(metadata, "name", path)
     if not _SKILL_NAME.fullmatch(name) or name != path.parent.name:
-        raise SkillValidationError(
-            f"{path}: name must match its lowercase-hyphen directory"
-        )
+        raise SkillValidationError(f"{path}: name must match its lowercase-hyphen directory")
     description = _required_string(metadata, "description", path)
     if (
         len(description) > MAX_DESCRIPTION_LENGTH
