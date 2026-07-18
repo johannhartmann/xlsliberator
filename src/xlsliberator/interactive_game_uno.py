@@ -127,6 +127,7 @@ def _initialize_document(document: Any, uno: Any) -> None:
     game = sheets.getByName(GAME_SHEET)
     score = sheets.getByName(SCORE_SHEET)
     _add_form(document, game, score, uno)
+    _store_checkpoint(document, "native-controls")
 
     sheets.insertNewByName(STATE_SHEET, 2)
     state_sheet = sheets.getByName(STATE_SHEET)
@@ -188,7 +189,6 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
     game_form = document.createInstance("com.sun.star.form.component.DataForm")
     game_form.Name = "XLSLiberatorGameControls"
     game_forms.insertByIndex(game_forms.getCount(), game_form)
-    _store_checkpoint(document, "game-form")
     for index, (name, label) in enumerate(
         (
             ("GameStart", "Start"),
@@ -208,14 +208,12 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             y=4_500 + index * 1_250,
             width=4_000,
         )
-        _store_checkpoint(document, f"control-{name}")
 
     score_draw_page = score.getDrawPage()
     score_forms = score_draw_page.getForms()
     score_form = document.createInstance("com.sun.star.form.component.DataForm")
     score_form.Name = "XLSLiberatorScoreControls"
     score_forms.insertByIndex(score_forms.getCount(), score_form)
-    _store_checkpoint(document, "score-form")
     _add_button(
         document,
         score,
@@ -227,7 +225,6 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
         y=5_000,
         width=4_000,
     )
-    _store_checkpoint(document, "control-ScoreReturn")
 
 
 def _add_button(
