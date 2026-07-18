@@ -46,6 +46,7 @@ Changelog = "https://github.com/johannhartmann/xlsliberator/blob/main/CHANGELOG.
 [project.scripts]
 xlsliberator = "xlsliberator.cli:cli"
 xlsprobe = "xlsliberator.xlsprobe:cli"
+odstool = "xlsliberator.odstool:cli"
 
 [project.optional-dependencies]
 web = [

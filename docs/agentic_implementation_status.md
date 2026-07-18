@@ -126,16 +126,41 @@ categories.
 | `docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/` | 0 | Strict typing passed for 88 source files. |
 | `docker compose run --rm test ruff check --no-cache src tests` | 0 | Lint passed. |
 
+## Prompt 04 verification
+
+Prompt 04 is implemented and locally verified in Docker. `odstool` exposes all
+nine required deterministic commands. Mutations require a verified source,
+support dry runs and SHA-256 preconditions, write a complete candidate beside
+the source, fsync and re-verify it, reject concurrent source changes, and only
+then atomically replace the original. Failed writes, malformed packages,
+unresolved bindings, and changed preconditions leave the source untouched.
+
+The package layer preserves unrelated scripts, unknown members, ZIP metadata,
+unrelated manifest entries, XML namespaces, comments, and processing
+instructions. It validates script syntax and exported event targets, enforces
+ODS mimetype placement and storage, reports member-level diffs, and explicitly
+reports signature invalidation. The historical embed/remove API now delegates
+to this single transactional implementation.
+
+| Exact command | Exit | Outcome |
+|---|---:|---|
+| `docker compose run --rm test pytest -p no:cacheprovider -q tests/unit/test_odstool.py tests/unit/test_embed_macros_transactional.py tests/unit/test_primitives.py tests/unit/test_api_progress.py` | 0 | 25 focused mutation, rollback, preservation, conflict, delegation, and adversarial tests passed. |
+| `docker compose run --rm test pytest -p no:cacheprovider -q -m 'not integration' tests/unit` | 0 | 440 passed and 5 explicitly declared live/fixture skips. |
+| `docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/` | 0 | Strict typing passed for 89 source files. |
+| `docker compose run --rm test ruff check --no-cache src tests` | 0 | Lint passed. |
+| `docker compose run --rm test ruff format --no-cache --check .` | 0 | All 173 files were formatted. |
+| `docker compose run --rm test bandit -r src -c pyproject.toml` | 0 | No security issues were identified. |
+| `docker compose run --rm test odstool --help` | 0 | The installed CLI exposed all nine required commands. |
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
 |---|---|---|
 | Legacy provider code | deprecated modules remain available only under the optional `xlsliberator.legacy_agent` extra for migration compatibility | remove after all downstream users have moved to `xlsliberator-swe` |
-| Core deterministic surface | typed primitives exist, but the richer forensics, transactional mutation, and stateful runtime tools are not yet implemented | Prompts 03–06 build those deterministic tools |
+| Core deterministic surface | typed primitives, `xlsprobe`, and transactional `odstool` exist, but acceptance scenarios and stateful runtime tools are not yet implemented | Prompts 05–06 complete those deterministic tools |
 | Fail-open or ambiguous validation states | macro/control gates can report `SKIPPED` for missing output; legacy translation fallbacks return source text; some test paths accept skipped live behavior | Prompt 01 makes required gates reject `SKIPPED`, `UNAVAILABLE`, `NOT_RUN`, timeouts, and transport-only success |
 | Integration coverage is incomplete outside CI | GitHub office and web jobs are now blocking with `XLSLIBERATOR_FAIL_ON_SKIP=1`, but `make all` omits office, web, and package gates; multiple integration modules still contain permissive skips outside that mode | Prompt 01 aligns local and CI truth and separates explicitly optional live-provider tests |
 | Placeholder or inaccurate tools | `take_screenshot` and keyboard input are registered MCP tools but only return unavailable; “click” resolves a handler and invokes a script rather than dispatching a GUI click; `test_placeholder.py` adds no behavior coverage | Prompt 01 corrects naming/status; Prompts 04 and 06 expose only operations with truthful semantics |
-| ODS mutation risk | legacy package/script mutation has historically replaced package members wholesale; current transactional code is safer but is not yet a general package editor with preconditions, dry-run plans, rollback, and conflict detection | Prompt 04 implements transactional `odstool` and preservation tests |
 | Demo evidence is too basic | the only checked-in workbook scenario is `tests/fixtures/scenarios/basic.ods`; generated samples focus on isolated features rather than serious migration episodes | Prompts 19 and 23 add representative episodes, hidden checks, mutations, and review evidence |
 | Self-review risk | current embedded `AgentRewriter` generates and refines its own result | Prompts 13, 16, and 17 separate specialists, lead orchestration, and an independent reviewer |
 | Large custom semantic layer | `vba_ir.py`, `vba_parser.py`, execution plans, and compatibility-runtime metadata are growing into a hand-built semantic/runtime route | Prompt 02 retains only small inventories/evidence schemas and removes compiler/runtime semantics used to emulate VBA |
@@ -163,7 +188,7 @@ when applicable, and ledger update are linked.
 | 01 — truthful validation and CI | IMPLEMENTED; REMOTE CI RERUN REQUIRED | fail-closed tests, aligned Docker CI commands, exact results |
 | 02 — extract model orchestration | COMPLETE LOCALLY; REMOTE CI RERUN REQUIRED | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
 | 03 — `xlsprobe` dossier | COMPLETE LOCALLY; REMOTE CI REQUIRED | CLI/API schema, fixture snapshots, dossier evidence |
-| 04 — transactional `odstool` | PENDING | mutation-plan, rollback, preservation and conflict tests |
+| 04 — transactional `odstool` | COMPLETE LOCALLY; REMOTE CI REQUIRED | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | PENDING | scenario schema, target execution traces, negative cases |
 | 06 — stateful LibreOffice MCP | PENDING | session lifecycle, isolation, runtime integration evidence |
 | 07 — thin Open-SWE fork | PENDING | separate repository, upstream record, sync procedure |
@@ -186,8 +211,8 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Commit and push Prompt 03 so remote Docker CI can verify Prompts 01–03, then
-begin **Prompt 04 — transactional `odstool`**. Local validation continues in the
-explicit arm64 Docker test image because the pinned default base resolves to an
-incompatible cached architecture on this host. No local Python or office
-fallback is permitted.
+Commit and push Prompt 04 so remote Docker CI can verify Prompts 01–04, then
+begin **Prompt 05 — `migration-check` acceptance scenarios**. Local commands
+continue exclusively in Docker. A separate BuildKit builder is used for fresh
+image builds because the default Docker content store contains a zero-filled
+cached base layer; no local Python or office fallback is permitted.

@@ -107,6 +107,46 @@ executable-looking workbook content is referenced instead of copied into the
 model-readable markdown. Dossier creation snapshots the source transactionally,
 refuses concurrent source changes, and never replaces an existing dossier.
 
+### Transactional ODS package edits
+
+`odstool` is the deterministic mutation boundary for scripts and event bindings.
+It verifies the source package before editing, writes and verifies a complete
+candidate beside the original, fsyncs it, rejects concurrent source changes,
+and atomically replaces the source only after every check passes. Existing
+scripts, unknown package members, ZIP metadata, and unrelated manifest entries
+are preserved.
+
+```bash
+# Inspect and verify without changing the package
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool list "$PWD/output.ods"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool verify "$PWD/output.ods"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool inspect-scripts "$PWD/output.ods"
+
+# Preview an upsert, then commit against the reviewed source hash
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool upsert-script "$PWD/output.ods" "$PWD/repair.py" --dry-run
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool upsert-script "$PWD/output.ods" "$PWD/repair.py" \
+  --expect-sha256 <reviewed-package-sha256>
+
+# Compare or snapshot verified packages
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool diff "$PWD/before.ods" "$PWD/after.ods"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  odstool snapshot "$PWD/output.ods" --output "$PWD/artifacts/output-snapshot"
+```
+
+The remaining mutation commands are `remove-script`, `bind-event`, and
+`unbind-event`; each supports `--dry-run` and `--expect-sha256`. Event binding
+YAML has the closed schema `id`, `control_id`, `event_name`, `module`, and
+`function`. The target module and exported function must already resolve.
+Mutation results include member-level diffs and explicitly report invalidated
+package signatures. A failed validation, write, binding resolution, or
+precondition leaves the original untouched.
+
 ### Provider-neutral MCP Server
 
 Start the MCP server for any MCP-compatible orchestrator:
