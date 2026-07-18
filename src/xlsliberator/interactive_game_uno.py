@@ -227,6 +227,7 @@ def _add_game_controls(document: Any, game: Any, uno: Any) -> None:
             y=1_000 + index * 1_500,
             width=5_000,
         )
+        _store_checkpoint(document, f"native-control-{name}")
 
 
 def _add_score_control(document: Any, score: Any, uno: Any) -> None:
@@ -240,6 +241,7 @@ def _add_score_control(document: Any, score: Any, uno: Any) -> None:
         y=1_000,
         width=5_000,
     )
+    _store_checkpoint(document, "native-control-ScoreReturn")
 
 
 def _add_button_form(
