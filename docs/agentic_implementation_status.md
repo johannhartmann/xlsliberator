@@ -268,7 +268,7 @@ when applicable, and ledger update are linked.
 | 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI FINALIZATION IN PROGRESS | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
 | 19 — serious demos and corpus | IMPLEMENTED; CI EVIDENCE PENDING | eight licensed episodes, behavioral public scenarios, corpus search/subsets, evidence-derived feature report |
 | 20 — repair promotion/build farm | IMPLEMENTED IN `xlsliberator`; OPEN-SWE FINALIZATION PENDING | validated repair records, public/reviewer corpus MCP, fail-closed build-farm contract, real TDF-172479 differential |
-| 21 — execution hardening | PENDING | threat-model tests, sandbox/network/secret controls |
+| 21 — execution hardening | IMPLEMENTED IN `xlsliberator`; OPEN-SWE FINALIZATION PENDING | networkless/read-only runtime, bounded hostile-input parser, typed grants, escape probes, security-adversary evaluator, Bandit and dependency audit |
 | 22 — LangSmith evaluations | PENDING | datasets, evaluators, thresholds, release gate |
 | 23 — autonomous showcase | PENDING | reproducible full episode, target evidence, independent verdict |
 

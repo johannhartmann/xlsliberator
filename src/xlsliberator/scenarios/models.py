@@ -23,7 +23,11 @@ class ExternalCapabilityKind(StrEnum):
     XLL = "xll"
     FILE = "file"
     NETWORK = "network"
+    HTTP = "http"
+    MAIL = "mail"
     DATABASE = "database"
+    FILESYSTEM_EXPORT = "filesystem_export"
+    BUILD_FARM = "build_farm"
     ADD_IN = "add_in"
     PROJECT_REFERENCE = "project_reference"
 

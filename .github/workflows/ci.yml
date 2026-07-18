@@ -176,3 +176,20 @@ jobs:
       - run: >-
           docker compose --profile ci-orchestrator run --rm security-audit
           python tools/ci_check.py security
+      - name: Exercise the real container escape boundary
+        run: |
+          docker run --rm \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 64 \
+            --memory 256m \
+            --cpus 1 \
+            xlsliberator-test:py311 \
+            sh -ec '
+              test ! -e /var/run/docker.sock
+              test -z "${OPENAI_API_KEY:-}${ANTHROPIC_API_KEY:-}${GITHUB_TOKEN:-}"
+              if touch /etc/xlsliberator-escape 2>/dev/null; then exit 1; fi
+              python -c "import socket; s=socket.socket(); s.settimeout(0.2); raise SystemExit(1 if s.connect_ex((\"1.1.1.1\", 53)) == 0 else 0)"
+            '

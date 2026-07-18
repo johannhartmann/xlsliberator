@@ -64,13 +64,19 @@ trace-diff, build, and regression gates make that decision.
 The malicious fixture set covers infinite macro loops, process spawning, host
 file reads, network attempts, ZIP bombs, oversized formulas/macros, package path
 traversal, ZIP symlinks, and prompt injection in VBA comments and cell text.
+The blocking CI security job additionally executes a real read-only,
+networkless, capability-dropped container escape probe. The versioned
+`security-adversary-v1` evaluator requires one durable result for every threat;
+an escaped probe fails the aggregate and an unavailable probe keeps it
+unavailable.
 
-## Source oracle and higher assurance
+Mail, database, HTTP, filesystem-export, and build-farm access are represented
+as typed `ExternalCapability` grants with a resource identifier and constraints.
+They describe access to an authorized external adapter; they do not add network
+access to the LibreOffice container. Undeclared grants are rejected and every
+effective grant is copied into the evidence manifest.
 
-Microsoft Excel source execution is not local and cannot use the LibreOffice
-Docker image. It uses the same versioned `SandboxPolicy` contract through a
-separately secured Windows remote worker or microVM and must return that sandbox
-attestation in its runtime identity. Missing or invalid attestation fails closed.
+## Higher assurance
 
 Docker shares a host kernel. Deployments handling hostile documents with a
 higher assurance requirement should implement the existing `microvm` or
@@ -83,7 +89,7 @@ runtime must never be labelled as the stock local Docker target.
 
 Docker engine and kernel vulnerabilities, parser bugs before sandbox entry, and
 trusted-orchestrator compromise remain in scope for platform hardening. The
-Windows worker must enforce its attested microVM/remote policy outside the Python
-process. Public MCP exposure is unsupported until authenticated authorization is
-configured. These limitations are explicit and cannot be converted into passing
-certification evidence.
+sole execution target remains LibreOffice 26.2.4.2; there is no Excel or Windows
+worker and no host fallback. Public MCP exposure is unsupported until
+authenticated authorization is configured. These limitations are explicit and
+cannot be converted into passing certification evidence.
