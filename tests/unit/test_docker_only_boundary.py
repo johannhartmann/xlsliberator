@@ -197,8 +197,7 @@ def test_package_gate_is_offline_and_build_backend_is_in_test_image() -> None:
     assert "pip install --no-cache-dir -e" not in app_dockerfile
     assert "pip install --no-cache-dir -e" not in test_dockerfile
     assert (
-        "cmp -s /app/src/sitecustomize.py "
-        "/usr/local/lib/python3.11/site-packages/sitecustomize.py"
+        "cmp -s /app/src/sitecustomize.py /usr/local/lib/python3.11/site-packages/sitecustomize.py"
     ) in app_dockerfile
     assert (
         "cmp -s /build/src/sitecustomize.py "
