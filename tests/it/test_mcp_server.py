@@ -25,6 +25,8 @@ def test_ods_file(tmp_path: Path) -> Path:
 def test_mcp_server_has_tools() -> None:
     """The public MCP surface is session-oriented and excludes legacy aliases."""
     from xlsliberator.libreoffice_mcp import (
+        build_interactive_game_target,
+        bundle_interactive_game_replays,
         capture_screenshot,
         close,
         collect_logs,
@@ -41,6 +43,7 @@ def test_mcp_server_has_tools() -> None:
         read_cells,
         recalculate,
         reopen,
+        run_interactive_game_scenario,
         save,
         send_keyboard_event,
         write_cells,
@@ -68,6 +71,9 @@ def test_mcp_server_has_tools() -> None:
             reopen,
             collect_logs,
             destroy_session,
+            build_interactive_game_target,
+            run_interactive_game_scenario,
+            bundle_interactive_game_replays,
         )
     }
     registered = {tool.name for tool in asyncio.run(mcp.list_tools())}
