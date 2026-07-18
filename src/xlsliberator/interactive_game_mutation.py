@@ -82,9 +82,7 @@ def _sha256(path: Path) -> str:
 def _apply_mutation(source: str, mutation: MutationSpec) -> str:
     occurrences = source.count(mutation.original)
     if occurrences != 1:
-        raise ValueError(
-            f"{mutation.mutation_id} expected one source match, found {occurrences}"
-        )
+        raise ValueError(f"{mutation.mutation_id} expected one source match, found {occurrences}")
     return source.replace(mutation.original, mutation.replacement, 1)
 
 
