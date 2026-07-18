@@ -96,10 +96,7 @@ def create_router(store: JobStore, runner: WebJobRunner, settings: WebSettings) 
     @router.get("/jobs/{job_id}/showcase", response_class=HTMLResponse)
     def showcase_replay(request: Request, job_id: str) -> Response:
         job = _get_job_or_404(store, job_id)
-        if (
-            job.status != JobPhase.COMPLETED
-            or job.operation_status != GateExecutionStatus.PASSED
-        ):
+        if job.status != JobPhase.COMPLETED or job.operation_status != GateExecutionStatus.PASSED:
             raise HTTPException(status_code=409, detail="Showcase evidence is not complete")
         replay = _load_showcase_replay(job)
         return templates.TemplateResponse(
@@ -380,9 +377,7 @@ def _completed_job_with_file(store: JobStore, job_id: str, kind: str) -> WebJob:
 
 
 def _load_showcase_replay(job: WebJob) -> dict[str, Any]:
-    recordings = [
-        artifact for artifact in job.artifacts if artifact.kind == "showcase-recording"
-    ]
+    recordings = [artifact for artifact in job.artifacts if artifact.kind == "showcase-recording"]
     results = [artifact for artifact in job.artifacts if artifact.kind == "showcase-result"]
     if len(recordings) != 1 or len(results) != 1:
         raise HTTPException(status_code=409, detail="Showcase evidence manifest is ambiguous")
@@ -407,7 +402,10 @@ def _load_showcase_replay(job: WebJob) -> dict[str, Any]:
     if not isinstance(raw, dict) or raw.get("status") != "passed":
         raise HTTPException(status_code=409, detail="Showcase result did not pass")
     scenario_id = raw.get("scenario_id")
-    if not isinstance(scenario_id, str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", scenario_id) is None:
+    if (
+        not isinstance(scenario_id, str)
+        or re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", scenario_id) is None
+    ):
         raise HTTPException(status_code=409, detail="Showcase scenario identifier is invalid")
     raw_operations = raw.get("operations")
     if not isinstance(raw_operations, list) or not 1 <= len(raw_operations) <= 100:

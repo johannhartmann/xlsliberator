@@ -70,7 +70,9 @@ def _require_success(response: dict[str, Any], operation: str) -> dict[str, Any]
         return data
     error = response.get("error") or {}
     message = str(error.get("message") or f"{operation} failed")
-    raise DockerRuntimeUnavailable(message)
+    traceback_text = str(error.get("traceback") or "").strip()
+    detail = f"\n{traceback_text[-4_000:]}" if traceback_text else ""
+    raise DockerRuntimeUnavailable(f"{message}{detail}")
 
 
 __all__ = [

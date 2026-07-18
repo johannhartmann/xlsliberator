@@ -177,9 +177,11 @@ def _set_cell(sheet: Any, address: str, value: str) -> None:
 
 
 def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
-    game_form = document.createInstance("com.sun.star.form.component.Form")
+    game_draw_page = game.getDrawPage()
+    game_forms = game_draw_page.getForms()
+    game_form = document.createInstance("com.sun.star.form.component.DataForm")
     game_form.Name = "XLSLiberatorGameControls"
-    game.getDrawPage().getForms().insertByName(game_form.Name, game_form)
+    game_forms.insertByIndex(game_forms.getCount(), game_form)
     for index, (name, label) in enumerate(
         (
             ("GameStart", "Start"),
@@ -200,9 +202,11 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             width=4_000,
         )
 
-    score_form = document.createInstance("com.sun.star.form.component.Form")
+    score_draw_page = score.getDrawPage()
+    score_forms = score_draw_page.getForms()
+    score_form = document.createInstance("com.sun.star.form.component.DataForm")
     score_form.Name = "XLSLiberatorScoreControls"
-    score.getDrawPage().getForms().insertByName(score_form.Name, score_form)
+    score_forms.insertByIndex(score_forms.getCount(), score_form)
     _add_button(
         document,
         score,
@@ -232,7 +236,6 @@ def _add_button(
     model.Name = name
     model.Label = label
     model.Tabstop = True
-    form.insertByName(name, model)
     shape = document.createInstance("com.sun.star.drawing.ControlShape")
     position = uno.createUnoStruct("com.sun.star.awt.Point")
     position.X = x
@@ -243,6 +246,7 @@ def _add_button(
     shape.setPosition(position)
     shape.setSize(size)
     shape.setControl(model)
+    form.insertByIndex(form.getCount(), model)
     sheet.getDrawPage().add(shape)
 
 
@@ -476,8 +480,10 @@ def _find_control_model(document: Any, name: str) -> Any:
         forms = sheets.getByIndex(sheet_index).getDrawPage().getForms()
         for form_index in range(forms.getCount()):
             form = forms.getByIndex(form_index)
-            if form.hasByName(name):
-                return form.getByName(name)
+            for control_index in range(form.getCount()):
+                control = form.getByIndex(control_index)
+                if getattr(control, "Name", None) == name:
+                    return control
     raise ValueError(f"interactive-game native control is missing: {name}")
 
 
