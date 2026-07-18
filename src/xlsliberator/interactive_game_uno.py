@@ -126,9 +126,6 @@ def _initialize_document(document: Any, uno: Any) -> None:
     sheets.insertNewByName(SCORE_SHEET, 1)
     game = sheets.getByName(GAME_SHEET)
     score = sheets.getByName(SCORE_SHEET)
-    _add_form(document, game, score, uno)
-    _store_checkpoint(document, "native-controls")
-
     sheets.insertNewByName(STATE_SHEET, 2)
     state_sheet = sheets.getByName(STATE_SHEET)
 
@@ -171,12 +168,15 @@ def _initialize_document(document: Any, uno: Any) -> None:
     _set_cell(state_sheet, "A5", TARGET_BUILD)
     state_sheet.IsVisible = False
 
-    _store_checkpoint(document, "base-document")
     controller = InteractiveGameController({}, document, enable_timer=False)
     try:
         controller.render()
     finally:
         controller.dispose()
+    _store_checkpoint(document, "base-document")
+
+    _add_form(document, game, score, uno)
+    _store_checkpoint(document, "native-controls")
 
 
 def _set_cell(sheet: Any, address: str, value: str) -> None:
