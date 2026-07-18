@@ -184,11 +184,6 @@ def _set_cell(sheet: Any, address: str, value: str) -> None:
 
 
 def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
-    game_draw_page = game.getDrawPage()
-    game_forms = game_draw_page.getForms()
-    game_form = document.createInstance("com.sun.star.form.component.DataForm")
-    game_form.Name = "XLSLiberatorGameControls"
-    game_forms.insertByIndex(game_forms.getCount(), game_form)
     for index, (name, label) in enumerate(
         (
             ("GameStart", "Start"),
@@ -197,10 +192,9 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             ("GameHighScores", "High Scores"),
         )
     ):
-        _add_button(
+        _add_button_form(
             document,
             game,
-            game_form,
             uno,
             name=name,
             label=label,
@@ -209,15 +203,9 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             width=4_000,
         )
 
-    score_draw_page = score.getDrawPage()
-    score_forms = score_draw_page.getForms()
-    score_form = document.createInstance("com.sun.star.form.component.DataForm")
-    score_form.Name = "XLSLiberatorScoreControls"
-    score_forms.insertByIndex(score_forms.getCount(), score_form)
-    _add_button(
+    _add_button_form(
         document,
         score,
-        score_form,
         uno,
         name="ScoreReturn",
         label="Return to Game",
@@ -227,10 +215,9 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
     )
 
 
-def _add_button(
+def _add_button_form(
     document: Any,
     sheet: Any,
-    form: Any,
     uno: Any,
     *,
     name: str,
@@ -239,6 +226,12 @@ def _add_button(
     y: int,
     width: int,
 ) -> None:
+    draw_page = sheet.getDrawPage()
+    forms = draw_page.getForms()
+    form = document.createInstance("com.sun.star.form.component.DataForm")
+    form.Name = f"XLSLiberator{name}Form"
+    forms.insertByIndex(forms.getCount(), form)
+
     model = document.createInstance("com.sun.star.form.component.CommandButton")
     model.Name = name
     model.Label = label
@@ -253,7 +246,7 @@ def _add_button(
     shape.setSize(size)
     shape.setControl(model)
     form.insertByIndex(form.getCount(), model)
-    sheet.getDrawPage().add(shape)
+    draw_page.add(shape)
 
 
 def _store_checkpoint(document: Any, stage: str) -> None:
