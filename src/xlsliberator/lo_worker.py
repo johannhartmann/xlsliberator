@@ -294,13 +294,6 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             sheet = document.getSheets().getByIndex(0)
             sheet.setName("Sheet1")
             sheet.getCellRangeByName("A1").setString("Controls certification fixture")
-            document.storeAsURL(
-                session["uno"].systemPathToFileUrl(str(output_path)),
-                (
-                    _property_value("FilterName", "calc8"),
-                    _property_value("Overwrite", True),
-                ),
-            )
 
             draw_page = sheet.getDrawPage()
             shape = document.createInstance("com.sun.star.drawing.ControlShape")
@@ -325,7 +318,13 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             form.insertByIndex(0, button)
             draw_page.add(shape)
 
-            document.store()
+            document.storeAsURL(
+                session["uno"].systemPathToFileUrl(str(output_path)),
+                (
+                    _property_value("FilterName", "calc8"),
+                    _property_value("Overwrite", True),
+                ),
+            )
         finally:
             _close_document(document, save=False)
     if not output_path.is_file():

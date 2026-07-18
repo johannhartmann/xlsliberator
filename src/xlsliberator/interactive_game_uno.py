@@ -105,6 +105,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError("LibreOffice did not create the interactive-game target")
         try:
             game = _prepare_game_sheet(document)
+            _initialize_document(document, game, session["uno"])
             document.storeAsURL(
                 session["uno"].systemPathToFileUrl(str(output)),
                 (
@@ -112,8 +113,6 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
                     _property_value("Overwrite", True),
                 ),
             )
-            _initialize_document(document, game, session["uno"])
-            _store_checkpoint(document, "final-render")
         except Exception:
             output.unlink(missing_ok=True)
             raise
@@ -227,7 +226,6 @@ def _add_game_controls(document: Any, game: Any, uno: Any) -> None:
             y=1_000 + index * 1_500,
             width=5_000,
         )
-        _store_checkpoint(document, f"native-control-{name}")
 
 
 def _add_score_control(document: Any, score: Any, uno: Any) -> None:
@@ -241,7 +239,6 @@ def _add_score_control(document: Any, score: Any, uno: Any) -> None:
         y=1_000,
         width=5_000,
     )
-    _store_checkpoint(document, "native-control-ScoreReturn")
 
 
 def _add_button_form(
@@ -280,13 +277,6 @@ def _add_button_form(
         form = forms.getByIndex(0)
     form.insertByIndex(form.getCount(), model)
     draw_page.add(shape)
-
-
-def _store_checkpoint(document: Any, stage: str) -> None:
-    try:
-        document.store()
-    except Exception as exc:
-        raise RuntimeError(f"interactive-game store checkpoint failed: {stage}") from exc
 
 
 class InteractiveGameController:
