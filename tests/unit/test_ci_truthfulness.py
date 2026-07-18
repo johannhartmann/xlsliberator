@@ -18,6 +18,14 @@ def test_required_integration_jobs_are_blocking_and_upload_failure_evidence() ->
     assert "set -o pipefail" in workflow
     assert "artifacts/ci/office-integration.log" in workflow
     assert "artifacts/ci/docker-web.log" in workflow
+    docker_web_job = workflow.split("\n  docker-web:\n", maxsplit=1)[1].split(
+        "\n  package:\n", maxsplit=1
+    )[0]
+    assert "sudo rm -rf artifacts/ci/docker-web-tmp" in docker_web_job
+    assert "path: artifacts/" not in docker_web_job
+    assert "artifacts/ci/docker-web-build.log" in docker_web_job
+    assert "artifacts/ci/docker-web-attestation.json" in docker_web_job
+    assert "artifacts/ci/pytest-docker-web.xml" in docker_web_job
 
 
 def test_ci_pytest_runs_use_safe_cache_and_basetemp_boundaries() -> None:
@@ -26,6 +34,7 @@ def test_ci_pytest_runs_use_safe_cache_and_basetemp_boundaries() -> None:
 
     assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
     assert "artifacts/pytest-tmp" not in compose
+    assert 'Path("/tmp/pytest-tmp").mkdir(parents=True, exist_ok=True)' in ci_check
     assert ci_check.count('"no:cacheprovider"') == 3
     assert 'docker_web_temp = ARTIFACTS / "docker-web-tmp"' in ci_check
     assert 'env["PYTEST_ADDOPTS"] = f"--basetemp={docker_web_temp}"' in ci_check

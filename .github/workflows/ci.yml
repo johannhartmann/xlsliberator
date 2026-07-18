@@ -122,11 +122,18 @@ jobs:
           docker compose --profile ci-orchestrator run --rm \
             test-orchestrator python tools/ci_check.py docker-web \
             2>&1 | tee artifacts/ci/docker-web.log
+      - name: Remove transient nested-Docker test files
+        if: always()
+        run: sudo rm -rf artifacts/ci/docker-web-tmp
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: docker-web
-          path: artifacts/
+          path: |
+            artifacts/ci/docker-web-build.log
+            artifacts/ci/docker-web.log
+            artifacts/ci/docker-web-attestation.json
+            artifacts/ci/pytest-docker-web.xml
           if-no-files-found: error
 
   package:

@@ -45,6 +45,10 @@ def quality() -> None:
 
 def office() -> None:
     """Build and test the pinned Docker-only LibreOffice runtime."""
+    # The configured workspace policy resolves every root strictly.  Pytest
+    # creates its basetemp lazily, so tests that do not request tmp_path still
+    # need the Docker-only root to exist before backend discovery starts.
+    Path("/tmp/pytest-tmp").mkdir(parents=True, exist_ok=True)
     run(
         [
             "docker",
