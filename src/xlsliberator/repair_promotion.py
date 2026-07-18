@@ -231,10 +231,7 @@ class RepairRecord(BaseModel):
 
 def load_repair_records(records_root: Path) -> list[RepairRecord]:
     """Load every public repair record in stable order."""
-    return [
-        RepairRecord.load(path)
-        for path in sorted(records_root.glob("*/record.json"))
-    ]
+    return [RepairRecord.load(path) for path in sorted(records_root.glob("*/record.json"))]
 
 
 def _load_object(path: Path) -> dict[str, object]:
