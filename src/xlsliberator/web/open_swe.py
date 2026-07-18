@@ -136,7 +136,7 @@ class OpenSWEClient:
         try:
             parsed = uuid.UUID(thread_id)
         except ValueError:
-            raise OpenSWEError("Invalid migration thread identifier")
+            raise OpenSWEError("Invalid migration thread identifier") from None
         canonical = str(parsed)
         if thread_id != canonical:
             raise OpenSWEError("Invalid migration thread identifier")
