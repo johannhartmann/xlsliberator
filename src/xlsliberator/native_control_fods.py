@@ -72,7 +72,7 @@ def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> Non
  office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
  <office:body>
   <office:spreadsheet>
-{''.join(sheet_xml)}
+{"".join(sheet_xml)}
   </office:spreadsheet>
  </office:body>
 </office:document>

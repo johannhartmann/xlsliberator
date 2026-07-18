@@ -52,9 +52,7 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
     assert button is not None
     assert shape is not None
     form_id = button.attrib["{urn:oasis:names:tc:opendocument:xmlns:form:1.0}id"]
-    assert shape.attrib[
-        "{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}control"
-    ] == form_id
+    assert shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}control"] == form_id
     assert "Start &amp; play" in seed.read_text(encoding="utf-8")
 
 
