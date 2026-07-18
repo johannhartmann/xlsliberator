@@ -185,6 +185,7 @@ docs/*
 !docs/web_app.md
 !docs/production_hardening.md
 !docs/implementation_status.md
+!docs/agentic_implementation_status.md
 !docs/capability_matrix.md
 !docs/capability_matrix.json
 !docs/corpus_statistics.json
@@ -195,6 +196,10 @@ docs/*
 !docs/office_source_integration.md
 !docs/release_readiness.md
 !docs/vba_execution_architecture.md
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/open-swe-migration.md
+!docs/architecture/decision-log.md
 
 # Temporary files
 *.tmp
