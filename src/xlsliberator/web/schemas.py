@@ -36,12 +36,8 @@ class WebSettings:
             use_agent=os.getenv("XLSLIBERATOR_USE_AGENT", "0") == "1",
             open_swe_url=os.getenv("XLSLIBERATOR_OPEN_SWE_URL", ""),
             open_swe_token=os.getenv("XLSLIBERATOR_OPEN_SWE_TOKEN", ""),
-            open_swe_owner_id=os.getenv(
-                "XLSLIBERATOR_OPEN_SWE_OWNER_ID", "xlsliberator-web"
-            ),
-            open_swe_poll_seconds=max(
-                0.1, _float_env("XLSLIBERATOR_OPEN_SWE_POLL_SECONDS", 1.0)
-            ),
+            open_swe_owner_id=os.getenv("XLSLIBERATOR_OPEN_SWE_OWNER_ID", "xlsliberator-web"),
+            open_swe_poll_seconds=max(0.1, _float_env("XLSLIBERATOR_OPEN_SWE_POLL_SECONDS", 1.0)),
             open_swe_request_timeout_seconds=max(
                 1.0,
                 _float_env("XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS", 60.0),

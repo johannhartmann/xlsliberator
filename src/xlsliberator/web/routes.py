@@ -321,8 +321,10 @@ async def _write_dependency(
 ) -> Path:
     job = _get_job_or_404(store, job_id)
     filename = file.filename or ""
-    if not filename or Path(filename).name != filename or any(
-        character in filename for character in ("/", "\\", "\x00")
+    if (
+        not filename
+        or Path(filename).name != filename
+        or any(character in filename for character in ("/", "\\", "\x00"))
     ):
         raise HTTPException(status_code=400, detail="Invalid dependency filename")
     dependency_dir = job.input_path.parent / "dependencies"

@@ -325,8 +325,7 @@ def _safe_artifact_name(name: str) -> str:
 
 def _ensure_delivery_report(job: WebJob, artifacts: list[JobArtifact]) -> None:
     public_artifacts = [
-        {"id": artifact.id, "name": artifact.name, "kind": artifact.kind}
-        for artifact in artifacts
+        {"id": artifact.id, "name": artifact.name, "kind": artifact.kind} for artifact in artifacts
     ]
     if not any(artifact.name == "report.json" for artifact in artifacts):
         job.report_json_path.write_text(

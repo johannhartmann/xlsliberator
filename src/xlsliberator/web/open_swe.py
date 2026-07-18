@@ -113,9 +113,7 @@ class OpenSWEClient:
         )
 
     def cancel(self, thread_id: str) -> dict[str, Any]:
-        return _object(
-            self._json_request("POST", f"{self._migration_path(thread_id)}/cancel", {})
-        )
+        return _object(self._json_request("POST", f"{self._migration_path(thread_id)}/cancel", {}))
 
     def cleanup(self, thread_id: str) -> dict[str, Any]:
         """Delete the private Open-SWE migration workspace."""

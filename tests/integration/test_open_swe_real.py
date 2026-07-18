@@ -59,11 +59,7 @@ def test_real_local_langgraph_workbook_migration_when_available(tmp_path: Path) 
         assert status.get("status") == "complete", status
         artifacts = status.get("artifacts")
         assert isinstance(artifacts, list)
-        names = {
-            artifact.get("name")
-            for artifact in artifacts
-            if isinstance(artifact, dict)
-        }
+        names = {artifact.get("name") for artifact in artifacts if isinstance(artifact, dict)}
         assert {"target.ods", "result.json", "save-reopen.json"}.issubset(names)
     finally:
         client.cleanup(thread_id)

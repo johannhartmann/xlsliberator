@@ -150,7 +150,7 @@ def test_orchestrator_uses_shared_workspace_for_pytest_and_office_jobs() -> None
     assert "XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp" in compose
 
 
-def test_web_and_mcp_are_trusted_docker_orchestrators_but_worker_is_not() -> None:
+def test_only_mcp_is_a_trusted_docker_orchestrator() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
@@ -161,9 +161,11 @@ def test_web_and_mcp_are_trusted_docker_orchestrators_but_worker_is_not() -> Non
     )[0]
 
     assert "docker-cli" in dockerfile
-    assert "/var/run/docker.sock:/var/run/docker.sock" in web_service
+    assert "/var/run/docker.sock" not in web_service
     assert "/var/run/docker.sock:/var/run/docker.sock" in mcp_service
-    assert "XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT" in web_service
+    assert "XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT" not in web_service
+    assert "XLSLIBERATOR_OFFICE_CONTAINER" not in web_service
+    assert "XLSLIBERATOR_OPEN_SWE_URL" in web_service
     assert "XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT" in mcp_service
     assert "/var/run/docker.sock" not in runtime_service
 
