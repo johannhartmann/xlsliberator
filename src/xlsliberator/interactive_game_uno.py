@@ -244,7 +244,6 @@ def _add_button(
     model = document.createInstance("com.sun.star.form.component.CommandButton")
     model.Name = name
     model.Label = label
-    model.Tabstop = True
     shape = document.createInstance("com.sun.star.drawing.ControlShape")
     position = uno.createUnoStruct("com.sun.star.awt.Point")
     position.X = x
