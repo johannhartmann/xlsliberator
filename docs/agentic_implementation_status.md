@@ -103,6 +103,29 @@ Python, office executable, UNO, or PyUNO process was used.
 | `docker run ... xlsliberator-test:local-arm64 ruff check --no-cache src tests` | 0 | Lint passed. |
 | `docker run ... xlsliberator-test:local-arm64 ruff format --no-cache --check .` | 0 | All 169 files were formatted. |
 
+## Prompt 03 verification
+
+Prompt 03 is implemented and locally verified in Docker. `xlsprobe` exposes all
+eight required read-only commands and a provider-neutral `ProbeReport` schema.
+The transactional dossier snapshots the source, preserves exact raw workbook
+and extracted VBA bytes, groups formulas, inventories package parts or OLE
+streams, detects target-specific dependencies, records extractor gaps, and
+delimits workbook-derived data as untrusted. Nested archives are retained as
+raw evidence rather than recursively expanded.
+
+Generated XLSX, XLSM, XLSB, and XLS fixtures cover format-specific success and
+partial/unavailable extraction. Adversarial tests cover unsafe package paths,
+compression ratio, source size, timeout, source mutation during snapshot,
+non-overwrite behavior, truthful empty VBA results, and all required dependency
+categories.
+
+| Exact command | Exit | Outcome |
+|---|---:|---|
+| `docker compose run --rm test pytest -p no:cacheprovider -q tests/unit/test_xlsprobe.py` | 0 | 15 focused forensics, fixture, CLI, dossier, and limit tests passed. |
+| `docker compose run --rm test pytest -p no:cacheprovider -q -m "not integration" tests/unit` | 0 | 426 passed and 5 explicitly declared live/fixture skips. |
+| `docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/` | 0 | Strict typing passed for 88 source files. |
+| `docker compose run --rm test ruff check --no-cache src tests` | 0 | Lint passed. |
+
 ## Current architecture problems
 
 | Problem | Current evidence | Required destination |
@@ -139,7 +162,7 @@ when applicable, and ledger update are linked.
 | 00 — baseline and architecture | COMPLETE WITH BLOCKED RUNTIME | this baseline; [migration architecture](architecture/open-swe-migration.md); [decision log](architecture/decision-log.md) |
 | 01 — truthful validation and CI | IMPLEMENTED; REMOTE CI RERUN REQUIRED | fail-closed tests, aligned Docker CI commands, exact results |
 | 02 — extract model orchestration | COMPLETE LOCALLY; REMOTE CI RERUN REQUIRED | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
-| 03 — `xlsprobe` dossier | PENDING | CLI/API schema, fixture snapshots, dossier evidence |
+| 03 — `xlsprobe` dossier | COMPLETE LOCALLY; REMOTE CI REQUIRED | CLI/API schema, fixture snapshots, dossier evidence |
 | 04 — transactional `odstool` | PENDING | mutation-plan, rollback, preservation and conflict tests |
 | 05 — `migration-check` | PENDING | scenario schema, target execution traces, negative cases |
 | 06 — stateful LibreOffice MCP | PENDING | session lifecycle, isolation, runtime integration evidence |
@@ -163,8 +186,8 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Commit and push Prompt 02 so remote Docker CI can verify Prompts 01 and 02, then
-begin **Prompt 03 — `xlsprobe` and the migration dossier**. The normal local
-Compose path must be rerun after Docker Desktop's pinned-base cache is repaired;
-the explicit arm64 test image remains valid local Docker evidence. No local
-Python or office fallback is permitted.
+Commit and push Prompt 03 so remote Docker CI can verify Prompts 01–03, then
+begin **Prompt 04 — transactional `odstool`**. Local validation continues in the
+explicit arm64 Docker test image because the pinned default base resolves to an
+incompatible cached architecture on this host. No local Python or office
+fallback is permitted.

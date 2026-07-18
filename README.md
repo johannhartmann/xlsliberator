@@ -72,6 +72,41 @@ docker compose --profile ci-orchestrator run --rm test-orchestrator \
   xlsliberator validate "$PWD/input.xlsm" "$PWD/output.ods"
 ```
 
+### Workbook forensics
+
+`xlsprobe` is the read-only, model-free source inspection CLI used to prepare
+migrations. Run it only in the Docker application boundary:
+
+```bash
+# Create the complete migration dossier under artifacts/source-case/migration/
+mkdir -p artifacts/source-case
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsprobe dossier "$PWD/input.xlsm" --output "$PWD/artifacts/source-case"
+
+# Query individual evidence surfaces without creating a dossier
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsprobe package-tree "$PWD/input.xlsm"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsprobe extract-vba "$PWD/input.xlsm"
+docker compose --profile ci-orchestrator run --rm test-orchestrator \
+  xlsprobe formulas "$PWD/input.xlsm"
+```
+
+The other focused commands are `inspect`, `controls`, `dependencies`, and
+`previews`. Every command accepts `--timeout-seconds` and `--max-source-mib`.
+Programmatic callers can apply the stricter `ProbeLimits` contract for archive
+entry counts, per-entry and aggregate expansion size, compression ratio, and
+preview size. Nested archives are retained as raw evidence and never expanded.
+
+The versioned dossier contains a byte-for-byte `workbook.original`, bounded
+metadata and sheet previews, formulas grouped by sheet or defined name, complete
+extracted VBA module text and boundaries, controls, relationships, dependency
+findings, raw package parts or OLE streams, and explicit coverage gaps. Its
+`dossier.md` is an index with an untrusted-content boundary; large or
+executable-looking workbook content is referenced instead of copied into the
+model-readable markdown. Dossier creation snapshots the source transactionally,
+refuses concurrent source changes, and never replaces an existing dossier.
+
 ### Provider-neutral MCP Server
 
 Start the MCP server for any MCP-compatible orchestrator:
@@ -231,6 +266,7 @@ xlsliberator/
 ├── src/xlsliberator/                # Main source code
 │   ├── api.py                       # Deterministic conversion pipeline
 │   ├── primitives.py                # Typed public operations
+│   ├── xlsprobe.py                  # Bounded workbook forensics and dossiers
 │   ├── validated_api.py             # Validated transformation (transform_validated)
 │   ├── cli.py                       # Command-line interface
 │   ├── config.py                    # Environment-driven configuration
