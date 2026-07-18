@@ -21,6 +21,7 @@ jobs:
       - run: docker compose run --rm test ruff format --no-cache --check .
       - run: docker compose run --rm test ruff check --no-cache .
       - run: docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/
+      - run: docker compose run --rm test python -m xlsliberator.skill_validation skills
 
   unit:
     name: Unit tests (Python ${{ matrix.python }}, Docker)

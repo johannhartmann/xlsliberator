@@ -1,4 +1,4 @@
-.PHONY: help fmt lint typecheck test test-unit test-integration test-docker-web test-package test-cov security audit bandit all clean install pre-commit
+.PHONY: help fmt lint skill-lint typecheck test test-unit test-integration test-docker-web test-package test-cov security audit bandit all clean install pre-commit
 
 DOCKER_TEST := docker compose run --rm test
 DOCKER_ORCHESTRATOR := docker compose --profile ci-orchestrator run --rm test-orchestrator
@@ -11,6 +11,7 @@ help:
 	@echo "Quality Checks:"
 	@echo "  make fmt          - Format code with ruff"
 	@echo "  make lint         - Lint code with ruff"
+	@echo "  make skill-lint   - Validate Deep Agents migration skills"
 	@echo "  make typecheck    - Type check with mypy"
 	@echo "  make test         - Run all tests"
 	@echo "  make test-unit    - Run unit tests only"
@@ -42,6 +43,10 @@ fmt:
 lint:
 	@echo "==> Linting code with ruff..."
 	$(DOCKER_TEST) ruff check .
+
+skill-lint:
+	@echo "==> Validating Deep Agents migration skills..."
+	$(DOCKER_TEST) python -m xlsliberator.skill_validation skills
 
 typecheck:
 	@echo "==> Type checking with mypy..."
@@ -95,7 +100,7 @@ pre-commit:
 	@echo "Pre-commit execution is containerized; host hook installation is intentionally disabled."
 	$(DOCKER_TEST) pre-commit run --all-files
 
-all: fmt lint typecheck test-unit test-integration test-docker-web test-package security
+all: fmt lint skill-lint typecheck test-unit test-integration test-docker-web test-package security
 	@echo ""
 	@echo "=========================================="
 	@echo "✓ All checks passed!"
