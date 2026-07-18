@@ -123,9 +123,13 @@ def _initialize_document(document: Any, uno: Any) -> None:
     sheets = document.getSheets()
     first = sheets.getByIndex(0)
     first.setName(GAME_SHEET)
-    sheets.insertNewByName(SCORE_SHEET, 1)
     game = sheets.getByName(GAME_SHEET)
+    _add_game_controls(document, game, uno)
+
+    sheets.insertNewByName(SCORE_SHEET, 1)
     score = sheets.getByName(SCORE_SHEET)
+    _add_score_control(document, score, uno)
+
     sheets.insertNewByName(STATE_SHEET, 2)
     state_sheet = sheets.getByName(STATE_SHEET)
 
@@ -173,17 +177,14 @@ def _initialize_document(document: Any, uno: Any) -> None:
         controller.render()
     finally:
         controller.dispose()
-    _store_checkpoint(document, "base-document")
-
-    _add_form(document, game, score, uno)
-    _store_checkpoint(document, "native-controls")
+    _store_checkpoint(document, "complete-document")
 
 
 def _set_cell(sheet: Any, address: str, value: str) -> None:
     sheet.getCellRangeByName(address).setString(value)
 
 
-def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
+def _add_game_controls(document: Any, game: Any, uno: Any) -> None:
     for index, (name, label) in enumerate(
         (
             ("GameStart", "Start"),
@@ -202,7 +203,10 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
             y=4_500 + index * 1_250,
             width=4_000,
         )
+        _store_checkpoint(document, f"native-control-{name}")
 
+
+def _add_score_control(document: Any, score: Any, uno: Any) -> None:
     _add_button_form(
         document,
         score,
@@ -213,6 +217,7 @@ def _add_form(document: Any, game: Any, score: Any, uno: Any) -> None:
         y=5_000,
         width=4_000,
     )
+    _store_checkpoint(document, "native-control-ScoreReturn")
 
 
 def _add_button_form(
