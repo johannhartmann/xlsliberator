@@ -316,9 +316,7 @@ class FeatureDisposition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     counts: dict[EvidenceStatus, int]
-    capability_status: Literal[
-        "passed", "failed", "unsupported", "unavailable", "not_measured"
-    ]
+    capability_status: Literal["passed", "failed", "unsupported", "unavailable", "not_measured"]
 
 
 class DemoCorpusReport(BaseModel):
@@ -393,20 +391,12 @@ def generate_demo_corpus_report(
     return DemoCorpusReport(
         corpus_id=manifest.corpus_id,
         result_count=len(results),
-        episode_status=grouped(
-            [episode.episode_id for episode in manifest.episodes], "episode"
-        ),
+        episode_status=grouped([episode.episode_id for episode in manifest.episodes], "episode"),
         feature_status=grouped(
-            [
-                feature
-                for episode in manifest.episodes
-                for feature in episode.expected_features
-            ],
+            [feature for episode in manifest.episodes for feature in episode.expected_features],
             "feature",
         ),
-        format_status=grouped(
-            [episode.source.format for episode in manifest.episodes], "format"
-        ),
+        format_status=grouped([episode.source.format for episode in manifest.episodes], "format"),
     )
 
 

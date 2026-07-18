@@ -50,9 +50,7 @@ def test_search_index_and_subsets_are_generated_from_manifest() -> None:
     checked_index = json.loads(
         (ROOT / "tests/corpus/manifests/search-index.json").read_text(encoding="utf-8")
     )
-    subsets = json.loads(
-        (ROOT / "tests/corpus/manifests/subsets.json").read_text(encoding="utf-8")
-    )
+    subsets = json.loads((ROOT / "tests/corpus/manifests/subsets.json").read_text(encoding="utf-8"))
 
     assert checked_index == manifest.search_index()
     for subset in ("pr", "nightly", "security"):
@@ -62,9 +60,7 @@ def test_search_index_and_subsets_are_generated_from_manifest() -> None:
     assert set(subsets["pr"]) < set(subsets["nightly"])
     assert {
         item["episode_id"]
-        for item in search_demo_corpus(
-            manifest, query="keyboard events", subset="nightly"
-        )
+        for item in search_demo_corpus(manifest, query="keyboard events", subset="nightly")
     } == {"interactive-game"}
     assert not search_demo_corpus(manifest, query="outlook", subset="security")
 
@@ -76,9 +72,7 @@ def test_public_scenarios_are_complete_and_hidden_tests_are_absent() -> None:
     )
 
     assert public_index["hidden_acceptance_present"] is False
-    assert set(public_index["episodes"]) == {
-        episode.episode_id for episode in manifest.episodes
-    }
+    assert set(public_index["episodes"]) == {episode.episode_id for episode in manifest.episodes}
     paths = [path.relative_to(ROOT).as_posix() for path in (ROOT / "tests/corpus").rglob("*")]
     assert not any("hidden" in Path(path).name.casefold() for path in paths)
     for episode in manifest.episodes:
@@ -125,9 +119,7 @@ def test_feature_report_preserves_not_measured_and_failures() -> None:
     measured = generate_demo_corpus_report(manifest, [passed, failed])
 
     assert not_run.result_count == 0
-    assert {item.capability_status for item in not_run.feature_status.values()} == {
-        "not_measured"
-    }
+    assert {item.capability_status for item in not_run.feature_status.values()} == {"not_measured"}
     assert measured.feature_status["biff8-import"].capability_status == "passed"
     assert measured.feature_status["network-process-denial"].capability_status == "failed"
     assert measured.format_status["xlsx"].capability_status == "failed"
