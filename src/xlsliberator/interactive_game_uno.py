@@ -269,7 +269,12 @@ def _add_button_form(
 
     forms = draw_page.getForms()
     if forms.getCount() == 0:
-        form = document.createInstance("com.sun.star.form.component.DataForm")
+        # These controls are intentionally not data-aware.  Using DataForm
+        # activates the database RowSet persistence path and LibreOffice
+        # 26.2.4.2 aborts ODS export with std::bad_alloc for an otherwise
+        # minimal command button.  The base Form service is the native,
+        # persistable container required by non-data-aware control models.
+        form = document.createInstance("com.sun.star.form.component.Form")
         form.Name = "CertificationForm"
         forms.insertByName("CertificationForm", form)
     else:

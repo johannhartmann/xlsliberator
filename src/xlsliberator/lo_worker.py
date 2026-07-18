@@ -311,7 +311,7 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             button.Label = "Run certification event"
 
             forms = draw_page.getForms()
-            form = document.createInstance("com.sun.star.form.component.DataForm")
+            form = document.createInstance("com.sun.star.form.component.Form")
             form.Name = "CertificationForm"
             forms.insertByName("CertificationForm", form)
             form.insertByName(button_name, button)
