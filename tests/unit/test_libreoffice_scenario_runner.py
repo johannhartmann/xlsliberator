@@ -177,7 +177,7 @@ def test_scenario_run_target_cli_serializes_trace(
         workbook_hash_after=digest,
     )
     monkeypatch.setattr(
-        "xlsliberator.libreoffice_scenario_runner.LibreOfficeScenarioRunner.run",
+        ("xlsliberator.libreoffice_session_scenario_runner.LibreOfficeSessionScenarioRunner.run"),
         lambda *_args, **_kwargs: trace,
     )
     output = tmp_path / "trace.json"

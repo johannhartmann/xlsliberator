@@ -13,7 +13,9 @@ import click
 import yaml
 
 from xlsliberator.container_boundary import require_application_container
-from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+from xlsliberator.libreoffice_session_scenario_runner import (
+    LibreOfficeSessionScenarioRunner,
+)
 from xlsliberator.scenarios.acceptance_evidence import (
     inspect_acceptance_evidence,
     write_acceptance_evidence,
@@ -59,7 +61,7 @@ def run_command(
         acceptance=acceptance,
         workbook=ods_file,
         evidence_dir=destination,
-        runner=LibreOfficeScenarioRunner(timeout_seconds=timeout),
+        runner=LibreOfficeSessionScenarioRunner(timeout_seconds=timeout),
     )
     click.echo(manifest.model_dump_json(indent=2))
     if manifest.status is not GateExecutionStatus.PASSED:
@@ -107,7 +109,7 @@ def mutate_command(migration_dir: Path, timeout: int) -> None:
         source_workbook=workbook,
         acceptance=acceptance,
         directory=migration_dir / "mutations",
-        runner=LibreOfficeScenarioRunner(timeout_seconds=timeout),
+        runner=LibreOfficeSessionScenarioRunner(timeout_seconds=timeout),
     )
     click.echo(campaign.model_dump_json(indent=2))
     if campaign.status is not GateExecutionStatus.PASSED:

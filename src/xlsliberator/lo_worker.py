@@ -11,6 +11,7 @@ import importlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -918,6 +919,8 @@ def _run_scenario(request: dict[str, Any]) -> dict[str, Any]:
     overall_status = "passed"
     final_path: Path | None = None
     session_runtime: dict[str, Any] = {}
+    generated_attachments: list[Path] = []
+    attachment_records: list[dict[str, str]] = []
 
     with tempfile.TemporaryDirectory(prefix="xlsliberator-scenario-") as workspace_name:
         workspace = Path(workspace_name)
@@ -1033,11 +1036,30 @@ def _run_scenario(request: dict[str, Any]) -> dict[str, Any]:
                         }
                     )
             finally:
+                generated_attachments = [
+                    Path(str(item)) for item in session.get("generated_attachments", [])
+                ]
                 _close_document(document, save=False)
 
         session_runtime["office_exit_code"] = office_session.data.get("office_exit_code")
         logs = [str(office_session.data.get("office_log") or "")]
-        final_hash = _sha256_file(final_path or current_path)
+        final_working_copy = final_path or current_path
+        final_hash = _sha256_file(final_working_copy)
+        output_path = _job_output_path(request, "output_path")
+        if output_path is not None:
+            shutil.copy2(final_working_copy, output_path)
+        attachment_output = _job_output_path(request, "attachment_output_path")
+        if attachment_output is not None:
+            if len(generated_attachments) != 1 or not generated_attachments[0].is_file():
+                raise RuntimeError(
+                    "scenario requested one attachment output but did not produce exactly one file"
+                )
+            shutil.copy2(generated_attachments[0], attachment_output)
+        attachment_records = [
+            {"name": path.name, "sha256": _sha256_file(path)}
+            for path in generated_attachments
+            if path.is_file()
+        ]
 
     source_hash_after = _sha256_file(source)
     if source_hash_after != source_hash_before:
@@ -1069,6 +1091,7 @@ def _run_scenario(request: dict[str, Any]) -> dict[str, Any]:
         "steps": steps,
         "runtime": session_runtime,
         "logs": logs,
+        "attachments": attachment_records,
         "source_mutated": source_hash_before != source_hash_after,
     }
 
@@ -1311,6 +1334,7 @@ def _scenario_action(
             ) from exc
         if not exported_path.is_file():
             raise RuntimeError("LibreOffice export action produced no output")
+        session.setdefault("generated_attachments", []).append(str(exported_path))
         return (
             document,
             current_path,
@@ -1739,6 +1763,19 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _job_output_path(request: dict[str, Any], key: str) -> Path | None:
+    raw = request.get(key)
+    if not raw:
+        return None
+    path = Path(str(raw))
+    resolved = path.resolve()
+    if not resolved.is_relative_to(Path("/job")) or path.is_symlink():
+        raise ValueError(f"{key} must be a regular output path beneath /job")
+    if not resolved.parent.is_dir():
+        raise FileNotFoundError(f"{key} parent does not exist: {resolved.parent}")
+    return resolved
+
+
 class _OfficeSession:
     def __init__(self, request: dict[str, Any], use_gui: bool) -> None:
         self.request = request
@@ -1753,9 +1790,20 @@ class _OfficeSession:
         import uno
 
         executable = _authorized_office_executable()
-        pipe_name = f"xlsliberator_{uuid.uuid4().hex}"
+        requested_profile = str(self.request.get("session_profile_identifier") or "")
+        if requested_profile and not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", requested_profile):
+            raise ValueError("session profile identifier is malformed")
+        profile_identifier = requested_profile or f"profile-{uuid.uuid4().hex}"
+        requested_port = self.request.get("session_port")
+        port = int(requested_port) if requested_port is not None else None
+        if port is not None and not 1024 <= port <= 65535:
+            raise ValueError("session UNO port must be between 1024 and 65535")
+        display = str(self.request.get("session_display") or "")
+        if display and not re.fullmatch(r":\d{1,5}", display):
+            raise ValueError("session display identifier is malformed")
+        pipe_name = f"xlsliberator_{profile_identifier}"
         self.tmpdir = tempfile.TemporaryDirectory(prefix="xlsliberator-lo-worker-")
-        profile_dir = Path(self.tmpdir.name) / f"profile-{uuid.uuid4().hex}"
+        profile_dir = Path(self.tmpdir.name) / profile_identifier
         profile_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = Path(self.tmpdir.name) / "office.log"
         self.log_handle = self.log_path.open("wb")
@@ -1768,13 +1816,20 @@ class _OfficeSession:
             "--nofirststartwizard",
             "--nolockcheck",
             f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
-            f"--accept=pipe,name={pipe_name};urp;",
         ]
+        if port is None:
+            cmd.append(f"--accept=pipe,name={pipe_name};urp;")
+            uno_url = f"uno:pipe,name={pipe_name};urp;StarOffice.ComponentContext"
+        else:
+            cmd.append(f"--accept=socket,host=127.0.0.1,port={port};urp;")
+            uno_url = f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
         if not self.use_gui:
             cmd.insert(1, "--headless")
 
         env = dict(os.environ)
         env["SAL_USE_VCLPLUGIN"] = "svp"
+        if display:
+            env["DISPLAY"] = display
         self.process = subprocess.Popen(
             cmd,
             env=env,
@@ -1789,7 +1844,7 @@ class _OfficeSession:
             )
             component_context = _resolve_component_context(
                 resolver,
-                f"uno:pipe,name={pipe_name};urp;StarOffice.ComponentContext",
+                uno_url,
                 self.process,
                 int(self.request.get("start_timeout_seconds", 20)),
             )
@@ -1804,8 +1859,10 @@ class _OfficeSession:
             "component_context": component_context,
             "desktop": desktop,
             "pipe_name": pipe_name,
-            "profile_identifier": profile_dir.name,
+            "profile_identifier": profile_identifier,
             "profile_path": str(profile_dir),
+            "uno_port": port,
+            "display": display or None,
             "office_executable": executable,
             "office_pid": self.process.pid,
         }

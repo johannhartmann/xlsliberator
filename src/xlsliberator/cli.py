@@ -265,7 +265,9 @@ def scenario_run_target_cmd(
     timeout: int,
 ) -> None:
     """Run a scenario in the authoritative Docker-backed LibreOffice target."""
-    from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+    from xlsliberator.libreoffice_session_scenario_runner import (
+        LibreOfficeSessionScenarioRunner,
+    )
     from xlsliberator.scenarios.models import EnvironmentManifest, Scenario
     from xlsliberator.validation_models import GateExecutionStatus
 
@@ -276,7 +278,7 @@ def scenario_run_target_cmd(
             if environment_file
             else EnvironmentManifest()
         )
-        trace = LibreOfficeScenarioRunner(timeout_seconds=timeout).run(
+        trace = LibreOfficeSessionScenarioRunner(timeout_seconds=timeout).run(
             workbook,
             environment,
             scenario,
@@ -348,9 +350,11 @@ def validate_cmd(
                 raise click.ClickException(
                     "an output ODS is required to execute the target scenario"
                 )
-            from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
+            from xlsliberator.libreoffice_session_scenario_runner import (
+                LibreOfficeSessionScenarioRunner,
+            )
 
-            target_trace = LibreOfficeScenarioRunner().run(
+            target_trace = LibreOfficeSessionScenarioRunner().run(
                 output_ods,
                 source_trace.environment,
                 scenario,
@@ -462,7 +466,38 @@ def transform_validated_cmd(
     sys.exit(0 if report.certification.certified else 1)
 
 
-@cli.command(name="mcp-serve")
+@cli.command(name="libreoffice-mcp-serve")
+@click.option("--host", default="127.0.0.1", help="Loopback address to bind to")
+@click.option("--port", default=8000, help="Port number")
+@click.option(
+    "--workspace-root",
+    "workspace_roots",
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Host root accessible to MCP tools; repeat for multiple roots",
+)
+def libreoffice_mcp_serve_cmd(
+    host: str,
+    port: int,
+    workspace_roots: tuple[Path, ...],
+) -> None:
+    """Start the stateful LibreOffice session MCP service.
+
+    \b
+    Every document operation requires an explicit session ID.
+
+    \b
+    Examples:
+        xlsliberator libreoffice-mcp-serve
+        xlsliberator libreoffice-mcp-serve --port 9000
+
+    \b
+    Client endpoint: http://<host>:<port>/mcp
+    """
+    _serve_libreoffice_mcp(host, port, workspace_roots)
+
+
+@cli.command(name="mcp-serve", deprecated=True)
 @click.option("--host", default="127.0.0.1", help="Loopback address to bind to")
 @click.option("--port", default=8000, help="Port number")
 @click.option(
@@ -473,20 +508,15 @@ def transform_validated_cmd(
     help="Host root accessible to MCP tools; repeat for multiple roots",
 )
 def mcp_serve_cmd(host: str, port: int, workspace_roots: tuple[Path, ...]) -> None:
-    """Start MCP server with HTTP streaming transport.
+    """Deprecated alias for ``libreoffice-mcp-serve``."""
+    _serve_libreoffice_mcp(host, port, workspace_roots)
 
-    \b
-    Exposes deterministic LibreOffice operations as provider-neutral MCP tools.
 
-    \b
-    Examples:
-        xlsliberator mcp-serve
-        xlsliberator mcp-serve --port 9000
-        xlsliberator mcp-serve --host 127.0.0.1 --port 8080
-
-    \b
-    Client endpoint: http://<host>:<port>/mcp
-    """
+def _serve_libreoffice_mcp(
+    host: str,
+    port: int,
+    workspace_roots: tuple[Path, ...],
+) -> None:
     from xlsliberator.mcp_server import serve
 
     if workspace_roots:
@@ -496,7 +526,7 @@ def mcp_serve_cmd(host: str, port: int, workspace_roots: tuple[Path, ...]) -> No
             str(path.resolve()) for path in workspace_roots
         )
 
-    click.echo(f"Starting LibreOffice UNO MCP server on {host}:{port}")
+    click.echo(f"Starting stateful LibreOffice runtime MCP server on {host}:{port}")
     click.echo(f"Client endpoint: http://{host}:{port}/mcp")
     click.echo("\nPress Ctrl+C to stop\n")
 

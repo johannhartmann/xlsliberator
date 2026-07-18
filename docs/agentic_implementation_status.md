@@ -154,7 +154,8 @@ to this single transactional implementation.
 
 ## Prompt 05 verification
 
-Prompt 05 is implemented and locally verified in Docker. `migration-check`
+Prompt 05 is implemented and verified locally and in remote Docker CI.
+`migration-check`
 loads strict versioned YAML/JSON metadata, environments, scenarios, actions,
 observations, step results, traces, assertions, and evidence manifests.
 Required actions and observations fail closed across all five execution states.
@@ -168,8 +169,7 @@ verified ODS packages; infrastructure unavailability is inconclusive rather
 than a killed mutant. The checked-in YAML example treats save, close, and
 reopen as explicit actions. Expectations are authored from requirements and
 independently reviewed; cached Excel values are not an authoritative oracle.
-The one-shot pinned Docker runner remains the target boundary until Prompt 06
-replaces it with the stateful runtime service.
+Prompt 06 now routes target execution through the stateful runtime service.
 
 | Exact command | Exit | Outcome |
 |---|---:|---|
@@ -218,9 +218,9 @@ when applicable, and ledger update are linked.
 | 01 — truthful validation and CI | COMPLETE; REMOTE CI GREEN AT `9cce352` | fail-closed tests, aligned Docker CI commands, exact results |
 | 02 — extract model orchestration | COMPLETE; REMOTE CI GREEN AT `9cce352` | dependency/import audit, removed prohibited runtime/worker paths, typed primitive tests |
 | 03 — `xlsprobe` dossier | COMPLETE; REMOTE CI GREEN AT `9cce352` | CLI/API schema, fixture snapshots, dossier evidence |
-| 04 — transactional `odstool` | COMPLETE LOCALLY; REMOTE CI REQUIRED | mutation-plan, rollback, preservation and conflict tests |
-| 05 — `migration-check` | COMPLETE LOCALLY; REMOTE CI REQUIRED | scenario schema, deterministic target traces, fail-closed negatives, mutation evidence |
-| 06 — stateful LibreOffice MCP | PENDING | session lifecycle, isolation, runtime integration evidence |
+| 04 — transactional `odstool` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | mutation-plan, rollback, preservation and conflict tests |
+| 05 — `migration-check` | COMPLETE; REMOTE CI GREEN AT `aac9a01` | scenario schema, deterministic target traces, fail-closed negatives, mutation evidence |
+| 06 — stateful LibreOffice MCP | IMPLEMENTED; REMOTE CI REQUIRED | session lifecycle, isolation, runtime integration evidence |
 | 07 — thin Open-SWE fork | PENDING | separate repository, upstream record, sync procedure |
 | 08 — sandbox snapshot | PENDING | image/SBOM, tool versions, sandbox smoke |
 | 09 — triggers and hydration | PENDING | attachment tests, artifact hashes, durable-thread evidence |
@@ -241,8 +241,9 @@ when applicable, and ledger update are linked.
 
 ## Next action
 
-Commit and push Prompt 05 so remote Docker CI can verify Prompts 04–05, then
-begin **Prompt 06 — stateful LibreOffice runtime MCP**. Local commands continue
-exclusively in Docker. A separate BuildKit builder is used for fresh image
-builds because the default Docker content store contains a zero-filled cached
-base layer; no local Python or office fallback is permitted.
+Commit and push Prompt 06 so remote Docker CI can execute the real pinned
+LibreOffice lifecycle and timeout-cleanup tests, then begin **Prompt 07 — thin
+Open-SWE fork**. Local commands continue exclusively in Docker. A separate
+BuildKit builder is used for fresh image builds because the default Docker
+content store contains a zero-filled cached base layer; no local Python or
+office fallback is permitted.

@@ -1,8 +1,6 @@
-"""Integration tests for MCP server.
+"""Integration tests for the stateful LibreOffice MCP server."""
 
-Tests the FastMCP 2.0 server exposing LibreOffice UNO operations.
-"""
-
+import asyncio
 import time
 from pathlib import Path
 from threading import Thread
@@ -25,28 +23,58 @@ def test_ods_file(tmp_path: Path) -> Path:
 
 
 def test_mcp_server_has_tools() -> None:
-    """Test that MCP server has all expected tool functions available."""
-    # Verify all expected tool functions can be imported
-    from xlsliberator.mcp_tools import (
-        compare_formulas,
-        convert_excel_to_ods,
-        embed_macros,
-        get_sheet_data,
+    """The public MCP surface is session-oriented and excludes legacy aliases."""
+    from xlsliberator.libreoffice_mcp import (
+        capture_screenshot,
+        close,
+        collect_logs,
+        create_session,
+        destroy_session,
+        dispatch_control_event,
+        execute_python_macro,
+        export_pdf,
+        inspect_document,
+        list_controls,
+        list_formulas,
         list_sheets,
-        read_cell,
-        recalculate_document,
-        validate_macros,
+        open_document,
+        read_cells,
+        recalculate,
+        reopen,
+        save,
+        send_keyboard_event,
+        write_cells,
     )
 
-    # Verify they are callable
-    assert callable(convert_excel_to_ods)
-    assert callable(recalculate_document)
-    assert callable(read_cell)
-    assert callable(list_sheets)
-    assert callable(get_sheet_data)
-    assert callable(compare_formulas)
-    assert callable(embed_macros)
-    assert callable(validate_macros)
+    expected = {
+        function.__name__
+        for function in (
+            create_session,
+            open_document,
+            inspect_document,
+            list_sheets,
+            read_cells,
+            write_cells,
+            list_formulas,
+            recalculate,
+            list_controls,
+            dispatch_control_event,
+            send_keyboard_event,
+            execute_python_macro,
+            capture_screenshot,
+            export_pdf,
+            save,
+            close,
+            reopen,
+            collect_logs,
+            destroy_session,
+        )
+    }
+    registered = {tool.name for tool in asyncio.run(mcp.list_tools())}
+
+    assert registered == expected
+    assert "execute_button_handler" not in registered
+    assert "click_form_button" not in registered
 
 
 @pytest.mark.integration
@@ -106,7 +134,7 @@ async def test_read_cell_tool(test_ods_file: Path) -> None:
 
 def test_mcp_server_metadata() -> None:
     """Test that MCP server has correct metadata."""
-    assert mcp.name == "LibreOffice UNO"
+    assert mcp.name == "XLSLiberator LibreOffice Runtime"
 
 
 @pytest.mark.integration

@@ -63,7 +63,7 @@ class LibreOfficeDockerRuntime:
         self,
         image: str | None = None,
         *,
-        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         expected_variant: str | None = None,
         docker_executable: str = "docker",
         workspace_roots: list[Path] | tuple[Path, ...] | None = None,
@@ -459,11 +459,16 @@ class LibreOfficeDockerRuntime:
             shutil.copy2(source, input_dir / staged_name)
             (input_dir / staged_name).chmod(0o444)
             mapped[key] = f"/input/{staged_name}"
-        raw_output = payload.get("output_path")
-        if raw_output:
+        for key, prefix, default_suffix in (
+            ("output_path", "output", ".ods"),
+            ("attachment_output_path", "attachment-output", ".bin"),
+        ):
+            raw_output = payload.get(key)
+            if not raw_output:
+                continue
             destination = self.workspace_paths.output_file(str(raw_output))
-            staged_name = f"output{destination.suffix or '.ods'}"
-            mapped["output_path"] = f"/job/{staged_name}"
+            staged_name = f"{prefix}{destination.suffix or default_suffix}"
+            mapped[key] = f"/job/{staged_name}"
             outputs.append((staged_name, destination))
         mapped.pop("office_executable", None)
         return mapped, outputs

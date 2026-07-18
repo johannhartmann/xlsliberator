@@ -108,6 +108,7 @@ services:
       XLSLIBERATOR_RUNTIME_TEMP_ROOT: /runtime-tmp
       XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
       XLSLIBERATOR_WORKSPACE_ROOTS: /data
+      XLSLIBERATOR_SESSION_ROOT: /data/runtime-sessions
       XLSLIBERATOR_MAX_UPLOAD_MB: "100"
       XLSLIBERATOR_WEB_WORKERS: "1"
       XLSLIBERATOR_JOB_RETENTION_HOURS: "24"
@@ -127,7 +128,7 @@ services:
     build: .
     command:
       - xlsliberator
-      - mcp-serve
+      - libreoffice-mcp-serve
       - --host
       - 0.0.0.0
       - --port
@@ -141,6 +142,7 @@ services:
       XLSLIBERATOR_RUNTIME_TEMP_ROOT: /runtime-tmp
       XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
       XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}/artifacts/mcp-workspace
+      XLSLIBERATOR_SESSION_ROOT: ${PWD}/artifacts/mcp-workspace/.sessions
     volumes:
       - ./artifacts/mcp-workspace:${PWD}/artifacts/mcp-workspace
       - ./artifacts/runtime-tmp:/runtime-tmp

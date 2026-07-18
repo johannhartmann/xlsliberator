@@ -35,54 +35,67 @@ Operation data such as `sheets`, `controls`, or `report` remains at the top
 level for backward compatibility. The typed source of truth is
 `xlsliberator.boundary_models.BoundaryResponse`.
 
-## Runtime selection
+## Session API
 
-Docker-backed tools accept `runtime_options` with these explicit fields:
+The public MCP registry is deliberately closed:
 
-```json
-{
-  "target": "libreoffice",
-  "target_runtime_image": "xlsliberator-libreoffice:26.2.4.2",
-  "target_runtime_digest": null,
-  "timeout_seconds": 30,
-  "resource_limits": {
-    "network": "none",
-    "read_only_root": true,
-    "non_root": true,
-    "cap_drop": ["ALL"],
-    "no_new_privileges": true,
-    "pids_limit": 256,
-    "memory": "2g",
-    "cpus": 2,
-    "file_size_limit_blocks": 1048576
-  },
-  "workspace_root": null,
-  "evidence_destination": null
-}
-```
+| Lifecycle | Document and runtime |
+|---|---|
+| `create_session` | `open_document` |
+| `collect_logs` | `inspect_document` |
+| `destroy_session` | `list_sheets`, `read_cells`, `write_cells` |
+|  | `list_formulas`, `recalculate`, `list_controls` |
+|  | `dispatch_control_event`, `send_keyboard_event` |
+|  | `execute_python_macro`, `capture_screenshot`, `export_pdf` |
+|  | `save`, `close`, `reopen` |
 
-The resource policy cannot be expanded by a caller. The image must equal the
-configured image identity. When a digest is supplied, it must equal
-`XLSLIBERATOR_LIBREOFFICE_IMAGE_ID`; arbitrary images and executable paths are
-rejected. The worker resolves the configured reference to an immutable local
-image ID and records that ID in evidence.
+`create_session` returns `session_id`. Every other tool rejects a missing,
+unknown, destroyed, or mismatched session ID. A session records the exact
+LibreOffice 26.2.4.2 image/executable identity, a unique profile identifier,
+UNO port and display, a source-preserving working copy, and a durable evidence
+directory. Failed creation and failed operations are archived so
+`collect_logs` remains available after cleanup.
 
-## Control actions
+All input and output paths are resolved through configured workspace roots.
+Inputs are copied into the session; the original is never opened by Office and
+is hash-checked by scenario execution. Mutations replace only the session
+working copy after a successful worker response. `save` and `export_pdf` copy
+declared outputs atomically to allowed destinations.
 
-`list_controls` and `list_event_bindings` read discovered package inventories.
-There are no hardcoded button names.
+## Runtime and status semantics
 
-- `execute_button_handler` resolves an inventoried control's script URI and
-  invokes that handler directly in the disposable target container.
-- `click_form_button` is a separate capability and currently returns
-  `implemented=false`, `capability_available=false`, and `UNAVAILABLE`.
-- `send_keyboard_input`, `open_document_gui`, and `take_screenshot` are likewise
-  explicit unavailable capabilities. They never claim actions occurred.
+The caller cannot select an arbitrary image, executable, port, display, Docker
+policy, or host fallback. The service resolves the configured pinned image to
+an immutable ID, probes its exact executable and bundled PyUNO, and records the
+identity in the session descriptor. Each Office invocation uses the session's
+unique profile identity and connection resources in a disposable, networkless,
+read-only-root container. Wall-time expiry force-removes the named container
+before returning `UNAVAILABLE`.
 
-## Runtime validation
+The MCP transport status and workbook operation status are independent. A
+well-formed response can truthfully report `transport_success=true` and
+`operation_status=unavailable`; only `operation_status=passed` sets
+`success=true`.
 
-`validate_document_runtime` requires every open, recalculate, save, close,
-reopen, and package stage to pass and verifies that the staged source was not
-mutated. `agent_validator` consumes this complete evidence together with macro,
-control, and event inventories. Reading sample cells such as A1-C1 cannot pass
-agent validation.
+## UI actions and deprecated names
+
+`dispatch_control_event`, `send_keyboard_event`, and `capture_screenshot` must
+use and prove a real UI/event layer. The pinned headless runtime does not
+currently provide that layer, so these operations return
+`operation_status=unavailable`, `capability_available=false`, and a typed
+`UIEventLayerUnavailable` error. Direct script-handler invocation is not a
+control click.
+
+The loose legacy tool names, including `execute_button_handler`,
+`click_form_button`, `send_keyboard_input`, `open_document_gui`, and
+`take_screenshot`, are not registered by the public server. The old
+`xlsliberator mcp-serve` command remains only as a deprecated alias for
+`xlsliberator libreoffice-mcp-serve`.
+
+## Trust mode
+
+The command binds to `127.0.0.1` by default and explicitly runs in
+trusted-local mode. Non-loopback binding is rejected unless the Compose
+control-plane container is marked as the trusted proxy and Docker publishes
+the endpoint only on host loopback. Remote exposure requires authenticated
+transport and per-tool authorization.

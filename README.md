@@ -180,12 +180,13 @@ change one embedded Python module or ODF formula at a time and pass only when
 the public acceptance detects every executable mutant. Runtime unavailability
 is inconclusive, never a killed mutant. Expected results come from the authored
 requirements and independent review; cached Excel values are explicitly not an
-authoritative oracle. Real target execution currently uses the isolated
-one-shot Docker runner and moves to the stateful service in Prompt 06.
+authoritative oracle. Real target execution uses the stateful session service,
+which keeps the source immutable and executes every Office operation in the
+pinned Docker worker image.
 
-### Provider-neutral MCP Server
+### Stateful LibreOffice MCP service
 
-Start the MCP server for any MCP-compatible orchestrator:
+Start the trusted-local MCP server for any MCP-compatible orchestrator:
 
 ```bash
 # Build the exact office worker, then start the loopback-only MCP orchestrator
@@ -194,24 +195,29 @@ docker compose build libreoffice-runtime xlsliberator-mcp
 docker compose up -d xlsliberator-mcp
 
 # Client connects to: http://localhost:8080/mcp
+
+# Equivalent one-shot server command inside the application image:
+docker compose run --rm --service-ports xlsliberator-mcp \
+  xlsliberator libreoffice-mcp-serve --host 0.0.0.0 --port 8000
 ```
 
-**Available Tools:**
-- `convert_excel_to_ods` - Run deterministic native Excel-to-ODS conversion
-- `inspect_workbook` - Return parsed workbook inventory and unsupported artifacts
-- `validate_transformation` - Run validation gates and return certification data
-- `compare_formulas` - Test formula equivalence
-- `read_cell`, `list_sheets`, `get_sheet_data` - Read spreadsheet data
-- `list_controls`, `list_event_bindings` - Inspect ODS form controls and event bindings
-- `embed_macros`, `validate_macros`, `list_embedded_macros`, `test_macro_execution` - Manage and test Python-UNO macros
-- `recalculate_document`, `validate_document_runtime` - Run target operations in a disposable pinned Docker runtime
-- `execute_button_handler` - Resolve an inventoried button and invoke its handler directly; this is not a GUI click
-- `open_document_gui`, `click_form_button`, `send_keyboard_input`, `take_screenshot` - Explicitly unavailable until real container capabilities exist
-- `get_cell_colors` - Inspect cell background state through the Docker worker
+The public surface contains exactly these session tools:
 
-All tools are registered in `src/xlsliberator/mcp_server.py`. Their canonical
-response and runtime-selection contracts are documented in
-[`docs/mcp_tools.md`](docs/mcp_tools.md).
+```text
+create_session  open_document  inspect_document  list_sheets
+read_cells  write_cells  list_formulas  recalculate  list_controls
+dispatch_control_event  send_keyboard_event  execute_python_macro
+capture_screenshot  export_pdf  save  close  reopen  collect_logs
+destroy_session
+```
+
+`create_session` returns an explicit session ID; every other call requires it.
+Each session has a unique profile identity, port/display, immutable runtime
+identity, disposable working copy, and preserved logs/attachments. UI control,
+keyboard, and screenshot operations return `UNAVAILABLE` unless a real event
+layer can prove the operation; the service never invokes a handler and labels
+that a click. The legacy `mcp-serve` command is deprecated, and legacy loose
+tool names are not registered. See [`docs/mcp_tools.md`](docs/mcp_tools.md).
 
 ### Browser Web App
 
@@ -362,7 +368,9 @@ xlsliberator/
 │   ├── uno_conn.py                  # In-process LibreOffice UNO connection
 │   ├── lo_worker.py                 # Out-of-process UNO worker (stdlib-only)
 │   ├── lo_worker_client.py          # Client for the UNO worker
-│   ├── mcp_server.py / mcp_tools.py # FastMCP server and tools
+│   ├── libreoffice_session.py       # Stateful Docker-only runtime sessions
+│   ├── libreoffice_mcp.py           # Session-oriented MCP tools
+│   ├── mcp_server.py                # Curated FastMCP service
 │   └── web/                         # FastAPI web app
 ├── tests/                           # Test suite
 │   ├── unit/                        # Unit tests

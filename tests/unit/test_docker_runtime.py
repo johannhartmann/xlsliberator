@@ -159,6 +159,65 @@ def test_request_runs_resolved_image_id_and_records_job_identity(monkeypatch: An
     assert response["data"]["granted_capabilities"] == ["macro_execution"]
 
 
+def test_request_stages_working_copy_and_attachment_outputs(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    source = tmp_path / "source.ods"
+    output = tmp_path / "working.ods"
+    attachment = tmp_path / "export.pdf"
+    source.write_bytes(b"source")
+
+    def fake_run(
+        command: list[str],
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[str]:
+        if command[1:3] == ["image", "inspect"] and command[-1] == "{{json .}}":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=_image_inspect(),
+                stderr="",
+            )
+        if command[1] == "run":
+            payload = json.loads(str(kwargs["input"]))
+            mounts = [
+                command[index + 1] for index, value in enumerate(command) if value == "--mount"
+            ]
+            job_mount = next(item for item in mounts if item.endswith(",dst=/job"))
+            job_root = Path(job_mount.split(",src=", 1)[1].split(",dst=", 1)[0])
+            (job_root / Path(payload["output_path"]).name).write_bytes(b"working")
+            (job_root / Path(payload["attachment_output_path"]).name).write_bytes(b"%PDF")
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"success": True, "op": "run_scenario", "data": {}}),
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="sha256:fixed\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("xlsliberator.docker_runtime.shutil.which", lambda _name: "/bin/docker")
+    monkeypatch.setattr("xlsliberator.docker_runtime.subprocess.run", fake_run)
+
+    response = LibreOfficeDockerRuntime(workspace_roots=[tmp_path]).request(
+        {
+            "op": "run_scenario",
+            "ods_path": str(source),
+            "output_path": str(output),
+            "attachment_output_path": str(attachment),
+        }
+    )
+
+    assert response["success"] is True
+    assert output.read_bytes() == b"working"
+    assert attachment.read_bytes() == b"%PDF"
+
+
 def test_image_tag_drift_invalidates_evidence(monkeypatch: Any) -> None:
     def fake_run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         if command[1:3] == ["image", "inspect"] and command[-1] == "{{json .}}":
@@ -327,6 +386,29 @@ def test_worker_timeout_retains_specific_failure_type(monkeypatch: Any) -> None:
         LibreOfficeDockerRuntime()._run_docker_cli(  # noqa: SLF001
             ["docker", "run"], timeout_seconds=7
         )
+
+
+def test_worker_timeout_force_removes_named_container_process_tree(monkeypatch: Any) -> None:
+    """A timed-out office job must be force-removed before returning."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr("xlsliberator.docker_runtime.shutil.which", lambda _name: "/bin/docker")
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if command[1] == "run":
+            raise subprocess.TimeoutExpired(command, 3)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("xlsliberator.docker_runtime.subprocess.run", run)
+    command = ["docker", "run", "--name", "xlsliberator-lo-timeout", "sha256:fixed"]
+
+    with pytest.raises(DockerRuntimeTimeout):
+        LibreOfficeDockerRuntime()._run_docker_cli(  # noqa: SLF001
+            command,
+            timeout_seconds=3,
+        )
+
+    assert ["docker", "rm", "--force", "xlsliberator-lo-timeout"] in calls
 
 
 def test_runtime_process_boundary_rejects_every_non_docker_command(monkeypatch: Any) -> None:

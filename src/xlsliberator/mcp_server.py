@@ -1,16 +1,7 @@
-"""FastMCP 2.0 server for LibreOffice UNO operations.
-
-Exposes xlsliberator functionality through Model Context Protocol (MCP)
-for integration with Claude Agent SDK and other MCP clients.
+"""FastMCP server for stateful LibreOffice-only runtime sessions.
 
 Usage:
-    # Run with trusted-local HTTP streaming transport
-    docker compose run --rm test python -m xlsliberator.mcp_server
-
-    # Or via CLI
-    xlsliberator mcp-serve --port 8000
-
-    # Connect client to: http://localhost:8000/mcp
+    xlsliberator libreoffice-mcp-serve --port 8000
 """
 
 import os
@@ -20,68 +11,52 @@ from fastmcp import FastMCP
 from loguru import logger
 
 from xlsliberator.container_boundary import require_application_container
-from xlsliberator.mcp_tools import (
-    click_form_button,
-    compare_formulas,
-    convert_excel_to_ods,
-    embed_macros,
-    execute_button_handler,
-    get_cell_colors,
-    get_sheet_data,
-    inspect_workbook,
+from xlsliberator.libreoffice_mcp import (
+    capture_screenshot,
+    close,
+    collect_logs,
+    create_session,
+    destroy_session,
+    dispatch_control_event,
+    execute_python_macro,
+    export_pdf,
+    inspect_document,
     list_controls,
-    list_embedded_macros,
-    list_event_bindings,
+    list_formulas,
     list_sheets,
-    open_document_gui,
-    read_cell,
-    recalculate_document,
-    send_keyboard_input,
-    take_screenshot,
-    test_macro_execution,
-    validate_document_runtime,
-    validate_macros,
-    validate_transformation,
+    open_document,
+    read_cells,
+    recalculate,
+    reopen,
+    save,
+    send_keyboard_event,
+    write_cells,
 )
 
-# Create FastMCP server instance
-mcp = FastMCP(name="LibreOffice UNO")
+mcp = FastMCP(name="XLSLiberator LibreOffice Runtime")
 
-
-# ==============================================================================
-# Register Tools
-# ==============================================================================
-
-# Document Operations
-mcp.tool(convert_excel_to_ods)
-mcp.tool(inspect_workbook)
-mcp.tool(validate_transformation)
-mcp.tool(validate_document_runtime)
-mcp.tool(recalculate_document)
-
-# Cell and Sheet Operations
-mcp.tool(read_cell)
-mcp.tool(list_sheets)
-mcp.tool(get_sheet_data)
-mcp.tool(list_controls)
-mcp.tool(list_event_bindings)
-
-# Formula Testing
-mcp.tool(compare_formulas)
-
-# Macro Operations
-mcp.tool(embed_macros)
-mcp.tool(validate_macros)
-mcp.tool(list_embedded_macros)
-mcp.tool(test_macro_execution)
-
-# GUI Testing Operations
-mcp.tool(open_document_gui)
-mcp.tool(click_form_button)
-mcp.tool(execute_button_handler)
-mcp.tool(send_keyboard_input)
-mcp.tool(get_cell_colors)
-mcp.tool(take_screenshot)
+for tool in (
+    create_session,
+    open_document,
+    inspect_document,
+    list_sheets,
+    read_cells,
+    write_cells,
+    list_formulas,
+    recalculate,
+    list_controls,
+    dispatch_control_event,
+    send_keyboard_event,
+    execute_python_macro,
+    capture_screenshot,
+    export_pdf,
+    save,
+    close,
+    reopen,
+    collect_logs,
+    destroy_session,
+):
+    mcp.tool(tool)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, *, trusted_local: bool = True) -> None:
@@ -106,7 +81,7 @@ def serve(host: str = "127.0.0.1", port: int = 8000, *, trusted_local: bool = Tr
     )
     if not loopback and not trusted_container_proxy:
         raise ValueError("trusted-local MCP may bind only to a loopback address")
-    logger.info(f"Starting LibreOffice UNO MCP server on {host}:{port}")
+    logger.info(f"Starting stateful LibreOffice runtime MCP server on {host}:{port}")
     logger.info(f"Client endpoint: http://{host}:{port}/mcp")
 
     mcp.run(transport="http", host=host, port=port)
