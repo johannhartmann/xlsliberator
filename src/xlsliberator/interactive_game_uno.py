@@ -240,7 +240,7 @@ def _add_button_form(
     draw_page = sheet.getDrawPage()
     forms = draw_page.getForms()
     form = document.createInstance("com.sun.star.form.component.DataForm")
-    form.Name = f"XLSLiberator{name}Form"
+    form.Name = f"ControlForm{forms.getCount() + 1}"
     forms.insertByIndex(forms.getCount(), form)
 
     model = document.createInstance("com.sun.star.form.component.CommandButton")
