@@ -427,16 +427,20 @@ class InteractiveGameController:
         if self.listeners:
             raise RuntimeError("runtime control listeners are already attached")
         action_type, _key_type = _listener_types()
+        controller = self.document.getCurrentController()
         for name in CONTROL_NAMES:
             model = _find_control_model(self.document, name)
+            control = controller.getControl(model)
+            if control is None:
+                raise RuntimeError(f"native control view is unavailable: {name}")
             listener = action_type(self)
-            model.addActionListener(listener)
-            self.listeners.append((model, listener))
+            control.addActionListener(listener)
+            self.listeners.append((control, listener))
 
     def _detach_action_listeners(self) -> None:
-        for model, listener in self.listeners:
+        for control, listener in self.listeners:
             with suppress(Exception):
-                model.removeActionListener(listener)
+                control.removeActionListener(listener)
         self.listeners.clear()
 
     def action(self, control_name: str) -> None:

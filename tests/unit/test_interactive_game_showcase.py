@@ -19,6 +19,7 @@ from xlsliberator.interactive_game_showcase import (
     run_gui_scenario,
 )
 from xlsliberator.interactive_game_uno import (
+    CONTROL_NAMES,
     SOURCE_SHA256,
     InteractiveGameController,
     _control_logical_name,
@@ -206,3 +207,47 @@ def test_external_timer_pump_emits_due_source_cadence_without_uno_timer(
     assert emitted == 4
     assert ticks == [1, 2, 3, 4]
     assert controller._timer_budget_ms == pytest.approx(60.0)
+
+
+def test_action_listeners_bind_to_native_control_views(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Listener:
+        def __init__(self, adapter: InteractiveGameController) -> None:
+            self.adapter = adapter
+
+    class ControlView:
+        def __init__(self) -> None:
+            self.listeners: list[Listener] = []
+
+        def addActionListener(self, listener: Listener) -> None:  # noqa: N802
+            self.listeners.append(listener)
+
+    models = {name: object() for name in CONTROL_NAMES}
+    views = {model: ControlView() for model in models.values()}
+    native_controller = type(
+        "NativeController",
+        (),
+        {"getControl": lambda _self, model: views[model]},
+    )()
+    document = type(
+        "Document",
+        (),
+        {"getCurrentController": lambda _self: native_controller},
+    )()
+    controller = object.__new__(InteractiveGameController)
+    controller.document = document
+    controller.listeners = []
+    monkeypatch.setattr(
+        "xlsliberator.interactive_game_uno._listener_types",
+        lambda: (Listener, object),
+    )
+    monkeypatch.setattr(
+        "xlsliberator.interactive_game_uno._find_control_model",
+        lambda _document, name: models[name],
+    )
+
+    controller._attach_action_listeners()
+
+    assert [control for control, _listener in controller.listeners] == list(views.values())
+    assert all(len(view.listeners) == 1 for view in views.values())
