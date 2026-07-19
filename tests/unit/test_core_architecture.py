@@ -1,4 +1,4 @@
-"""Architecture guards for the deterministic XLSLiberator toolbelt."""
+"""Architecture guards for the XLSLiberator runtime."""
 
 from __future__ import annotations
 

@@ -143,10 +143,14 @@ def test_office_source_build_uses_pinned_bundled_nss_crypto_backend() -> None:
 def test_runner_uses_shared_workspace_for_pytest_and_office_jobs() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    ci_check = (root / "tools" / "ci_check.py").read_text(encoding="utf-8")
+    assert "PWD: ${PWD}" in compose
     assert "XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}:/tmp/pytest-tmp" in compose
     assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
     assert "XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp" in compose
     assert "XLSLIBERATOR_OPEN_SWE_WORKSPACE_ROOT: ${PWD}/artifacts/open-swe-workspaces" in compose
+    assert 'ROOT / "artifacts" / "open-swe-workspaces"' in ci_check
+    assert "open_swe_workspace.chmod(0o777)" in ci_check
 
 
 def test_only_mcp_is_a_trusted_docker_execution_gateway() -> None:

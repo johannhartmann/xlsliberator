@@ -84,8 +84,13 @@ def office() -> None:
 def docker_web() -> None:
     """Build and smoke-test the web image."""
     docker_web_temp = ARTIFACTS / "docker-web-tmp"
+    open_swe_workspace = ROOT / "artifacts" / "open-swe-workspaces"
     shutil.rmtree(docker_web_temp, ignore_errors=True)
     docker_web_temp.mkdir(parents=True)
+    # Docker creates a missing bind-mount source as root on Linux. Open-SWE
+    # runs as UID 10001 and must be able to create its .langgraph_api state.
+    open_swe_workspace.mkdir(parents=True, exist_ok=True)
+    open_swe_workspace.chmod(0o777)
     env = dict(os.environ)
     env["DOCKER_TESTS"] = "1"
     env["XLSLIBERATOR_FAIL_ON_SKIP"] = "1"

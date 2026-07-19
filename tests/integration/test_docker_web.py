@@ -136,10 +136,14 @@ def test_web_container_uses_embedded_open_swe_without_paid_default(tmp_path: Pat
                 timeout=1200,
             )
         except subprocess.CalledProcessError as exc:
+            status = _compose(project, "ps", "--all", check=False)
+            logs = _compose(project, "logs", "--no-color", "--tail=200", check=False)
             pytest.fail(
                 "embedded Open-SWE Compose startup failed:\n"
                 f"stdout:\n{exc.stdout}\n"
-                f"stderr:\n{exc.stderr}"
+                f"stderr:\n{exc.stderr}\n"
+                f"compose ps:\n{status.stdout}\n{status.stderr}\n"
+                f"service logs:\n{logs.stdout}\n{logs.stderr}"
             )
         readiness = _wait_for_web(project)
         assert readiness["open_swe_configured"] is True

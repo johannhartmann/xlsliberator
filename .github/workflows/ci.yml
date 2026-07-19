@@ -66,7 +66,9 @@ jobs:
       XLSLIBERATOR_FAIL_ON_SKIP: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
+      - run: |
+          mkdir -p artifacts/runtime-tmp artifacts/ci artifacts/open-swe-workspaces
+          chmod -R 0777 artifacts
       - name: Build Docker test runner
         run: >-
           docker compose --profile ci-runner build test-runner

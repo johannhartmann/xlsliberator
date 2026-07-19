@@ -32,6 +32,7 @@ services:
     working_dir: ${PWD}
     environment:
       HOME: /tmp/home
+      PWD: ${PWD}
       PYTHONPATH: ${PWD}/src
       XLSLIBERATOR_APPLICATION_CONTAINER: "1"
       XLSLIBERATOR_OFFICE_CONTAINER: "0"
