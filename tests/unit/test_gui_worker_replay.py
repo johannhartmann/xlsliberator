@@ -8,6 +8,7 @@ import pytest
 
 from xlsliberator.gui_worker import (
     _confined_path,
+    _open_ready_document,
     _raise_with_office_diagnostics,
     _write_replay_html,
 )
@@ -68,6 +69,39 @@ def test_gui_worker_separates_read_only_inputs_from_job_outputs(tmp_path: Path) 
             must_exist=True,
             label="output",
         )
+
+
+def test_gui_document_waits_for_visible_calc_window_before_installing_controls(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    calls: list[str] = []
+    document = object()
+
+    def open_document(_session: dict[str, Any], _path: Path) -> object:
+        calls.append("open")
+        return document
+
+    def wait_for_calc_window() -> str:
+        calls.append("window")
+        return "42"
+
+    def install_controller(
+        _session: dict[str, Any],
+        received_document: object,
+        _request: dict[str, Any],
+    ) -> str:
+        assert received_document is document
+        calls.append("controls")
+        return "controller"
+
+    monkeypatch.setattr("xlsliberator.gui_worker._open_document", open_document)
+    monkeypatch.setattr("xlsliberator.gui_worker._wait_for_calc_window", wait_for_calc_window)
+    monkeypatch.setattr("xlsliberator.gui_worker._install_game_controller", install_controller)
+
+    result = _open_ready_document({}, tmp_path / "target.ods", {})
+
+    assert result == (document, "controller", "42")
+    assert calls == ["open", "window", "controls"]
 
 
 def test_gui_failure_preserves_bounded_desktop_diagnostics(

@@ -94,9 +94,11 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with office_runtime as session:
-            document = _open_document(session, working_copy)
-            game_controller = _install_game_controller(session, document, request)
-            window_id = _wait_for_calc_window()
+            document, game_controller, window_id = _open_ready_document(
+                session,
+                working_copy,
+                request,
+            )
             try:
                 for sequence, raw_action in enumerate(actions, start=1):
                     if not isinstance(raw_action, dict):
@@ -152,9 +154,11 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                             game_controller.dispose()
                         if document is not None:
                             _close_document(document, save=False)
-                        document = _open_document(session, working_copy)
-                        game_controller = _install_game_controller(session, document, request)
-                        window_id = _wait_for_calc_window()
+                        document, game_controller, window_id = _open_ready_document(
+                            session,
+                            working_copy,
+                            request,
+                        )
                         result = {"reopened_sha256": _sha256_file(working_copy)}
                     elif kind == "screenshot":
                         name = _safe_name(raw_action.get("name"), "screenshot name")
@@ -622,6 +626,18 @@ def _open_document(session: dict[str, Any], path: Path) -> Any:
         raise RuntimeError("LibreOffice did not open the GUI scenario document")
     _drain_ui(session)
     return document
+
+
+def _open_ready_document(
+    session: dict[str, Any],
+    path: Path,
+    request: dict[str, Any],
+) -> tuple[Any, Any, str]:
+    """Wait for the live Calc view before installing controller-backed controls."""
+    document = _open_document(session, path)
+    window_id = _wait_for_calc_window()
+    game_controller = _install_game_controller(session, document, request)
+    return document, game_controller, window_id
 
 
 def _install_game_controller(
