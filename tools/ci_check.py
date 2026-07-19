@@ -90,7 +90,8 @@ def docker_web() -> None:
     # Docker creates a missing bind-mount source as root on Linux. Open-SWE
     # runs as UID 10001 and must be able to create its .langgraph_api state.
     open_swe_workspace.mkdir(parents=True, exist_ok=True)
-    open_swe_workspace.chmod(0o777)
+    if open_swe_workspace.stat().st_mode & 0o007 != 0o007:
+        open_swe_workspace.chmod(0o777)
     env = dict(os.environ)
     env["DOCKER_TESTS"] = "1"
     env["XLSLIBERATOR_FAIL_ON_SKIP"] = "1"
