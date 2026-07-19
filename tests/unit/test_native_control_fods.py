@@ -111,7 +111,8 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
         assert package.infolist()[0].filename == "mimetype"
         assert package.infolist()[0].compress_type == ZIP_STORED
         assert package.read("styles.xml")
-        root = ElementTree.fromstring(package.read("content.xml"))
+        content = package.read("content.xml")
+        root = ElementTree.fromstring(content)
     namespaces = {
         "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
         "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
@@ -138,6 +139,8 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
     assert tag.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == (
         "GameStart"
     )
+    assert b'xmlns:ooo="http://openoffice.org/2004/office"' in content
+    assert b'form:control-implementation="ooo:com.sun.star.form.component.CommandButton"' in content
 
 
 def test_injection_rejects_missing_sheet_and_duplicate_forms(tmp_path: Path) -> None:

@@ -26,6 +26,7 @@ _NAMESPACES = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
     "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
     "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+    "ooo": "http://openoffice.org/2004/office",
     "svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
     "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
     "xlink": "http://www.w3.org/1999/xlink",
@@ -252,6 +253,10 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
             )
         table.insert(0, forms)
 
+    # ElementTree otherwise drops this declaration when ``ooo`` is used only in
+    # QName-valued attributes.  LibreOffice needs it to resolve form services.
+    if not _tree_uses_namespace(root, _NAMESPACES["ooo"]):
+        root.set("xmlns:ooo", _NAMESPACES["ooo"])
     members["content.xml"] = ElementTree.tostring(
         root,
         encoding="utf-8",
@@ -289,6 +294,15 @@ def _validate_content_xml(content: bytes) -> None:
     normalized = content.upper()
     if b"<!DOCTYPE" in normalized or b"<!ENTITY" in normalized:
         raise ValueError("ODS content.xml must not contain DTD or entity declarations")
+
+
+def _tree_uses_namespace(root: ElementTree.Element, namespace: str) -> bool:
+    expanded_prefix = f"{{{namespace}}}"
+    return any(
+        (isinstance(element.tag, str) and element.tag.startswith(expanded_prefix))
+        or any(name.startswith(expanded_prefix) for name in element.attrib)
+        for element in root.iter()
+    )
 
 
 def _qname(prefix: str, local_name: str) -> str:
