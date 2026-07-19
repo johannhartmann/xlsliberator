@@ -67,6 +67,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.chmod(0o777)
     actions = request.get("actions")
     if not isinstance(actions, list) or not 1 <= len(actions) <= 100:
         raise ValueError("run_gui_scenario requires between 1 and 100 actions")
@@ -253,6 +254,9 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
         shutil.rmtree(output_dir)
     replay_dir = output_dir / "public" / "replay"
     replay_dir.mkdir(parents=True)
+    output_dir.chmod(0o777)
+    (output_dir / "public").chmod(0o777)
+    replay_dir.chmod(0o777)
 
     flattened: list[dict[str, Any]] = []
     target_sha256: str | None = None

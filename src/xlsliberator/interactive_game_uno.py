@@ -319,11 +319,10 @@ def _remove_runtime_controls(document: Any) -> None:
         draw_page = sheets.getByIndex(sheet_index).getDrawPage()
         for shape_index in reversed(range(draw_page.getCount())):
             shape = draw_page.getByIndex(shape_index)
-            try:
+            model = None
+            with suppress(Exception):
                 model = shape.getControl()
-            except Exception:
-                continue
-            if _control_logical_name(model) in CONTROL_NAMES:
+            if model is not None and _control_logical_name(model) in CONTROL_NAMES:
                 draw_page.remove(shape)
         forms = draw_page.getForms()
         for form_name in _RUNTIME_FORM_NAMES:
@@ -331,11 +330,10 @@ def _remove_runtime_controls(document: Any) -> None:
                 forms.removeByName(form_name)
         for shape_index in range(draw_page.getCount()):
             shape = draw_page.getByIndex(shape_index)
-            try:
+            model = None
+            with suppress(Exception):
                 model = shape.getControl()
-            except Exception:
-                continue
-            if _control_logical_name(model) in CONTROL_NAMES:
+            if model is not None and _control_logical_name(model) in CONTROL_NAMES:
                 raise RuntimeError("LibreOffice retained a transient native control shape")
 
 
