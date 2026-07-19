@@ -295,7 +295,6 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
                     NativeButton(
                         name=button_name,
                         label="Run certification event",
-                        tag=button_name,
                         x=1_000,
                         y=1_000,
                         width=5_000,

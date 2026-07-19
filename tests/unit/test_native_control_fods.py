@@ -27,7 +27,6 @@ def test_seed_uses_native_sheet_forms_and_table_shapes(tmp_path: Path) -> None:
                     NativeButton(
                         name='Certification "Button"',
                         label="Start & play <now>",
-                        tag='GameStart "safe"',
                         x=1_000,
                         y=2_000,
                         width=5_000,
@@ -85,7 +84,7 @@ def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
         )
 
 
-def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path) -> None:
+def test_injection_preserves_package_and_adds_styled_native_model(tmp_path: Path) -> None:
     seed = tmp_path / "libreoffice-base.ods"
     write_native_button_seed(seed, (NativeSheet(name="Sheet1"),))
 
@@ -98,7 +97,6 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
                     NativeButton(
                         name="CertificationButton",
                         label="Run",
-                        tag="GameStart",
                         x=1_000,
                         y=1_000,
                         width=5_000,
@@ -122,10 +120,6 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
     }
     button = root.find(".//form:button", namespaces)
     shape = root.find(".//draw:control", namespaces)
-    tag = root.find(
-        ".//form:property[@form:property-name='Tag']",
-        namespaces,
-    )
     default_control = root.find(
         ".//form:property[@form:property-name='DefaultControl']",
         namespaces,
@@ -133,15 +127,23 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
     assert button is not None
     assert shape is not None
     assert root.find(".//table:shapes/draw:control", namespaces) is shape
-    assert tag is not None
     assert default_control is not None
     assert (
         default_control.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"]
         == "com.sun.star.form.control.CommandButton"
     )
-    assert tag.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == (
-        "GameStart"
+    assert (
+        shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}style-name"]
+        == "XLSLiberatorControlShape"
     )
+    assert (
+        shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}text-style-name"]
+        == "XLSLiberatorControlText"
+    )
+    assert root.find(
+        ".//form:property[@form:property-name='Tag']",
+        namespaces,
+    ) is None
     assert b'xmlns:ooo="http://openoffice.org/2004/office"' in content
     assert b'form:control-implementation="ooo:com.sun.star.form.component.CommandButton"' in content
 
@@ -151,7 +153,6 @@ def test_injection_rejects_missing_sheet_and_duplicate_forms(tmp_path: Path) -> 
     button = NativeButton(
         name="Button",
         label="Run",
-        tag="Run",
         x=0,
         y=0,
         width=1_000,
@@ -193,7 +194,6 @@ def test_injection_rejects_unsafe_xml_declarations(
     button = NativeButton(
         name="Button",
         label="Run",
-        tag="Run",
         x=0,
         y=0,
         width=1_000,
@@ -212,7 +212,6 @@ def test_injection_rejects_oversized_content_xml(
     button = NativeButton(
         name="Button",
         label="Run",
-        tag="Run",
         x=0,
         y=0,
         width=1_000,

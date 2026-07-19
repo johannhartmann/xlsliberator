@@ -261,7 +261,6 @@ def _interactive_game_native_sheets() -> tuple[NativeSheet, ...]:
         NativeButton(
             name=_CONTROL_MODEL_NAMES[name],
             label=label,
-            tag=name,
             x=1_000,
             y=1_000 + index * 1_500,
             width=5_000,
@@ -278,7 +277,6 @@ def _interactive_game_native_sheets() -> tuple[NativeSheet, ...]:
     score_button = NativeButton(
         name=_CONTROL_MODEL_NAMES["ScoreReturn"],
         label="Return to Game",
-        tag="ScoreReturn",
         x=1_000,
         y=1_000,
         width=5_000,

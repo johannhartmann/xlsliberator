@@ -26,9 +26,11 @@ _MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 _MAX_CONTENT_XML_BYTES = 32 * 1024 * 1024
 _NAMESPACES = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+    "fo": "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0",
     "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
     "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
     "ooo": "http://openoffice.org/2004/office",
+    "style": "urn:oasis:names:tc:opendocument:xmlns:style:1.0",
     "svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
     "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
     "xlink": "http://www.w3.org/1999/xlink",
@@ -42,7 +44,6 @@ class NativeButton:
 
     name: str
     label: str
-    tag: str
     x: int
     y: int
     width: int
@@ -94,6 +95,14 @@ def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> Non
  xmlns:xlink="http://www.w3.org/1999/xlink"
  xmlns:ooo="http://openoffice.org/2004/office"
  office:version="1.4">
+ <office:automatic-styles>
+  <style:style style:name="XLSLiberatorControlShape" style:family="graphic">
+   <style:graphic-properties fo:border="none"/>
+  </style:style>
+  <style:style style:name="XLSLiberatorControlText" style:family="paragraph">
+   <style:text-properties fo:font-size="10pt"/>
+  </style:style>
+ </office:automatic-styles>
  <office:body>
   <office:spreadsheet>
 {"".join(sheet_xml)}
@@ -153,6 +162,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
     _register_document_namespaces(content)
     # Safe because size, DTD, and entity declarations were rejected above.
     root = ElementTree.fromstring(content)  # nosec B314
+    _ensure_control_styles(root)
     table_name = _qname("table", "name")
     tables = {
         str(table.attrib.get(table_name, "")): table
@@ -232,20 +242,13 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 },
             )
             ElementTree.SubElement(
-                properties,
-                _qname("form", "property"),
-                {
-                    _qname("form", "property-name"): "Tag",
-                    _qname("office", "value-type"): "string",
-                    _qname("office", "string-value"): button.tag,
-                },
-            )
-            ElementTree.SubElement(
                 shapes,
                 _qname("draw", "control"),
                 {
                     _qname("draw", "control"): control_id,
                     _qname("draw", "name"): button.name,
+                    _qname("draw", "style-name"): "XLSLiberatorControlShape",
+                    _qname("draw", "text-style-name"): "XLSLiberatorControlText",
                     _qname("draw", "z-index"): str(z_index),
                     _qname("svg", "x"): _cm(button.x),
                     _qname("svg", "y"): _cm(button.y),
@@ -307,6 +310,48 @@ def _tree_uses_namespace(root: ElementTree.Element, namespace: str) -> bool:
         or any(name.startswith(expanded_prefix) for name in element.attrib)
         for element in root.iter()
     )
+
+
+def _ensure_control_styles(root: ElementTree.Element) -> None:
+    automatic_styles = root.find("./office:automatic-styles", _NAMESPACES)
+    if automatic_styles is None:
+        automatic_styles = ElementTree.Element(_qname("office", "automatic-styles"))
+        body = root.find("./office:body", _NAMESPACES)
+        root.insert(list(root).index(body) if body is not None else 0, automatic_styles)
+
+    style_name = _qname("style", "name")
+    existing_names = {
+        style.attrib.get(style_name)
+        for style in automatic_styles.findall("./style:style", _NAMESPACES)
+    }
+    if "XLSLiberatorControlShape" not in existing_names:
+        shape_style = ElementTree.SubElement(
+            automatic_styles,
+            _qname("style", "style"),
+            {
+                style_name: "XLSLiberatorControlShape",
+                _qname("style", "family"): "graphic",
+            },
+        )
+        ElementTree.SubElement(
+            shape_style,
+            _qname("style", "graphic-properties"),
+            {_qname("fo", "border"): "none"},
+        )
+    if "XLSLiberatorControlText" not in existing_names:
+        text_style = ElementTree.SubElement(
+            automatic_styles,
+            _qname("style", "style"),
+            {
+                style_name: "XLSLiberatorControlText",
+                _qname("style", "family"): "paragraph",
+            },
+        )
+        ElementTree.SubElement(
+            text_style,
+            _qname("style", "text-properties"),
+            {_qname("fo", "font-size"): "10pt"},
+        )
 
 
 def _qname(prefix: str, local_name: str) -> str:
@@ -381,6 +426,8 @@ def _shape_xml(button: NativeButton, control_id: str) -> str:
     return f"""     <draw:control
        draw:z-index="0"
        draw:name="{_xml_attr(button.name)}"
+       draw:style-name="XLSLiberatorControlShape"
+       draw:text-style-name="XLSLiberatorControlText"
        svg:width="{_cm(button.width)}"
        svg:height="{_cm(button.height)}"
        svg:x="{_cm(button.x)}"
