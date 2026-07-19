@@ -175,9 +175,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
             _qname("form", "form"),
             {
                 _qname("form", "name"): f"XLSLiberatorForm{next_control}",
-                _qname("form", "control-implementation"): (
-                    "ooo:com.sun.star.form.component.Form"
-                ),
+                _qname("form", "control-implementation"): ("ooo:com.sun.star.form.component.Form"),
             },
         )
         shapes = table.find("./table:shapes", _NAMESPACES)
