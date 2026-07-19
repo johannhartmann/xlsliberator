@@ -31,6 +31,16 @@ DEFAULT_START_TIMEOUT_SECONDS = 20
 OFFICE_CONTAINER_MARKER = "XLSLIBERATOR_OFFICE_CONTAINER"
 OFFICE_PYTHON_PREFIX = "/opt/libreoffice26.2/program/"
 SOURCE_RUNTIME_PREFIX = "/opt/libreoffice/program"
+SECURE_OFFICE_PROFILE_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry">
+  <item oor:path="/org.openoffice.Office.Common/Security/Scripting">
+    <prop oor:name="DisablePythonRuntime" oor:op="fuse">
+      <value>true</value>
+    </prop>
+  </item>
+</oor:items>
+"""
 
 
 def _authorized_office_prefix() -> str:
@@ -61,6 +71,14 @@ def _authorized_office_executable() -> str:
     if not executable.startswith(_authorized_office_prefix()):
         raise RuntimeError("Office executable is outside the authorized Docker runtime prefix")
     return executable
+
+
+def _initialize_secure_office_profile(profile_dir: Path) -> Path:
+    """Disable in-process Python while keeping external Docker PyUNO available."""
+    registry_path = profile_dir / "user" / "registrymodifications.xcu"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(SECURE_OFFICE_PROFILE_XML, encoding="utf-8")
+    return registry_path
 
 
 def _require_office_container() -> None:
@@ -1854,6 +1872,7 @@ class _OfficeSession:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="xlsliberator-lo-worker-")
         profile_dir = Path(self.tmpdir.name) / profile_identifier
         profile_dir.mkdir(parents=True, exist_ok=True)
+        _initialize_secure_office_profile(profile_dir)
         self.log_path = Path(self.tmpdir.name) / "office.log"
         self.log_handle = self.log_path.open("wb")
 
