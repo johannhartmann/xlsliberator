@@ -121,18 +121,18 @@ def test_office_source_wrapper_runs_python_only_through_docker() -> None:
 
 def test_office_source_fetch_uses_release_tarball_make_target() -> None:
     root = Path(__file__).parents[2]
-    orchestrator = (root / "tools" / "office.py").read_text(encoding="utf-8")
+    office_tool = (root / "tools" / "office.py").read_text(encoding="utf-8")
 
-    assert '_run(["make", "fetch"], cwd=download_tree)' in orchestrator
-    assert '_run(["./download"]' not in orchestrator
+    assert '_run(["make", "fetch"], cwd=download_tree)' in office_tool
+    assert '_run(["./download"]' not in office_tool
 
 
 def test_office_source_build_propagates_requested_parallelism() -> None:
     root = Path(__file__).parents[2]
-    orchestrator = (root / "tools" / "office.py").read_text(encoding="utf-8")
+    office_tool = (root / "tools" / "office.py").read_text(encoding="utf-8")
 
-    assert 'f"--with-parallelism={parallelism}"' in orchestrator
-    assert "_configure(source, manifest, parallelism=args.jobs)" in orchestrator
+    assert 'f"--with-parallelism={parallelism}"' in office_tool
+    assert "_configure(source, manifest, parallelism=args.jobs)" in office_tool
 
 
 def test_office_source_build_uses_pinned_bundled_nss_crypto_backend() -> None:
@@ -142,27 +142,36 @@ def test_office_source_build_uses_pinned_bundled_nss_crypto_backend() -> None:
     assert '"--without-system-nss"' in manifest
 
 
-def test_orchestrator_uses_shared_workspace_for_pytest_and_office_jobs() -> None:
+def test_runner_uses_shared_workspace_for_pytest_and_office_jobs() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     assert "XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}:/tmp/pytest-tmp" in compose
     assert "PYTEST_ADDOPTS: --basetemp=/tmp/pytest-tmp" in compose
     assert "XLSLIBERATOR_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp" in compose
+    assert "XLSLIBERATOR_OPEN_SWE_WORKSPACE_ROOT: ${PWD}/artifacts/open-swe-workspaces" in compose
 
 
-def test_only_mcp_is_a_trusted_docker_orchestrator() -> None:
+def test_only_mcp_is_a_trusted_docker_execution_gateway() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
-    web_service = compose.split("  xlsliberator-web:\n", 1)[1].split("\n  xlsliberator-mcp:", 1)[0]
+    open_swe_service = compose.split("  xlsliberator-open-swe:\n", 1)[1].split(
+        "\n  xlsliberator-web:", 1
+    )[0]
+    web_service = compose.split("  xlsliberator-web:\n", 1)[1].split(
+        "\n  xlsliberator-mcp:", 1
+    )[0]
     mcp_service = compose.split("  xlsliberator-mcp:\n", 1)[1].split("\nvolumes:", 1)[0]
     runtime_service = compose.split("  libreoffice-runtime:\n", 1)[1].split(
         "\n  office-source-fetch:", 1
     )[0]
 
     assert "docker-cli" in dockerfile
+    assert "/var/run/docker.sock" not in open_swe_service
     assert "/var/run/docker.sock" not in web_service
     assert "/var/run/docker.sock:/var/run/docker.sock" in mcp_service
+    assert "XLSLIBERATOR_OPEN_SWE_MODEL" in open_swe_service
+    assert "XLSLIBERATOR_GITHUB_MODELS_ENABLED" in open_swe_service
     assert "XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT" not in web_service
     assert "XLSLIBERATOR_OFFICE_CONTAINER" not in web_service
     assert "XLSLIBERATOR_OPEN_SWE_URL" in web_service
@@ -243,7 +252,7 @@ def test_package_gate_is_offline_and_build_backend_is_in_test_image() -> None:
 
     assert "build hatchling pip-audit" in test_dockerfile
     assert 'pip install --no-cache-dir ".[web]"' in app_dockerfile
-    assert 'pip install --no-cache-dir ".[web,dev,legacy-agent]"' in test_dockerfile
+    assert 'pip install --no-cache-dir ".[web,dev]"' in test_dockerfile
     assert "pip install --no-cache-dir -e" not in app_dockerfile
     assert "pip install --no-cache-dir -e" not in test_dockerfile
     assert "cmp -s /app/src/sitecustomize.py" in app_dockerfile

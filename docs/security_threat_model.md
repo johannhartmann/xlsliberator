@@ -16,14 +16,15 @@ target, macro, and GUI execution is `UNAVAILABLE`; there is no host fallback.
 
 ## Trust boundaries
 
-- The host orchestrator may resolve immutable image IDs, create a private job
+- The trusted Docker execution gateway may resolve immutable image IDs, create a private job
   directory, copy explicitly allowed inputs, invoke Docker, and copy declared
   outputs back to an allowed workspace root.
-- The web application container is also a trusted orchestrator and may receive
-  the Docker socket. It translates only its dedicated runtime staging root to
-  the corresponding host bind path. This control-plane container is outside the
-  untrusted workbook boundary and must remain loopback-only or behind an
-  authenticated gateway.
+- The web application is only an authenticated Open-SWE client. It receives no
+  Docker socket, imports no conversion API, starts no office process, and has no
+  local migration fallback.
+- The loopback-only MCP execution gateway may receive the Docker socket. It
+  translates only its dedicated runtime staging root to the corresponding host
+  bind path and creates disposable, socket-free office workers.
 - Workbook inputs are constrained to roots configured with
   `XLSLIBERATOR_WORKSPACE_ROOTS` (or `--workspace-root` for MCP). Traversal,
   symlink escapes, special files, and output symlink replacement are rejected.
@@ -43,7 +44,7 @@ target, macro, and GUI execution is `UNAVAILABLE`; there is no host fallback.
 - `EnvironmentManifest` declares external capabilities. Only explicitly granted
   capabilities are passed to a job, and legacy plus typed grants are recorded in
   the evidence bundle and runtime trace.
-- Coding-agent build and test commands use `DockerCommandSandbox`. Commands,
+- Open-SWE-requested build and test commands use `DockerCommandSandbox`. Commands,
   images and mounts come from trusted application configuration, never workbook
   evidence or an agent proposal. The Docker socket is never mounted into those
   jobs.
@@ -57,7 +58,7 @@ target, macro, and GUI execution is `UNAVAILABLE`; there is no host fallback.
 
 Workbook text never becomes system or tool policy. Text sent to a coding model
 is size bounded, hashed where applicable, and wrapped in an
-`UNTRUSTED_WORKBOOK_DATA` or `UNTRUSTED_WORKBOOK_EVIDENCE` element. Agent output
+`UNTRUSTED_WORKBOOK_DATA` or `UNTRUSTED_WORKBOOK_EVIDENCE` element. Open-SWE output
 is only a candidate patch. It cannot set certification; deterministic scenario,
 trace-diff, build, and regression gates make that decision.
 
@@ -88,7 +89,7 @@ runtime must never be labelled as the stock local Docker target.
 ## Residual risks
 
 Docker engine and kernel vulnerabilities, parser bugs before sandbox entry, and
-trusted-orchestrator compromise remain in scope for platform hardening. The
+trusted execution-gateway compromise remain in scope for platform hardening. The
 sole execution target remains LibreOffice 26.2.4.2; there is no Excel or Windows
 worker and no host fallback. Public MCP exposure is unsupported until
 authenticated authorization is configured. These limitations are explicit and

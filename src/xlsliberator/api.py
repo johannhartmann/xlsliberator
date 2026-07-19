@@ -1,7 +1,6 @@
 """Docker-only Excel to LibreOffice Calc conversion API."""
 
 import time
-import warnings
 import zipfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -82,7 +81,6 @@ def convert(
     locale: str = "en-US",
     strict: bool = False,
     embed_macros: bool = False,
-    use_agent: bool = False,
     python_modules: Mapping[str, str] | None = None,
     validate_macro_execution: bool = False,
     allow_global_macro_security_change: bool = False,
@@ -97,8 +95,7 @@ def convert(
         locale: Target locale for formulas (note: native conversion handles this)
         strict: If True, fail on any errors; if False, continue with warnings
         embed_macros: If True, require and embed supplied target-native Python modules
-        use_agent: Deprecated compatibility flag; model orchestration is external
-        python_modules: Agent-produced target-native Python/UNO modules to embed
+        python_modules: Open-SWE-produced target-native Python/UNO modules to embed
         validate_macro_execution: If True, run macro execution validation when safe
         allow_global_macro_security_change: Explicit opt-in for legacy global macro security change
         progress_callback: Optional callback for ordered conversion progress events
@@ -116,14 +113,6 @@ def convert(
     """
     input_path = Path(input_path)
     output_path = Path(output_path)
-    if use_agent:
-        warnings.warn(
-            "Embedded model orchestration was removed; use xlsliberator-swe and pass "
-            "python_modules to the deterministic converter",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
     start_time = time.time()
 
     # Initialize report
@@ -211,8 +200,8 @@ def convert(
         supplied_modules = dict(python_modules or {})
         if vba_modules and not supplied_modules:
             message = (
-                "Source VBA was extracted but not migrated; model orchestration belongs to "
-                "xlsliberator-swe"
+                "Source VBA was extracted but not migrated; Open-SWE must supply "
+                "target-native modules"
             )
             if embed_macros:
                 report.errors.append(message)
@@ -313,13 +302,13 @@ def convert(
                     logger.warning(msg)
                     report.errors.append(msg)
 
-            # Step 4.8: Agent-based GUI validation
-            logger.info("Step 4.8: Running agent-based GUI validation...")
+            # Step 4.8: deterministic target GUI validation
+            logger.info("Step 4.8: Running target GUI validation...")
             _emit_progress(progress_callback, "verifying_gui", "Verifying GUI and event bindings")
             try:
-                from xlsliberator.agent_validator import validate_document_with_agent_sync
+                from xlsliberator.target_validator import validate_document_target_sync
 
-                agent_result = validate_document_with_agent_sync(output_path)
+                agent_result = validate_document_target_sync(output_path)
                 report.agent_validation_run = True
                 report.agent_macros_validated = agent_result.macros_validated
                 report.agent_macros_valid = agent_result.macros_valid
@@ -330,25 +319,25 @@ def convert(
 
                 if agent_result.success:
                     logger.success(
-                        f"Agent validation: {agent_result.macros_valid} macros, "
+                        f"Target validation: {agent_result.macros_valid} macros, "
                         f"{agent_result.functions_found} functions, "
                         f"{agent_result.buttons_with_handlers} button handlers"
                     )
                 else:
                     logger.warning(
-                        f"Agent validation completed with issues: "
+                        f"Target validation completed with issues: "
                         f"{len(agent_result.warnings)} warnings, "
                         f"{len(agent_result.errors)} errors"
                     )
 
                 # Add warnings/errors to report
                 for warning in agent_result.warnings:
-                    report.warnings.append(f"Agent validation: {warning}")
+                    report.warnings.append(f"Target validation: {warning}")
                 for error in agent_result.errors:
-                    report.errors.append(f"Agent validation: {error}")
+                    report.errors.append(f"Target validation: {error}")
 
             except Exception as e:
-                msg = f"Agent validation failed: {e}"
+                msg = f"Target validation failed: {e}"
                 logger.warning(msg)
                 report.warnings.append(msg)
 

@@ -84,7 +84,7 @@ def test_container_command_is_immutable_disposable_and_sandboxed(tmp_path: Path)
     assert "/var/run/docker.sock" not in " ".join(command)
 
 
-def test_nested_orchestrator_translates_only_runtime_temp_paths(
+def test_nested_gateway_translates_only_runtime_temp_paths(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     local_root = tmp_path / "container-runtime"
@@ -107,7 +107,7 @@ def test_nested_orchestrator_translates_only_runtime_temp_paths(
     assert "/var/run/docker.sock" not in " ".join(command)
 
 
-def test_nested_orchestrator_rejects_path_outside_runtime_root(
+def test_nested_gateway_rejects_path_outside_runtime_root(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     runtime_root = tmp_path / "runtime"

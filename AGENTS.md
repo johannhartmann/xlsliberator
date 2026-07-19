@@ -15,7 +15,7 @@ UNO, LibreOffice, or `soffice`, including for diagnostics. Common commands:
 - `docker compose run --rm test ruff format .`: format Python code.
 - `docker compose run --rm test mypy src`: run static typing checks.
 - `docker compose run --rm test pytest tests/unit`: run unit tests.
-- `make test-integration`: run Docker-orchestrated LibreOffice integration tests.
+- `make test-integration`: run Docker-controlled LibreOffice integration tests.
 - `make all`: run the Makefile CI-style quality sequence.
 
 ## Coding Style & Naming Conventions
@@ -34,8 +34,10 @@ Before opening a PR, run lint, type checks, and relevant tests. PR descriptions 
 
 ## Security & Configuration Tips
 
-Do not commit secrets or local environment files. `ANTHROPIC_API_KEY` is optional
-and only needed for VBA translation. LibreOffice is the sole target and is pinned
-to full build `26.2.4.2`. LibreOffice, its bundled Python, UNO, and PyUNO run only
-inside the repository's pinned office image. There is no host executable discovery,
-host diagnostic, direct `soffice` fallback, or local PyUNO fallback.
+Do not commit secrets or local environment files. Open-SWE is the only agent and
+migration orchestrator; provider selection and credentials belong exclusively to
+its explicit deployment configuration. LibreOffice is the sole target and is
+pinned to full build `26.2.4.2`. LibreOffice, its bundled Python, UNO, and PyUNO
+run only inside the repository's pinned office image.
+There is no host executable discovery, host diagnostic, direct `soffice`
+fallback, or local PyUNO fallback.

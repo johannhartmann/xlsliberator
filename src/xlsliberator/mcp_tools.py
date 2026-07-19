@@ -1,7 +1,7 @@
 """MCP tool implementations for LibreOffice UNO operations.
 
 Exposes xlsliberator functionality through Model Context Protocol (MCP) tools
-for integration with Claude Agent SDK and other MCP clients.
+for integration with Open-SWE and other explicitly configured MCP clients.
 """
 
 from pathlib import Path
@@ -114,7 +114,6 @@ async def convert_excel_to_ods(
     excel_path: str,
     output_path: str,
     embed_macros: bool = False,
-    use_agent: bool = False,
 ) -> dict[str, Any]:
     """Convert Excel file to LibreOffice Calc ODS format.
 
@@ -122,7 +121,6 @@ async def convert_excel_to_ods(
         excel_path: Path to input Excel file (.xlsx, .xlsm, .xlsb, .xls)
         output_path: Path for output ODS file
         embed_macros: Deprecated compatibility flag; no model translation is performed
-        use_agent: Deprecated compatibility flag; orchestration is external
 
     Returns:
         Dictionary with conversion results:
@@ -141,7 +139,6 @@ async def convert_excel_to_ods(
             input_path=source,
             output_path=destination,
             embed_macros=embed_macros,
-            use_agent=use_agent,
         )
 
         report_data = {

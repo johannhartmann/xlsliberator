@@ -420,7 +420,7 @@ def test(args: argparse.Namespace) -> None:
 
 
 def record_runtime(args: argparse.Namespace) -> None:
-    """Merge a Docker-orchestrated immutable image probe into build evidence."""
+    """Merge an immutable Docker image probe into build evidence."""
     manifest = _load_manifest()
     variant = manifest["patch_series"]["variant"] if args.variant == "patched" else "stock-source"
     evidence_dir = ARTIFACT_ROOT / "office-build" / "libreoffice" / variant

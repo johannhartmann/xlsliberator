@@ -56,9 +56,6 @@ web = [
     "jinja2>=3.1.0",
     "python-multipart>=0.0.9",
 ]
-legacy-agent = [
-    "anthropic>=0.39.0",
-]
 dev = [
     "pytest>=7.4.0",
     "pytest-xdist>=3.3.0",
@@ -128,8 +125,6 @@ module = [
     "unohelper",
     "com.sun.star.*",
     "formulas.*",
-    "anthropic",
-    "anthropic.*",
     "lark",
     "lark.*",
     "click",
@@ -138,6 +133,20 @@ module = [
     "uvicorn",
     "fastapi",
     "fastapi.*",
+    "agent",
+    "agent.*",
+    "deepagents",
+    "deepagents.*",
+    "langchain_core",
+    "langchain_core.*",
+    "langchain_mcp_adapters",
+    "langchain_mcp_adapters.*",
+    "langchain_openai",
+    "langchain_openai.*",
+    "langgraph",
+    "langgraph.*",
+    "langgraph_sdk",
+    "langgraph_sdk.*",
 ]
 ignore_missing_imports = true
 

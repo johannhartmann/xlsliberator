@@ -40,7 +40,7 @@ def test_convert_xlsx_to_ods_reopens_in_real_libreoffice(
     workbook.save(input_path)
     workbook.close()
 
-    report = convert(input_path, output_path, embed_macros=False, use_agent=False)
+    report = convert(input_path, output_path, embed_macros=False)
 
     assert report.success
     assert output_path.exists()

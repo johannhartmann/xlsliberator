@@ -44,12 +44,12 @@ Validation code must never change a user's global LibreOffice macro security set
 
 ## Current Implementation Gaps
 
-- `api.py`: orchestrates conversion and validation in one path and currently needs safe isolated macro runtime handling.
+- `api.py`: sequences conversion and validation in one path and currently needs safe isolated macro runtime handling.
 - `extract_excel.py`: handles XLSX, XLSM, and limited XLSB extraction, but `.xls` parsing is currently incomplete and must not be reported as full parse success.
 - `formula_ast_transformer.py`: contains a narrow Calc grammar and one deterministic INDIRECT/ADDRESS repair; it needs a rule registry and target parser seam.
 - `testing_lo.py`: compares cached Excel values against Calc values but is tied to LibreOffice runtime availability.
 - `python_macro_manager.py`: validates embedded Python macros and runs macro execution tests; runtime execution needs isolated profiles.
-- `agent_validator.py`: performs shallow GUI validation and relies on hardcoded button names instead of discovered controls/events.
+- `target_validator.py`: validates discovered controls/events and requires target-runtime evidence.
 - `mcp_tools.py`: exposes current conversion and runtime helpers but needs inventory, validation, controls, and event-binding tools.
 - `embed_macros.py`: rewrites Basic event URLs heuristically; it needs source-map-aware event binding support.
 - `report.py`: contains `ConversionReport`; certification output should be added without breaking this report.

@@ -513,7 +513,6 @@ def validate_cmd(
     default=False,
     help="Embed separately supplied target-native modules (disabled by default)",
 )
-@click.option("--no-agent", is_flag=True, hidden=True)
 @click.option("--json", "json_output", is_flag=True, help="Print structured JSON")
 @click.option(
     "--scenario-file",
@@ -537,14 +536,12 @@ def transform_validated_cmd(
     strict: bool,
     max_repair_iterations: int,
     embed_macros: bool,
-    no_agent: bool,
     json_output: bool,
     scenario_file: Path | None,
     source_trace_file: Path | None,
     target_trace_file: Path | None,
 ) -> None:
     """Convert a workbook and run deterministic validation gates."""
-    del no_agent
     from xlsliberator.validated_api import (
         ValidatedTransformationError,
         transform_validated,
@@ -563,7 +560,6 @@ def transform_validated_cmd(
             strict=strict,
             max_repair_iterations=max_repair_iterations,
             embed_macros=embed_macros,
-            use_agent=False,
             scenario=scenario,
             source_trace=source_trace,
             target_trace=target_trace,

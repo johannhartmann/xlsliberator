@@ -16,7 +16,6 @@ class WebSettings:
     worker_count: int = 1
     job_retention_hours: int = 24
     embed_macros: bool = False
-    use_agent: bool = False
     open_swe_url: str = ""
     open_swe_token: str = ""
     open_swe_owner_id: str = "xlsliberator-web"
@@ -33,7 +32,6 @@ class WebSettings:
             worker_count=max(1, _int_env("XLSLIBERATOR_WEB_WORKERS", 1)),
             job_retention_hours=max(1, _int_env("XLSLIBERATOR_JOB_RETENTION_HOURS", 24)),
             embed_macros=os.getenv("XLSLIBERATOR_EMBED_MACROS", "0") == "1",
-            use_agent=os.getenv("XLSLIBERATOR_USE_AGENT", "0") == "1",
             open_swe_url=os.getenv("XLSLIBERATOR_OPEN_SWE_URL", ""),
             open_swe_token=os.getenv("XLSLIBERATOR_OPEN_SWE_TOKEN", ""),
             open_swe_owner_id=os.getenv("XLSLIBERATOR_OPEN_SWE_OWNER_ID", "xlsliberator-web"),

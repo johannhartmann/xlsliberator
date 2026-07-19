@@ -54,11 +54,11 @@ Consequences:
 ## ADR-004 — Split deterministic tools from agent orchestration
 
 - Date: 2026-07-18
-- Status: accepted
+- Status: superseded by ADR-011
 
-`xlsliberator` owns deterministic workbook tools and LibreOffice execution.
-`xlsliberator-swe`, a separate thin Open-SWE fork, owns models, trajectories,
-specialists, middleware, review, and integrations.
+XLSLiberator owns deterministic workbook tools and LibreOffice execution. A
+separate Open-SWE customization repository was proposed to own models,
+trajectories, specialists, middleware, review, and integrations.
 
 Consequences:
 
@@ -161,3 +161,26 @@ Consequences:
   are active without explicit authority;
 - implementation may continue where static/file work is possible, but every
   Docker-dependent claim must be rerun after the storage fault is repaired.
+
+## ADR-011 — Open-SWE is the sole agent and orchestrator
+
+- Date: 2026-07-19
+- Status: accepted; supersedes the repository split in ADR-004
+
+Open-SWE owns all model-driven migration orchestration. XLSLiberator contains
+deterministic tools, evidence gates, an authenticated web client, and the
+XLSLiberator-specific graph/API loaded by a pinned upstream Open-SWE runtime.
+There is no maintained Open-SWE fork, second XLSLiberator repository, embedded
+legacy agent, or repository-owned deterministic migration orchestrator.
+
+Consequences:
+
+- the web talks only to Open-SWE and fails closed when it is unavailable;
+- the web remains unprivileged and receives no Docker socket;
+- model/provider selection and independent review belong only to Open-SWE;
+- GitHub Models is never selected automatically and cannot gate deterministic
+  XLSLiberator operations;
+- Open-SWE-specific configuration and adapters live in this repository while
+  the Compose image consumes an archive-hash-verified upstream commit;
+- the removed embedded agent and deterministic orchestrator cannot return as
+  fallback paths.

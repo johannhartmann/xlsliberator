@@ -405,12 +405,12 @@ class LibreOfficeDockerRuntime:
 
     @staticmethod
     def _docker_mount_source(path: Path) -> Path:
-        """Translate a nested-orchestrator path to its Docker-host bind path.
+        """Translate a nested execution-gateway path to its Docker-host bind path.
 
-        A trusted web container can stage jobs on a host bind mount while the
+        A trusted MCP or test container can stage jobs on a host bind mount while the
         Docker daemon runs outside that container.  The daemon must receive the
-        host-side path, not the web container's mount point.  In the CI
-        orchestrator both paths are identical, so no translation is configured.
+        host-side path, not the gateway container's mount point. In the CI test
+        runner both paths are identical, so no translation is configured.
         """
         host_root_raw = os.environ.get("XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT")
         if not host_root_raw:

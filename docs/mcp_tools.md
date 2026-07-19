@@ -1,10 +1,10 @@
 # MCP Tool Contract
 
 XLSLiberator's MCP server exposes LibreOffice as a Docker-only capability. The
-host process may parse packages and orchestrate jobs; it never imports PyUNO or
-starts a host office process.
+trusted gateway may parse packages and create isolated jobs; it never imports
+PyUNO or starts a host office process.
 
-Start the trusted local Docker orchestrator with:
+Start the trusted local Docker execution gateway with:
 
 ```bash
 mkdir -p artifacts/runtime-tmp artifacts/mcp-workspace

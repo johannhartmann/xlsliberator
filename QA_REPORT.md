@@ -1,5 +1,8 @@
 # XLSLiberator Quality Assurance Report
 
+> Historical report from 2025. It predates the Docker-only, Open-SWE-only
+> architecture and is not current release-readiness evidence.
+
 **Date:** 2025-11-09
 **Author:** Johann-Peter Hartmann
 **Reviewed by:** Automated QA Tools + Manual Review
@@ -231,8 +234,8 @@ None
    - Test error paths
 
 3. **Integration Test Stability**
-   - Fix LLM-dependent test failures
-   - Add mock for Anthropic API in tests
+   - Historical LLM-dependent tests were retired with the embedded translator
+   - Current live migration tests target the explicitly configured Open-SWE service
 
 ### 6.4 Low Priority
 1. **Code Complexity**

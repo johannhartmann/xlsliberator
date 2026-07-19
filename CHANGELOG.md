@@ -13,13 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   patched-passes TDF-172479 regression
 - GitHub Actions CI/CD workflows for testing, linting, and security scanning
 - Configuration management module (`config.py`) with environment variable support
-- API key validation for Anthropic API
+- Authenticated Open-SWE web transport with fail-closed dependency readiness
 - Comprehensive CONTRIBUTING.md with development guidelines
 - Pre-commit hooks configuration
 - Project metadata updates (author, repository URLs)
 
 ### Changed
 - Docker is now the only supported application, test, and LibreOffice runtime platform
+- Open-SWE is now the only supported agent and migration orchestrator
+- Removed the embedded provider-backed translator and its compatibility switches
 - Release publication now fails closed when required corpus evidence is unavailable
 - Updated README with correct author information and repository links
 - Improved package metadata in pyproject.toml
@@ -49,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GPL-3.0-or-later license
 
 ### Known Issues
-- VBA translation requires Anthropic API key
+- VBA translation in this historical release required an external model API key
 - Some complex VBA patterns may require manual review
 - Cross-workbook references need manual adjustment
 - Integration tests may fail without proper LibreOffice setup

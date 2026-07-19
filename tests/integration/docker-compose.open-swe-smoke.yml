@@ -1,0 +1,6 @@
+services:
+  xlsliberator-web:
+    ports: !reset []
+
+  xlsliberator-mcp:
+    ports: !reset []

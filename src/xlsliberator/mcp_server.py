@@ -35,10 +35,18 @@ from xlsliberator.libreoffice_mcp import (
     send_keyboard_event,
     write_cells,
 )
+from xlsliberator.mcp_tools import (
+    convert_excel_to_ods,
+    inspect_workbook,
+    validate_transformation,
+)
 
 mcp = FastMCP(name="XLSLiberator LibreOffice Runtime")
 
 for tool in (
+    inspect_workbook,
+    convert_excel_to_ods,
+    validate_transformation,
     create_session,
     open_document,
     inspect_document,

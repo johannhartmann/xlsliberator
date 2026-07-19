@@ -1,0 +1,13 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "python_version": "3.11",
+  "graphs": {
+    "xlsliberator": "xlsliberator.open_swe_agent.graph:traced_agent"
+  },
+  "dependencies": [
+    "."
+  ],
+  "http": {
+    "app": "xlsliberator.open_swe_agent.api:app"
+  }
+}

@@ -1,147 +1,81 @@
-# XLSLiberator Web App User Guide
+# XLSLiberator Web User Guide
 
-## What the Application Does
+## What the application does
 
-XLSLiberator converts Microsoft Excel workbooks into LibreOffice/OpenOffice Calc `.ods` files. The web app provides a browser-based workflow for uploading a workbook, tracking conversion progress, and downloading the converted spreadsheet plus conversion reports.
+The web app accepts Excel workbooks and delegates migrations to Open-SWE.
+Open-SWE is the only supported agent and migration orchestrator. XLSLiberator
+supplies deterministic workbook tools and the pinned LibreOffice target runtime;
+the web container does not convert workbooks locally.
 
-The current web app is intended for local or trusted internal use. It accepts spreadsheet files, stores them in server-managed job directories, runs the existing XLSLiberator conversion pipeline, and presents the results through a job page and JSON API.
+If Open-SWE is absent, unconfigured, or unreachable, the migration fails closed.
+The Open-SWE runtime is embedded in this repository's Docker stack. There is no
+alternate agent, second repository, or local conversion fallback.
 
-Supported upload formats are:
+## Start the app
 
-- `.xlsx`
-- `.xlsm`
-- `.xls`
-- `.xlsb`
-
-The generated spreadsheet is an `.ods` file, which can be opened in LibreOffice Calc or OpenOffice Calc.
-
-## Basic Workflow
-
-1. Open the web app at `http://127.0.0.1:8080/`.
-2. Choose an Excel workbook from the upload form.
-3. Submit the workbook.
-4. The app creates a conversion job and redirects to a job progress page.
-5. The progress page updates as the workbook moves through upload, analysis, conversion, macro handling, verification, and completion.
-6. When the job completes, download the converted `.ods` file, the JSON report, or the Markdown report.
-
-If JavaScript is disabled, the progress page still shows the current job status and can be refreshed manually.
-
-## Running the App with Docker
-
-Build and run the Docker image:
+Docker is the only supported platform. The host may run Docker, Git, and file
+operations only.
 
 ```bash
-docker build -t xlsliberator-web:test .
-docker run --rm --name xlsliberator-web-preview -p 8080:8080 xlsliberator-web:test
+cp .env.example .env
+# Select one supported model and set only its matching provider key.
+# Example: XLSLIBERATOR_OPEN_SWE_MODEL=openai:gpt-5.5
+docker compose up -d --build xlsliberator-web
 ```
 
-Then open:
+Open `http://127.0.0.1:8080/`. The port is published on loopback only.
 
-```text
-http://127.0.0.1:8080/
-```
+## Basic workflow
 
-The Docker image includes LibreOffice and the Python UNO bridge packages needed for conversion. Inside Docker, job artifacts are stored under `/data`.
+1. Upload an `.xls`, `.xlsx`, `.xlsm`, or `.xlsb` workbook.
+2. XLSLiberator creates an owner-scoped job and an Open-SWE migration thread.
+3. Follow sanitized stage events on the job page.
+4. Add requirements or dependency files to the same thread when needed.
+5. Download only the reviewed artifacts published by Open-SWE.
 
-You can also use Docker Compose:
+The web app generates server-side job IDs, stores inputs outside the web root,
+checks extensions and signatures, enforces size limits, and never exposes local
+filesystem paths.
 
-```bash
-docker compose up --build
-```
+## Progress and follow-up
 
-## Upload Handling and File Safety
-
-Uploaded files are treated as untrusted input. The app does not use the original filename as a storage path. Instead, it generates a UUID job ID and stores files under:
-
-```text
-/data/jobs/<job_id>/
-```
-
-For each job, the app writes server-controlled files such as:
-
-- `input.<extension>` for the uploaded workbook
-- `output.ods` for the converted spreadsheet
-- `report.json` for machine-readable conversion details
-- `report.md` for a human-readable summary
-- `lo-profile/` for the job-specific LibreOffice profile
-
-The app validates the uploaded filename, rejects unsupported extensions, blocks path traversal, checks for dangerous double extensions, and performs a basic container signature check. For example, `.xlsx` and `.xlsm` files must look like ZIP-based OOXML workbooks, while `.xls` files must look like OLE compound files.
-
-The default upload limit is 100 MB. It can be changed with:
-
-```bash
-XLSLIBERATOR_MAX_UPLOAD_MB=50
-```
-
-## What Happens During Conversion
-
-After upload, the job is added to an in-memory job store and submitted to a bounded background worker. By default, the app runs one conversion at a time because LibreOffice is resource-heavy and profile-sensitive.
-
-The conversion runner calls the core `xlsliberator.api.convert()` pipeline. That pipeline can perform:
-
-- Native LibreOffice conversion to `.ods`
-- Workbook analysis
-- Formula and named range repair
-- VBA extraction
-- VBA-to-Python macro translation, when configured
-- Macro embedding
-- Formula validation and equivalence checks
-- Macro and GUI/event validation where available
-
-For web jobs, XLSLiberator uses a per-job LibreOffice profile directory and disables global LibreOffice macro security mutation. This keeps the web flow from changing the user's normal LibreOffice profile settings.
-
-## Progress States
-
-The progress page displays structured job events. Common states include:
-
-- `uploaded`: the server received and stored the file
-- `queued`: the job is waiting for a worker
-- `analyzing`: XLSLiberator is inspecting workbook structure
-- `converting`: LibreOffice/native conversion and repair work is running
-- `translating`: VBA extraction, translation, or macro embedding is running
-- `verifying`: formulas, macros, or events are being checked
-- `completed`: the `.ods` and reports are available
-- `failed`: conversion stopped with an error
-- `cancelled`: cancellation was requested before completion
-
-Progress updates are exposed through:
+The job page polls:
 
 ```text
 GET /api/jobs/{job_id}/events?since=0
 ```
 
-The browser UI polls this endpoint and appends new events to the job page.
+Follow-up requirements and dependency files remain attached to the same
+Open-SWE thread:
 
-## Downloads and Reports
+```text
+POST /api/jobs/{job_id}/messages
+POST /api/jobs/{job_id}/dependencies
+```
 
-Completed jobs expose these download links:
+Cancellation is propagated to Open-SWE:
+
+```text
+POST /api/jobs/{job_id}/cancel
+```
+
+## Downloads and reports
+
+Completed jobs may expose:
 
 ```text
 GET /jobs/{job_id}/download
 GET /jobs/{job_id}/report.json
 GET /jobs/{job_id}/report.md
+GET /api/jobs/{job_id}/artifacts
+GET /jobs/{job_id}/artifacts/{artifact_id}
 ```
 
-The `.ods` download is the converted spreadsheet. The JSON report is intended for automation and debugging. The Markdown report is easier to read and share.
+Artifact IDs and filenames come from an owner-checked allowlist. A converted
+file alone is not proof of formula, macro, UI, or behavioral equivalence; the
+delivery must include the applicable Open-SWE review and XLSLiberator evidence.
 
-The report may include:
-
-- Whether conversion succeeded
-- Duration
-- Sheet count
-- Cell count
-- Formula count
-- Formula match rate
-- Warning and error counts
-- First warnings and errors
-- Macro module and procedure counts
-- Macro test results where available
-
-Reports use safe user-facing filenames derived from the original workbook name, but internal server paths are not exposed.
-
-## JSON API Usage
-
-The web app can be used without the HTML interface.
+## JSON API
 
 Create a job:
 
@@ -151,67 +85,51 @@ curl -F "file=@workbook.xlsx" \
   http://127.0.0.1:8080/api/jobs
 ```
 
-Check status:
+Check status or poll events:
 
 ```bash
 curl http://127.0.0.1:8080/api/jobs/<job_id>
-```
-
-Poll events:
-
-```bash
 curl "http://127.0.0.1:8080/api/jobs/<job_id>/events?since=0"
 ```
 
-Cancel a queued or running job:
-
-```bash
-curl -X POST http://127.0.0.1:8080/api/jobs/<job_id>/cancel
-```
-
-Cancellation is best-effort. A queued job can be cancelled before it starts. A running LibreOffice conversion may not stop immediately because some conversion steps are blocking.
-
 ## Configuration
-
-The main environment variables are:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `XLSLIBERATOR_DATA_DIR` | `/data` | Root directory for jobs and artifacts |
-| `XLSLIBERATOR_MAX_UPLOAD_MB` | `100` | Maximum accepted upload size |
-| `XLSLIBERATOR_WEB_WORKERS` | `1` | Number of background conversion workers |
-| `XLSLIBERATOR_JOB_RETENTION_HOURS` | `24` | Age after which job directories can be cleaned |
-| `XLSLIBERATOR_EMBED_MACROS` | `1` | Whether translated macros should be embedded |
-| `XLSLIBERATOR_USE_AGENT` | `1` | Whether agent-assisted macro translation is enabled |
-| `ANTHROPIC_API_KEY` | unset | Optional key for higher-quality macro translation |
+| `XLSLIBERATOR_DATA_DIR` | `/data` | Private job and artifact root |
+| `XLSLIBERATOR_MAX_UPLOAD_MB` | `64` | Maximum accepted upload size |
+| `XLSLIBERATOR_WEB_WORKERS` | `1` | Bounded Open-SWE client concurrency |
+| `XLSLIBERATOR_JOB_RETENTION_HOURS` | `24` | Local delivery retention |
+| `XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN` | local-only placeholder | Internal bearer secret |
+| `XLSLIBERATOR_OPEN_SWE_MODEL` | unset | Explicit Open-SWE model; blank starts no run |
+| `XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT` | `medium` | Provider-supported effort |
+| `XLSLIBERATOR_GITHUB_MODELS_ENABLED` | `0` | Additional explicit GitHub Models opt-in |
+| `XLSLIBERATOR_OPEN_SWE_OWNER_ID` | `xlsliberator-web` | Stable owner identity |
+| `XLSLIBERATOR_OPEN_SWE_POLL_SECONDS` | `1` | Status polling interval |
+| `XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS` | `60` | Per-request timeout |
+| `XLSLIBERATOR_OPEN_SWE_JOB_TIMEOUT_SECONDS` | `3600` | Whole-migration timeout |
 
-Without `ANTHROPIC_API_KEY`, macro-heavy workbooks may still convert, but macro translation quality and coverage may be limited.
+Provider and model selection are explicit Open-SWE operator decisions. The web
+container has no provider credential or SDK and cannot select GitHub Models or
+make any provider a gate for deterministic XLSLiberator operations.
 
-## Cleanup and Retention
+## Health checks
 
-Old job directories are cleaned according to the configured retention window. The default retention period is 24 hours.
+`GET /healthz` confirms that the FastAPI process responds. `GET /readyz`
+separately reports whether local storage is writable and whether Open-SWE is
+configured and reachable. Readiness never discovers or starts a local
+LibreOffice executable.
 
-Manual cleanup:
+## Cleanup and security
 
 ```bash
-xlsliberator cleanup-jobs --data-dir /data --older-than-hours 24
+docker compose run --rm xlsliberator-web \
+  xlsliberator cleanup-jobs --data-dir /data --older-than-hours 24
 ```
 
-Cleanup refuses unsafe targets such as `/`, the user's home directory, or the repository root.
+The web client asks Open-SWE to delete private source and dependency copies
+after completion and deletes its own private inputs before publishing the job.
+Run the service behind authenticated TLS with rate limiting, upload scanning,
+resource limits, and operational monitoring before any remote exposure.
 
-## Health Checks
-
-The app exposes two health endpoints:
-
-```text
-GET /healthz
-GET /readyz
-```
-
-`/healthz` confirms that the FastAPI process is responding. `/readyz` checks whether the data directory is writable and whether `soffice` or `libreoffice` is available.
-
-## Limitations
-
-Legacy `.xls` parsing is incomplete and should not be represented as fully validated. Macro-heavy workbooks may need manual review, especially when no LLM API key is configured. Some LibreOffice operations are blocking, so cancellation cannot always interrupt an active conversion immediately.
-
-This upload service should not be exposed to the public internet without authentication, TLS, rate limiting, malware scanning, resource limits, and operational monitoring.
+For deployment and test details, see [docs/web_app.md](docs/web_app.md).

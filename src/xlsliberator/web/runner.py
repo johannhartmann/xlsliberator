@@ -40,6 +40,8 @@ class OpenSWETransport(Protocol):
 
     def cancel(self, thread_id: str) -> dict[str, Any]: ...
 
+    def cleanup(self, thread_id: str) -> dict[str, Any]: ...
+
     def download_artifact(self, thread_id: str, artifact_id: str) -> bytes: ...
 
 
@@ -268,6 +270,10 @@ class WebJobRunner:
             raise OpenSWEError("Open-SWE ODS deliverable is not a valid package")
         self.store.set_artifacts(job_id, artifacts)
         _ensure_delivery_report(refreshed, artifacts)
+        assert self.client is not None
+        cleanup = self.client.cleanup(thread_id)
+        if cleanup.get("status") != "cleaned":
+            raise OpenSWEError("Private Open-SWE workspace cleanup was not confirmed")
         _delete_private_inputs(refreshed)
         self.store.mark_completed(job_id)
 

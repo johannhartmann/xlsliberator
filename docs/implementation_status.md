@@ -17,8 +17,11 @@ auditable implementation ledger is
 - There is no Microsoft Excel execution service, Windows worker, source-runtime
   oracle, host executable discovery, or direct `soffice` fallback.
 - The deterministic core does not require a model provider or model credential.
-- Historical model-driven translation and Excel-shaped compatibility code is
-  isolated under the deprecated `xlsliberator.legacy_agent` namespace.
+- Open-SWE is the only agent and orchestrator.
+- Pinned upstream Open-SWE and the XLSLiberator graph/API are built into the
+  repository's `xlsliberator-open-swe` service.
+- There is no embedded legacy agent, second repository, or repository-owned
+  deterministic migration orchestrator.
 
 ## Evidence policy
 

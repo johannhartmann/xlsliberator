@@ -1,8 +1,8 @@
 .PHONY: help fmt lint skill-lint typecheck test test-unit test-integration test-docker-web test-package test-cov security audit bandit all clean install pre-commit
 
 DOCKER_TEST := docker compose run --rm test
-DOCKER_ORCHESTRATOR := docker compose --profile ci-orchestrator run --rm test-orchestrator
-DOCKER_SECURITY := docker compose --profile ci-orchestrator run --rm security-audit
+DOCKER_RUNNER := docker compose --profile ci-runner run --rm test-runner
+DOCKER_SECURITY := docker compose --profile ci-runner run --rm security-audit
 
 help:
 	@echo "XLSLiberator Development Commands"
@@ -62,16 +62,16 @@ test-unit:
 
 test-integration:
 	@echo "==> Running integration tests..."
-	@echo "Integration tests are orchestrated from Docker against disposable office containers."
+	@echo "Integration tests run from Docker against disposable office containers."
 	mkdir -p artifacts/runtime-tmp artifacts/pytest-tmp artifacts/ci
-	$(DOCKER_ORCHESTRATOR) python tools/ci_check.py office
+	$(DOCKER_RUNNER) python tools/ci_check.py office
 
 test-docker-web:
 	@echo "==> Running blocking Docker web smoke..."
 	mkdir -p artifacts/runtime-tmp artifacts/pytest-tmp artifacts/ci
-	docker compose --profile ci-orchestrator run --rm \
+	docker compose --profile ci-runner run --rm \
 		-e DOCKER_TESTS=1 -e XLSLIBERATOR_FAIL_ON_SKIP=1 \
-		test-orchestrator python tools/ci_check.py docker-web
+		test-runner python tools/ci_check.py docker-web
 
 test-package:
 	@echo "==> Building and validating distributions..."

@@ -23,7 +23,7 @@ def test_ods_file(tmp_path: Path) -> Path:
 
 
 def test_mcp_server_has_tools() -> None:
-    """The public MCP surface is session-oriented and excludes legacy aliases."""
+    """The Open-SWE MCP surface exposes deterministic and session tools only."""
     from xlsliberator.libreoffice_mcp import (
         build_application_candidate,
         bundle_application_replays,
@@ -48,10 +48,18 @@ def test_mcp_server_has_tools() -> None:
         send_keyboard_event,
         write_cells,
     )
+    from xlsliberator.mcp_tools import (
+        convert_excel_to_ods,
+        inspect_workbook,
+        validate_transformation,
+    )
 
     expected = {
         function.__name__
         for function in (
+            inspect_workbook,
+            convert_excel_to_ods,
+            validate_transformation,
             create_session,
             open_document,
             inspect_document,
@@ -96,7 +104,6 @@ async def test_convert_excel_to_ods_tool(test_excel_file: Path, test_ods_file: P
         excel_path=str(test_excel_file),
         output_path=str(test_ods_file),
         embed_macros=False,  # Skip macros for speed
-        use_agent=False,
     )
 
     assert result["success"], f"Conversion failed: {result.get('error')}"

@@ -26,7 +26,6 @@ def transform_validated(
     strict: bool = True,
     max_repair_iterations: int = 0,
     embed_macros: bool = False,
-    use_agent: bool = False,
     python_modules: Mapping[str, str] | None = None,
     scenario: Scenario | None = None,
     source_trace: RuntimeTrace | None = None,
@@ -41,7 +40,6 @@ def transform_validated(
         output_file,
         strict=False,
         embed_macros=embed_macros,
-        use_agent=use_agent,
         python_modules=python_modules,
     )
 

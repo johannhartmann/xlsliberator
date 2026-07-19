@@ -37,7 +37,7 @@ class CalcTargetRunner(Protocol):
 
 
 class DockerScenarioRuntime(Protocol):
-    """Narrow orchestration boundary used by the target runner."""
+    """Narrow execution boundary used by the target runner."""
 
     def resolve_identity(self, *, probe: bool = True) -> DockerRuntimeIdentity:
         """Resolve and probe the immutable runtime identity."""

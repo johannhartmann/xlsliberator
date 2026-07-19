@@ -1,19 +1,17 @@
-# Legacy VBA execution architecture
+# VBA execution architecture
 
-The former typed VBA interpreter, Excel-shaped object model, provider clients,
-and self-repair loop are not part of the deterministic XLSLiberator core.
-They are retained temporarily under `xlsliberator.legacy_agent` behind the
-optional `legacy-agent` dependency extra and emit a deprecation warning.
+XLSLiberator does not ship an embedded VBA translator, provider SDK, Excel
+object-model emulator, repair agent, or alternative orchestrator. Open-SWE is
+the only supported agent and orchestrator.
 
-New migrations must not depend on that compatibility runtime. Open-SWE agents
-read the original VBA and dossier directly and generate target-native Python/UNO
-code. XLSLiberator then embeds that code, runs it in the pinned LibreOffice
-Docker runtime, and emits deterministic evidence. Direct UNO helpers should be
-added only for concrete, recurring target operations; an Excel object-model
-emulator is not an accepted destination.
+Open-SWE reads the extracted VBA and workbook dossier, generates target-native
+Python/UNO modules, and submits those artifacts to deterministic XLSLiberator
+primitives. XLSLiberator embeds the supplied modules, runs them in the pinned
+LibreOffice `26.2.4.2` Docker runtime, and emits explicit evidence. It never
+loads a model or decides which provider Open-SWE should use.
 
-The prohibited Microsoft Excel oracle, Windows worker, VBA conformance runtime,
-and source-execution documentation were removed. Acceptance evidence comes from
-declared scenarios, independent review, hidden tests, mutation tests, and the
-LibreOffice target runtime. Missing evidence remains unavailable or failed and
-never becomes success.
+Direct UNO helpers should be added only for concrete recurring Calc operations.
+An Excel compatibility runtime is not an accepted destination. If Open-SWE does
+not supply target-native modules for source VBA, conversion reports the
+unresolved capability instead of silently dropping or pretending to translate
+the code.

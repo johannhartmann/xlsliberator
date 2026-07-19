@@ -90,7 +90,7 @@ def docker_web() -> None:
     env["DOCKER_TESTS"] = "1"
     env["XLSLIBERATOR_FAIL_ON_SKIP"] = "1"
     # Nested Docker bind mounts must originate from the host-visible checkout,
-    # not from the test-orchestrator container's private /tmp filesystem.
+    # not from the test-runner container's private /tmp filesystem.
     env["PYTEST_ADDOPTS"] = f"--basetemp={docker_web_temp}"
     try:
         run(

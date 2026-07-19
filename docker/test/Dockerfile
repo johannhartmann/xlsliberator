@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/tmp/home
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends docker-cli git zip \
+    && apt-get install -y --no-install-recommends docker-cli docker-compose git zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -22,7 +22,7 @@ COPY src ./src
 RUN python -m pip install --no-cache-dir --upgrade \
         "pip==${PIP_VERSION}" \
         "setuptools==${SETUPTOOLS_VERSION}" \
-    && python -m pip install --no-cache-dir ".[web,dev,legacy-agent]" \
+    && python -m pip install --no-cache-dir ".[web,dev]" \
     && python -m pip install --no-cache-dir \
         bandit[toml] build hatchling pip-audit pre-commit pytest-cov twine \
     && cmp -s /build/src/sitecustomize.py \

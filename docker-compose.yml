@@ -23,10 +23,10 @@ services:
     mem_limit: 2g
     cpus: 2
 
-  # Trusted CI orchestration boundary. This service may talk to the Docker
+  # Trusted CI test boundary. This service may talk to the Docker
   # daemon so that pytest can create disposable office containers; workbook
   # and office runtime containers never receive the socket.
-  test-orchestrator:
+  test-runner:
     extends: test
     user: "0:0"
     working_dir: ${PWD}
@@ -42,7 +42,7 @@ services:
       - .:${PWD}
       - /var/run/docker.sock:/var/run/docker.sock
     profiles:
-      - ci-orchestrator
+      - ci-runner
 
   # Trusted dependency-audit boundary. Advisory lookup needs outbound HTTPS,
   # but this service receives neither the Docker socket nor office execution.
@@ -50,7 +50,7 @@ services:
     extends: test
     network_mode: bridge
     profiles:
-      - ci-orchestrator
+      - ci-runner
 
   libreoffice-runtime:
     image: xlsliberator-libreoffice:26.2.4.2
@@ -120,6 +120,48 @@ services:
     extends: office-source-fetch
     network_mode: none
 
+  xlsliberator-open-swe:
+    image: xlsliberator-open-swe:0.1.0
+    working_dir: ${PWD}/artifacts/open-swe-workspaces
+    build:
+      context: .
+      dockerfile: docker/open-swe/Dockerfile
+      args:
+        OPEN_SWE_COMMIT: f0897479c38f2506f03b4de38081d4770928f09d
+        OPEN_SWE_ARCHIVE_SHA256: 4f5d639f36c1f68d5ddb47a90ee83f83be5b233f1b50bfac92dff671674b3fb0
+    environment:
+      HOME: /tmp/open-swe
+      LANGGRAPH_URL: http://127.0.0.1:2024
+      XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN: ${XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN:-local-open-swe-change-before-remote-exposure}
+      XLSLIBERATOR_OPEN_SWE_MODEL: ${XLSLIBERATOR_OPEN_SWE_MODEL:-}
+      XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT: ${XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT:-medium}
+      XLSLIBERATOR_OPEN_SWE_MAX_OUTPUT_TOKENS: ${XLSLIBERATOR_OPEN_SWE_MAX_OUTPUT_TOKENS:-32768}
+      XLSLIBERATOR_OPEN_SWE_WORKSPACE_ROOT: ${PWD}/artifacts/open-swe-workspaces
+      XLSLIBERATOR_GITHUB_MODELS_ENABLED: ${XLSLIBERATOR_GITHUB_MODELS_ENABLED:-0}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      FIREWORKS_API_KEY: ${FIREWORKS_API_KEY:-}
+      GITHUB_MODELS_TOKEN: ${GITHUB_MODELS_TOKEN:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    volumes:
+      - ./artifacts/open-swe-workspaces:${PWD}/artifacts/open-swe-workspaces
+    depends_on:
+      xlsliberator-mcp:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777,uid=10001,gid=10001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    restart: unless-stopped
+
   xlsliberator-web:
     image: xlsliberator-app:0.1.0
     build: .
@@ -127,8 +169,8 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       XLSLIBERATOR_DATA_DIR: /data
-      XLSLIBERATOR_OPEN_SWE_URL: ${XLSLIBERATOR_OPEN_SWE_URL:-}
-      XLSLIBERATOR_OPEN_SWE_TOKEN: ${XLSLIBERATOR_OPEN_SWE_TOKEN:-}
+      XLSLIBERATOR_OPEN_SWE_URL: http://xlsliberator-open-swe:2024
+      XLSLIBERATOR_OPEN_SWE_TOKEN: ${XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN:-local-open-swe-change-before-remote-exposure}
       XLSLIBERATOR_OPEN_SWE_OWNER_ID: ${XLSLIBERATOR_OPEN_SWE_OWNER_ID:-xlsliberator-web}
       XLSLIBERATOR_OPEN_SWE_POLL_SECONDS: ${XLSLIBERATOR_OPEN_SWE_POLL_SECONDS:-1}
       XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS: ${XLSLIBERATOR_OPEN_SWE_REQUEST_TIMEOUT_SECONDS:-60}
@@ -138,9 +180,12 @@ services:
       XLSLIBERATOR_JOB_RETENTION_HOURS: "24"
     volumes:
       - xlsliberator-data:/data
+    depends_on:
+      xlsliberator-open-swe:
+        condition: service_healthy
     restart: unless-stopped
 
-  # Trusted local MCP orchestration boundary. The container may create office
+  # Trusted local MCP execution boundary. The container may create office
   # jobs, but the published endpoint remains host-loopback-only and disposable
   # workbook/runtime containers never receive the Docker socket.
   xlsliberator-mcp:
@@ -154,21 +199,31 @@ services:
       - --port
       - "8000"
       - --workspace-root
-      - ${PWD}/artifacts/mcp-workspace
+      - ${PWD}/artifacts/open-swe-workspaces
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       XLSLIBERATOR_MCP_TRUSTED_CONTAINER_PROXY: "1"
       XLSLIBERATOR_RUNTIME_TEMP_ROOT: /runtime-tmp
       XLSLIBERATOR_DOCKER_HOST_RUNTIME_TEMP_ROOT: ${PWD}/artifacts/runtime-tmp
-      XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}/artifacts/mcp-workspace
-      XLSLIBERATOR_SESSION_ROOT: ${PWD}/artifacts/mcp-workspace/.sessions
+      XLSLIBERATOR_WORKSPACE_ROOTS: ${PWD}/artifacts/open-swe-workspaces
+      XLSLIBERATOR_SESSION_ROOT: ${PWD}/artifacts/open-swe-workspaces/.sessions
     volumes:
-      - ./artifacts/mcp-workspace:${PWD}/artifacts/mcp-workspace
+      - ./artifacts/open-swe-workspaces:${PWD}/artifacts/open-swe-workspaces
       - ./artifacts/runtime-tmp:/runtime-tmp
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "${DOCKER_GID:-0}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8000), timeout=3).close()"
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     restart: unless-stopped
 
 volumes:

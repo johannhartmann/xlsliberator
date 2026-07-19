@@ -6,10 +6,10 @@ Do not expose the upload service publicly without these controls:
 - Map each tenant to a stable, non-user-controlled
   `XLSLIBERATOR_OPEN_SWE_OWNER_ID`.
 - Store `XLSLIBERATOR_OPEN_SWE_TOKEN` in a secret manager and rotate it.
-- Permit egress only to the configured Open-SWE endpoint.
+- Permit web traffic only to the internal `xlsliberator-open-swe` service.
 - Keep the web container unprivileged and never mount a Docker socket into it.
 - Enforce upload limits at both proxy and app; scan files before migration.
-- Keep `XLSLIBERATOR_WEB_WORKERS` bounded to protect the Open-SWE service.
+- Keep `XLSLIBERATOR_WEB_WORKERS` bounded to protect Open-SWE.
 - Configure CPU, memory, PID, and request-duration limits.
 - Keep local job cleanup and Open-SWE owner/retention enforcement enabled.
 - Verify source/dependency deletion before a migration is marked complete.

@@ -11,7 +11,7 @@ from loguru import logger
 
 
 @dataclass
-class AgentValidationResult:
+class TargetValidationResult:
     """Result derived from inventories and deterministic Docker runtime evidence."""
 
     success: bool
@@ -28,7 +28,7 @@ class AgentValidationResult:
     warnings: list[str] = field(default_factory=list)
 
 
-async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
+async def validate_document_target(ods_path: Path) -> TargetValidationResult:
     """Validate package inventory and complete target-runtime lifecycle evidence.
 
     This compatibility entry point no longer performs heuristic GUI probes or
@@ -45,7 +45,7 @@ async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
         validate_macros,
     )
 
-    result = AgentValidationResult(success=False)
+    result = TargetValidationResult(success=False)
     logger.info(f"Evidence-driven validation: {ods_path}")
 
     try:
@@ -110,6 +110,6 @@ async def validate_document_with_agent(ods_path: Path) -> AgentValidationResult:
     return result
 
 
-def validate_document_with_agent_sync(ods_path: Path) -> AgentValidationResult:
+def validate_document_target_sync(ods_path: Path) -> TargetValidationResult:
     """Synchronous wrapper for the evidence-driven validator."""
-    return asyncio.run(validate_document_with_agent(ods_path))
+    return asyncio.run(validate_document_target(ods_path))

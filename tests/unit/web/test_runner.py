@@ -39,6 +39,7 @@ class FakeOpenSWE:
     def __init__(self, status: str = "complete") -> None:
         self.operation_status = status
         self.cancelled: list[str] = []
+        self.cleaned: list[str] = []
         self.follow_ups: list[dict[str, Any]] = []
 
     def create_migration(self, workbook: Path, requirements: str = "") -> dict[str, Any]:
@@ -113,6 +114,10 @@ class FakeOpenSWE:
         self.cancelled.append(thread_id)
         return {"thread_id": thread_id, "status": "cancelled"}
 
+    def cleanup(self, thread_id: str) -> dict[str, Any]:
+        self.cleaned.append(thread_id)
+        return {"thread_id": thread_id, "status": "cleaned"}
+
     def download_artifact(self, thread_id: str, artifact_id: str) -> bytes:
         assert thread_id
         return {
@@ -139,6 +144,7 @@ def test_runner_uses_open_swe_and_downloads_delivery_bundle(tmp_path: Path) -> N
     assert job.remote_thread_id == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert zipfile.is_zipfile(job.output_path)
     assert not job.input_path.exists()
+    assert fake.cleaned == ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]
     assert job.report_json_path.exists()
     assert {artifact.name for artifact in job.artifacts} == {
         "target.ods",
