@@ -16,7 +16,11 @@ RUN chmod 0555 /usr/local/bin/gui-runtime-entrypoint \
     && command -v dbus-run-session >/dev/null
 
 ENV DISPLAY=:99 \
+    SAL_DISABLEGL=1 \
+    SAL_DISABLE_CUPS=true \
+    SAL_DISABLE_OPENCL=1 \
     SAL_LOG=+WARN \
+    SAL_NO_MOUSEGRABS=1 \
     SAL_USE_VCLPLUGIN=gen \
     XLSLIBERATOR_UI_EVENT_CONTAINER=1 \
     XLSLIBERATOR_WORKER_WRAPPER=/usr/local/bin/gui-runtime-entrypoint
