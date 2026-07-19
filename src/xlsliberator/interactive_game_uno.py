@@ -518,11 +518,7 @@ class InteractiveGameController:
         now = time.monotonic()
         elapsed_ms = max(0.0, (now - self._timer_last_poll) * 1_000)
         self._timer_last_poll = now
-        if (
-            not self.enable_timer
-            or self.disposed
-            or self.state.phase is not GamePhase.RUNNING
-        ):
+        if not self.enable_timer or self.disposed or self.state.phase is not GamePhase.RUNNING:
             self._timer_budget_ms = 0.0
             return 0
 
