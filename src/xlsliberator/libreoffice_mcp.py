@@ -7,10 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from xlsliberator.application_showcase import build_candidate
-from xlsliberator.application_showcase import (
-    bundle_application_replays as bundle_replays,
-    run_application_scenario as run_scenario,
-)
+from xlsliberator.application_showcase import bundle_application_replays as bundle_replays
+from xlsliberator.application_showcase import run_application_scenario as run_scenario
 from xlsliberator.boundary_models import BoundaryError, BoundaryResponse
 from xlsliberator.container_boundary import require_application_container
 from xlsliberator.execution_sandbox import WorkspacePathPolicy
