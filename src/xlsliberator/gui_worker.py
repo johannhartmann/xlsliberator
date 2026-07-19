@@ -617,9 +617,6 @@ def _open_document(session: dict[str, Any], path: Path) -> Any:
     )
     if document is None:
         raise RuntimeError("LibreOffice did not open the GUI scenario document")
-    controller = document.getCurrentController()
-    if hasattr(controller, "setFormDesignMode"):
-        controller.setFormDesignMode(False)
     _drain_ui(session)
     return document
 
