@@ -9,6 +9,7 @@ import pytest
 from xlsliberator.gui_worker import (
     _cleanup_gui_session,
     _click_control,
+    _concatenate_recordings,
     _confined_path,
     _control_screen_rectangle,
     _open_ready_document,
@@ -338,6 +339,27 @@ def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> 
         ("mousedown", "1"),
         ("mouseup", "1"),
     ]
+
+
+def test_recording_concat_manifest_never_enters_public_replay(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    recording = tmp_path / "scenario.webm"
+    recording.write_bytes(b"\x1aE\xdf\xa3scenario")
+    replay_dir = tmp_path / "public" / "replay"
+    replay_dir.mkdir(parents=True)
+    output = replay_dir / "showcase.webm"
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        Path(command[-1]).write_bytes(b"\x1aE\xdf\xa3combined")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("xlsliberator.gui_worker.subprocess.run", run)
+
+    _concatenate_recordings([recording], output)
+
+    assert output.read_bytes() == b"\x1aE\xdf\xa3combined"
+    assert not (replay_dir / "recordings.txt").exists()
 
 
 def test_gui_recorder_uses_one_encoder_thread(tmp_path: Path, monkeypatch: Any) -> None:

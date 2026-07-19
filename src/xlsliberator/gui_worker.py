@@ -494,33 +494,36 @@ def _concatenate_recordings(recordings: list[Path], output: Path) -> None:
         "".join(f"file '{path.as_posix()}'\n" for path in recordings),
         encoding="utf-8",
     )
-    result = subprocess.run(
-        [
-            "ffmpeg",
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_file),
-            "-an",
-            "-c:v",
-            "libvpx-vp9",
-            "-deadline",
-            "good",
-            "-cpu-used",
-            "4",
-            "-y",
-            str(output),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_file),
+                "-an",
+                "-c:v",
+                "libvpx-vp9",
+                "-deadline",
+                "good",
+                "-cpu-used",
+                "4",
+                "-y",
+                str(output),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    finally:
+        concat_file.unlink(missing_ok=True)
     if result.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
         raise RuntimeError(f"showcase recording concatenation failed: {result.stderr[-1000:]}")
 
