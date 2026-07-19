@@ -276,7 +276,10 @@ def docker_sandbox_arguments(policy: SandboxPolicy) -> list[str]:
         if limits.memory_bytes % 1024**3 == 0
         else f"{mebibytes}m"
     )
-    file_blocks = max(1, limits.file_size_bytes // 1024)
+    # Docker forwards ulimit values directly to the operating-system syscall;
+    # RLIMIT_FSIZE is measured in bytes. Dividing here silently turned the
+    # intended 1 GiB ceiling into 1 MiB and killed Xvfb during screenshots.
+    file_size_bytes = limits.file_size_bytes
     writable_mebibytes = max(1, limits.writable_bytes // 1024**2)
     shared_memory_mebibytes = max(64, limits.shared_memory_bytes // 1024**2)
     return [
@@ -290,7 +293,7 @@ def docker_sandbox_arguments(policy: SandboxPolicy) -> list[str]:
         "--pids-limit",
         str(limits.process_count),
         "--ulimit",
-        f"fsize={file_blocks}:{file_blocks}",
+        f"fsize={file_size_bytes}:{file_size_bytes}",
         "--memory",
         memory_limit,
         "--cpus",

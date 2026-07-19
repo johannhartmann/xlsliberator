@@ -39,7 +39,7 @@ def test_default_docker_policy_has_every_required_isolation_control() -> None:
     assert "--pids-limit" in arguments
     assert "--memory" in arguments
     assert "--cpus" in arguments
-    assert "fsize=" in rendered
+    assert arguments[arguments.index("--ulimit") + 1] == "fsize=1073741824:1073741824"
     assert arguments[arguments.index("--ipc") + 1] == "private"
     assert arguments[arguments.index("--shm-size") + 1] == "256m"
     assert "--init" in arguments
