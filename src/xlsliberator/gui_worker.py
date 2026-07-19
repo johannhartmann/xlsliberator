@@ -707,11 +707,11 @@ def _wait_for_calc_window() -> str:
 
 
 def _click_control(document: Any, name: str, window_id: str) -> None:
+    from xlsliberator.interactive_game_uno import _wait_for_control_view
+
     model = _find_control_model(document, name)
     controller = document.getCurrentController()
-    view = controller.getControl(model)
-    if view is None:
-        raise RuntimeError(f"control view is unavailable: {name}")
+    view = _wait_for_control_view(controller, model, name)
     position = view.getPosSize()
     geometry = _window_geometry(window_id)
     x = geometry["X"] + int(position.X) + max(1, int(position.Width) // 2)

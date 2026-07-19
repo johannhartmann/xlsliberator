@@ -373,10 +373,8 @@ class InteractiveGameController:
         if self.listeners or self.key_listener is not None:
             raise RuntimeError("game controller listeners are already installed")
         controller = self.document.getCurrentController()
-        _install_runtime_controls(self.document, self.session["uno"])
+        _install_live_runtime_controls(self.document, self.session["uno"], controller)
         self.runtime_controls_installed = True
-        if hasattr(controller, "setFormDesignMode"):
-            controller.setFormDesignMode(False)
         _action_type, key_type = _listener_types()
         self._attach_action_listeners()
         self.key_listener = key_type(self)
@@ -416,11 +414,9 @@ class InteractiveGameController:
         """Restore target-native controls after a clean ODS save."""
         if self.disposed or self.runtime_controls_installed:
             raise RuntimeError("game controller cannot restore runtime controls")
-        _install_runtime_controls(self.document, self.session["uno"])
-        self.runtime_controls_installed = True
         controller = self.document.getCurrentController()
-        if hasattr(controller, "setFormDesignMode"):
-            controller.setFormDesignMode(False)
+        _install_live_runtime_controls(self.document, self.session["uno"], controller)
+        self.runtime_controls_installed = True
         self._attach_action_listeners()
 
     def _attach_action_listeners(self) -> None:
@@ -428,14 +424,19 @@ class InteractiveGameController:
             raise RuntimeError("runtime control listeners are already attached")
         action_type, _key_type = _listener_types()
         controller = self.document.getCurrentController()
-        for name in CONTROL_NAMES:
-            model = _find_control_model(self.document, name)
-            control = controller.getControl(model)
-            if control is None:
-                raise RuntimeError(f"native control view is unavailable: {name}")
-            listener = action_type(self)
-            control.addActionListener(listener)
-            self.listeners.append((control, listener))
+        sheets = self.document.getSheets()
+        original_sheet = controller.getActiveSheet()
+        try:
+            for name in CONTROL_NAMES:
+                sheet_name = SCORE_SHEET if name == "ScoreReturn" else GAME_SHEET
+                controller.setActiveSheet(sheets.getByName(sheet_name))
+                model = _find_control_model(self.document, name)
+                control = _wait_for_control_view(controller, model, name)
+                listener = action_type(self)
+                control.addActionListener(listener)
+                self.listeners.append((control, listener))
+        finally:
+            controller.setActiveSheet(original_sheet)
 
     def _detach_action_listeners(self) -> None:
         for control, listener in self.listeners:
@@ -624,6 +625,32 @@ class InteractiveGameController:
                 **details,
             }
         )
+
+
+def _install_live_runtime_controls(document: Any, uno: Any, controller: Any) -> None:
+    """Materialize transient form controls in the current Calc view."""
+    supports_design_mode = hasattr(controller, "setFormDesignMode")
+    if supports_design_mode:
+        controller.setFormDesignMode(True)
+    try:
+        _install_runtime_controls(document, uno)
+    finally:
+        if supports_design_mode:
+            controller.setFormDesignMode(False)
+
+
+def _wait_for_control_view(controller: Any, model: Any, name: str) -> Any:
+    deadline = time.monotonic() + 2.0
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            control = controller.getControl(model)
+            if control is not None:
+                return control
+        except Exception as exc:
+            last_error = exc
+        time.sleep(0.05)
+    raise RuntimeError(f"native control view is unavailable: {name}") from last_error
 
 
 def _find_control_model(document: Any, name: str) -> Any:

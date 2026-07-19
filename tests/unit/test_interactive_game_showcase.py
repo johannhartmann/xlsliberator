@@ -225,15 +225,34 @@ def test_action_listeners_bind_to_native_control_views(
 
     models = {name: object() for name in CONTROL_NAMES}
     views = {model: ControlView() for model in models.values()}
+    game_sheet = object()
+    score_sheet = object()
+    active_sheets: list[object] = [game_sheet]
+
+    def set_active_sheet(_self: object, sheet: object) -> None:
+        active_sheets.append(sheet)
+
     native_controller = type(
         "NativeController",
         (),
-        {"getControl": lambda _self, model: views[model]},
+        {
+            "getActiveSheet": lambda _self: active_sheets[-1],
+            "getControl": lambda _self, model: views[model],
+            "setActiveSheet": set_active_sheet,
+        },
+    )()
+    sheets = type(
+        "Sheets",
+        (),
+        {"getByName": lambda _self, name: score_sheet if name == "Score" else game_sheet},
     )()
     document = type(
         "Document",
         (),
-        {"getCurrentController": lambda _self: native_controller},
+        {
+            "getCurrentController": lambda _self: native_controller,
+            "getSheets": lambda _self: sheets,
+        },
     )()
     controller = object.__new__(InteractiveGameController)
     controller.document = document
@@ -251,3 +270,4 @@ def test_action_listeners_bind_to_native_control_views(
 
     assert [control for control, _listener in controller.listeners] == list(views.values())
     assert all(len(view.listeners) == 1 for view in views.values())
+    assert active_sheets[-2:] == [score_sheet, game_sheet]
