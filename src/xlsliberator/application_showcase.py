@@ -1,7 +1,8 @@
-"""Docker-only public operations for the interactive-game showcase."""
+"""Docker-only operations for generated application migration candidates."""
 
 from __future__ import annotations
 
+import re
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -9,81 +10,87 @@ from typing import Any, Final
 from zipfile import ZIP_STORED, ZipFile
 
 from xlsliberator.docker_runtime import (
+    LIBREOFFICE_VERSION,
     DockerRuntimeUnavailable,
     LibreOfficeDockerRuntime,
 )
-from xlsliberator.interactive_game_uno import SOURCE_SHA256, TARGET_BUILD
 
 GUI_IMAGE: Final = "xlsliberator-libreoffice-gui:26.2.4.2"
-PUBLIC_SCENARIOS: Final = (
-    "keyboard-control",
-    "timer-tick",
-    "native-controls",
-    "document-events",
-    "line-collapse",
-)
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 
 
-def build_target(
+def build_candidate(
     source: Path,
+    candidate_bundle: Path,
     output: Path,
     *,
     timeout_seconds: int = 120,
 ) -> dict[str, Any]:
-    """Build the target in the pinned stock LibreOffice Docker image."""
+    """Build an ODS through a content-bound generated candidate in Docker."""
     runtime = LibreOfficeDockerRuntime(timeout_seconds=timeout_seconds)
     response = runtime.request(
         {
-            "op": "build_interactive_game_target",
+            "op": "build_application_target",
             "input_path": str(source),
+            "candidate_path": str(candidate_bundle),
             "output_path": str(output),
             "timeout_seconds": timeout_seconds,
         }
     )
-    return _require_success(response, "interactive-game target build")
+    return _require_success(response, "migration candidate build")
 
 
-def run_gui_scenario(
+def run_application_scenario(
     target: Path,
+    candidate_bundle: Path,
     evidence_archive: Path,
     actions: list[dict[str, Any]],
     *,
-    scenario_id: str | None = None,
-    timer_enabled: bool = True,
+    scenario_id: str,
+    adapter_config: Mapping[str, Any] | None = None,
     timeout_seconds: int = 180,
 ) -> dict[str, Any]:
-    """Operate the target through real X11 events in the GUI Docker image."""
+    """Operate any generated candidate through real X11 events in Docker."""
+    _safe_id(scenario_id, "scenario_id")
     runtime = LibreOfficeDockerRuntime(
         image=GUI_IMAGE,
         timeout_seconds=timeout_seconds,
     )
     response = runtime.request(
         {
-            "op": "run_gui_scenario",
+            "op": "run_application_scenario",
             "ods_path": str(target),
+            "candidate_path": str(candidate_bundle),
             "output_path": str(evidence_archive),
-            "scenario_id": scenario_id or evidence_archive.stem,
-            "adapter": "interactive-game",
+            "scenario_id": scenario_id,
             "actions": actions,
-            "timer_enabled": timer_enabled,
+            "adapter_config": dict(adapter_config or {}),
             "timeout_seconds": timeout_seconds,
         }
     )
-    return _require_success(response, "interactive-game GUI scenario")
+    return _require_success(response, "migration candidate GUI scenario")
 
 
-def bundle_gui_replays(
+def bundle_application_replays(
     evidence_archives: Mapping[str, Path],
     replay_archive: Path,
     *,
+    replay_id: str,
     timeout_seconds: int = 180,
 ) -> dict[str, Any]:
-    """Create one public replay from all canonical GUI scenario evidence."""
-    if set(evidence_archives) != set(PUBLIC_SCENARIOS):
-        raise ValueError("replay input must contain every canonical public scenario exactly once")
+    """Create one replay bundle from an arbitrary declared scenario set."""
+    _safe_id(replay_id, "replay_id")
+    if not 1 <= len(evidence_archives) <= 100:
+        raise ValueError("replay input must contain between 1 and 100 scenarios")
+    scenario_ids = list(evidence_archives)
+    if len(set(scenario_ids)) != len(scenario_ids):
+        raise ValueError("replay scenario IDs must be unique")
+    for scenario_id in scenario_ids:
+        _safe_id(scenario_id, "scenario_id")
+
     replay_archive.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        prefix="xlsliberator-showcase-replays-",
+        prefix="xlsliberator-application-replays-",
         suffix=".zip",
         dir=replay_archive.parent,
         delete=False,
@@ -91,8 +98,7 @@ def bundle_gui_replays(
         staged_bundle = Path(handle.name)
     try:
         with ZipFile(staged_bundle, "w", compression=ZIP_STORED) as bundle:
-            for scenario_id in PUBLIC_SCENARIOS:
-                evidence = evidence_archives[scenario_id]
+            for scenario_id, evidence in evidence_archives.items():
                 if not evidence.is_file():
                     raise FileNotFoundError(evidence)
                 bundle.write(evidence, f"{scenario_id}.zip")
@@ -102,21 +108,29 @@ def bundle_gui_replays(
         )
         response = runtime.request(
             {
-                "op": "bundle_gui_replays",
+                "op": "bundle_application_replays",
                 "input_path": str(staged_bundle),
                 "output_path": str(replay_archive),
+                "scenario_ids": scenario_ids,
+                "replay_id": replay_id,
                 "timeout_seconds": timeout_seconds,
             }
         )
-        return _require_success(response, "interactive-game replay bundle")
+        return _require_success(response, "migration candidate replay bundle")
     finally:
         staged_bundle.unlink(missing_ok=True)
+
+
+def _safe_id(value: str, label: str) -> str:
+    if _SAFE_ID.fullmatch(value) is None:
+        raise ValueError(f"{label} is malformed")
+    return value
 
 
 def _require_success(response: dict[str, Any], operation: str) -> dict[str, Any]:
     if response.get("success"):
         data = dict(response.get("data") or {})
-        if data.get("target_build") not in {None, TARGET_BUILD}:
+        if data.get("target_build") not in {None, LIBREOFFICE_VERSION}:
             raise DockerRuntimeUnavailable(f"{operation} returned the wrong target build")
         return data
     error = response.get("error") or {}
@@ -138,10 +152,7 @@ def _require_success(response: dict[str, Any], operation: str) -> dict[str, Any]
 
 __all__ = [
     "GUI_IMAGE",
-    "PUBLIC_SCENARIOS",
-    "SOURCE_SHA256",
-    "TARGET_BUILD",
-    "build_target",
-    "bundle_gui_replays",
-    "run_gui_scenario",
+    "build_candidate",
+    "bundle_application_replays",
+    "run_application_scenario",
 ]

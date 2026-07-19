@@ -1,4 +1,4 @@
-"""Target-native LibreOffice adapter for the interactive-game showcase.
+"""Target-native LibreOffice adapter generated for the interactive-game episode.
 
 This module is imported by LibreOffice's bundled Python only.  It creates a
 plain ODS target and installs native form controls only inside the dedicated
@@ -17,7 +17,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final
 
-from xlsliberator.interactive_game_engine import (
+from candidate_interactive_game.engine import (
     GamePhase,
     GameState,
     move_left,
@@ -83,7 +83,7 @@ _SETTLED_COLORS: Final[dict[int, int]] = {
 }
 
 
-def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
+def build_target(request: dict[str, Any]) -> dict[str, Any]:
     """Create a script-free ODS application from the immutable real source."""
     from xlsliberator.lo_worker import (
         _close_document,
@@ -144,6 +144,19 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         "board_range": BOARD_RANGE,
         "embedded_script_bindings": 0,
     }
+
+
+def create_controller(
+    session: dict[str, Any],
+    document: Any,
+    config: dict[str, Any],
+) -> InteractiveGameController:
+    """Create the source-derived live controller through the generic runtime contract."""
+    return InteractiveGameController(
+        session,
+        document,
+        enable_timer=bool(config.get("timer_enabled", True)),
+    )
 
 
 def _prepare_game_sheet(document: Any) -> Any:
@@ -314,6 +327,7 @@ def _add_runtime_button(
 ) -> None:
     model = document.createInstance("com.sun.star.form.component.CommandButton")
     model.Name = name
+    model.Tag = name
     model.Label = label
     model.Tabstop = True
     form.insertByName(name, model)
@@ -763,5 +777,6 @@ __all__ = [
     "STATE_CELL",
     "STATE_SHEET",
     "TARGET_BUILD",
-    "build_interactive_game_target",
+    "build_target",
+    "create_controller",
 ]

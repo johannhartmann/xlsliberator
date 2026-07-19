@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "scenario_id": "document-events",
-  "timer_enabled": false,
+  "adapter_config": {"timer_enabled": false},
   "actions": [
     {"kind": "click_control", "control_name": "GameStart"},
     {"kind": "key", "key": "Right"},

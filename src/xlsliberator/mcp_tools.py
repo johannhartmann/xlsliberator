@@ -804,7 +804,7 @@ async def get_cell_colors(
     Args:
         ods_path: Path to ODS file
         sheet_name: Sheet name
-        range_address: Range address (e.g., 'D3:M22' for Tetris game board)
+        range_address: Range address (for example, ``D3:M22``)
 
     Returns:
         Dictionary with:

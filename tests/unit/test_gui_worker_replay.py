@@ -14,10 +14,22 @@ from xlsliberator.gui_worker import (
     _control_screen_rectangle,
     _open_ready_document,
     _raise_with_office_diagnostics,
+    _safe_key,
     _start_recording,
     _wait_for_startup_document,
     _write_replay_html,
 )
+
+
+def test_gui_key_contract_is_generic_but_rejects_xdotool_injection() -> None:
+    assert _safe_key("Left") == "Left"
+    assert _safe_key("ctrl+s") == "ctrl+s"
+    assert _safe_key("F12") == "F12"
+    assert _safe_key("A") == "A"
+
+    for unsafe in ("", "ctrl+shift+alt+s+x", "Left --window 1", "XF86Launch1", "F13"):
+        with pytest.raises(ValueError, match="unsupported GUI key"):
+            _safe_key(unsafe)
 
 
 def test_replay_html_embeds_timeline_without_interpreting_result_markup(tmp_path: Path) -> None:
@@ -94,17 +106,23 @@ def test_gui_document_waits_for_visible_calc_window_before_installing_controls(
     def install_controller(
         _session: dict[str, Any],
         received_document: object,
+        received_factory: Any,
         _request: dict[str, Any],
     ) -> str:
         assert received_document is document
+        assert received_factory is factory
         calls.append("controls")
         return "controller"
 
+    factory = object()
     monkeypatch.setattr("xlsliberator.gui_worker._open_document", open_document)
     monkeypatch.setattr("xlsliberator.gui_worker._wait_for_calc_window", wait_for_calc_window)
-    monkeypatch.setattr("xlsliberator.gui_worker._install_game_controller", install_controller)
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._install_application_controller",
+        install_controller,
+    )
 
-    result = _open_ready_document({}, tmp_path / "target.ods", {})
+    result = _open_ready_document({}, tmp_path / "target.ods", factory, {})
 
     assert result == (document, "controller", "42")
     assert calls == ["open", "window", "controls"]
@@ -130,11 +148,13 @@ def test_gui_document_uses_native_startup_component_before_remote_reopen(
         lambda: calls.append("window") or "42",
     )
     monkeypatch.setattr(
-        "xlsliberator.gui_worker._install_game_controller",
-        lambda _session, _document, _request: calls.append("controls") or "controller",
+        "xlsliberator.gui_worker._install_application_controller",
+        lambda _session, _document, _factory, _request: (
+            calls.append("controls") or "controller"
+        ),
     )
 
-    result = _open_ready_document(session, tmp_path / "target.ods", {})
+    result = _open_ready_document(session, tmp_path / "target.ods", object(), {})
 
     assert result == (document, "controller", "42")
     assert session == {}
@@ -314,7 +334,7 @@ def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> 
 
     monkeypatch.setattr("xlsliberator.gui_worker._find_control_model", lambda *_args: object())
     monkeypatch.setattr(
-        "xlsliberator.interactive_game_uno._wait_for_control_view",
+        "xlsliberator.gui_worker._wait_for_control_view",
         lambda *_args: control_view,
     )
     monkeypatch.setattr(

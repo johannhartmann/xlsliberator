@@ -154,44 +154,73 @@ def inspect_cmd(
         sys.exit(1)
 
 
-@cli.command(name="interactive-game-build")
+@cli.command(name="application-build")
 @click.argument("source", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("candidate", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("output", type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--timeout", type=click.IntRange(min=1, max=600), default=120, show_default=True)
-def interactive_game_build_cmd(source: Path, output: Path, timeout: int) -> None:
-    """Build the public interactive-game ODS in pinned Docker LibreOffice."""
-    from xlsliberator.interactive_game_showcase import build_target
+def application_build_cmd(source: Path, candidate: Path, output: Path, timeout: int) -> None:
+    """Build an ODS through a generated migration candidate in Docker."""
+    from xlsliberator.application_showcase import build_candidate
 
     try:
-        result = build_target(source, output, timeout_seconds=timeout)
+        result = build_candidate(source, candidate, output, timeout_seconds=timeout)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(result, indent=2, sort_keys=True))
 
 
-@cli.command(name="interactive-game-run")
+@cli.command(name="candidate-package")
+@click.argument(
+    "candidate_directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.argument("output", type=click.Path(dir_okay=False, path_type=Path))
+def candidate_package_cmd(candidate_directory: Path, output: Path) -> None:
+    """Package and validate a generated migration candidate."""
+    from xlsliberator.candidate_runtime import package_candidate_directory
+
+    try:
+        result = package_candidate_directory(candidate_directory, output)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(result, indent=2, sort_keys=True))
+
+
+@cli.command(name="application-run")
 @click.argument("target", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("candidate", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("scenario", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("evidence_archive", type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--timeout", type=click.IntRange(min=1, max=600), default=180, show_default=True)
-def interactive_game_run_cmd(
+def application_run_cmd(
     target: Path,
+    candidate: Path,
     scenario: Path,
     evidence_archive: Path,
     timeout: int,
 ) -> None:
     """Run declared real-GUI actions and write a replay evidence ZIP."""
-    from xlsliberator.interactive_game_showcase import run_gui_scenario
+    from xlsliberator.application_showcase import run_application_scenario
 
     try:
         payload = json.loads(scenario.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict) or not isinstance(payload.get("actions"), list):
-            raise ValueError("scenario JSON must contain an actions array")
-        result = run_gui_scenario(
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("scenario_id"), str)
+            or not isinstance(payload.get("actions"), list)
+        ):
+            raise ValueError("scenario JSON must contain scenario_id and an actions array")
+        adapter_config = payload.get("adapter_config") or {}
+        if not isinstance(adapter_config, dict):
+            raise ValueError("scenario adapter_config must be an object")
+        result = run_application_scenario(
             target,
+            candidate,
             evidence_archive,
             list(payload["actions"]),
-            timer_enabled=bool(payload.get("timer_enabled", True)),
+            scenario_id=payload["scenario_id"],
+            adapter_config=adapter_config,
             timeout_seconds=timeout,
         )
     except Exception as exc:
@@ -199,28 +228,40 @@ def interactive_game_run_cmd(
     click.echo(json.dumps(result, indent=2, sort_keys=True))
 
 
-@cli.command(name="interactive-game-bundle")
-@click.argument(
-    "evidence_archives",
-    nargs=5,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
+@cli.command(name="application-bundle")
+@click.argument("replay_manifest", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.argument("replay_archive", type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--timeout", type=click.IntRange(min=1, max=600), default=180, show_default=True)
-def interactive_game_bundle_cmd(
-    evidence_archives: tuple[Path, ...],
+def application_bundle_cmd(
+    replay_manifest: Path,
     replay_archive: Path,
     timeout: int,
 ) -> None:
-    """Bundle the five canonical GUI recordings into one public replay."""
-    from xlsliberator.interactive_game_showcase import (
-        PUBLIC_SCENARIOS,
-        bundle_gui_replays,
-    )
+    """Bundle declared GUI recordings into one public replay."""
+    from xlsliberator.application_showcase import bundle_application_replays
 
     try:
-        mapped = dict(zip(PUBLIC_SCENARIOS, evidence_archives, strict=True))
-        result = bundle_gui_replays(mapped, replay_archive, timeout_seconds=timeout)
+        payload = json.loads(replay_manifest.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("replay_id"), str)
+            or not isinstance(payload.get("evidence_paths"), dict)
+            or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in payload["evidence_paths"].items()
+            )
+        ):
+            raise ValueError("replay manifest must declare replay_id and evidence_paths")
+        evidence = {
+            scenario_id: Path(path)
+            for scenario_id, path in payload["evidence_paths"].items()
+        }
+        result = bundle_application_replays(
+            evidence,
+            replay_archive,
+            replay_id=payload["replay_id"],
+            timeout_seconds=timeout,
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(json.dumps(result, indent=2, sort_keys=True))

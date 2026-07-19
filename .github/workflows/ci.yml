@@ -139,7 +139,7 @@ jobs:
           docker compose --profile ci-orchestrator run --rm \
             --env XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR \
             test-orchestrator pytest -p no:cacheprovider -q \
-            tests/it/test_interactive_game_showcase.py \
+            tests/it/test_application_candidate_showcase.py \
             --junitxml=artifacts/showcase-ci/pytest.xml \
             2>&1 | tee artifacts/showcase-ci/runtime.log
       - name: Kill source-derived engine mutants without changing the oracle
@@ -147,7 +147,7 @@ jobs:
           set -o pipefail
           docker compose --profile ci-orchestrator run --rm \
             test-orchestrator python \
-            -m xlsliberator.interactive_game_mutation \
+            demos/interactive-game/mutations/run.py \
             --repository-root /workspace \
             --output /workspace/artifacts/showcase-ci/mutation \
             2>&1 | tee artifacts/showcase-ci/mutation.log

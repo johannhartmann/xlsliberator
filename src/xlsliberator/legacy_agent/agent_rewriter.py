@@ -324,7 +324,7 @@ Critical Notes:
 4. Use appropriate UNO services based on the identified patterns
 5. Import necessary UNO modules: uno, unohelper, com.sun.star.* as needed
 6. Include proper error handling and logging (use loguru.logger)
-7. DO NOT use package-style imports (e.g., from tetris_game.module import Class)
+7. DO NOT use package-style imports (e.g., from application.module import Class)
    - All Python modules are in the same flat Scripts/python/ directory
    - Use try/except ImportError with fallback imports instead:
      ```python
@@ -690,7 +690,7 @@ Key Transformations:
 4. Use appropriate UNO services based on the identified patterns
 5. Import necessary UNO modules: uno, unohelper, com.sun.star.* as needed
 6. Include proper error handling and logging (use loguru.logger)
-7. DO NOT use package-style imports (e.g., from tetris_game.module import Class)
+7. DO NOT use package-style imports (e.g., from application.module import Class)
    - All Python modules are in the same flat Scripts/python/ directory
    - LibreOffice cannot import from packages, only flat modules
    - Use direct imports: `from module_name import ClassName` or `import module_name`

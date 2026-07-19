@@ -1,10 +1,21 @@
 """Source-derived behavioral tests for the interactive game engine."""
 
+import os
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
-from xlsliberator.interactive_game_engine import (
+_CANDIDATE_ROOT = Path(
+    os.environ.get(
+        "XLSLIBERATOR_INTERACTIVE_CANDIDATE_ROOT",
+        "demos/interactive-game/candidate",
+    )
+).resolve()
+sys.path.insert(0, str(_CANDIDATE_ROOT))
+
+from candidate_interactive_game.engine import (  # noqa: E402
     BOARD_COLUMNS,
     LANDING_POINTS,
     SOFT_DROP_POINTS,

@@ -185,15 +185,15 @@ def _dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return _with_document(request, _execute_button_handler)
     if op == "recalculate_document":
         return _with_document(request, _recalculate_document)
-    if op == "build_interactive_game_target":
-        from xlsliberator.interactive_game_uno import build_interactive_game_target
+    if op == "build_application_target":
+        from xlsliberator.candidate_runtime import build_application_target
 
-        return build_interactive_game_target(request)
-    if op == "run_gui_scenario":
+        return build_application_target(request)
+    if op == "run_application_scenario":
         from xlsliberator.gui_worker import run_gui_scenario
 
         return run_gui_scenario(request)
-    if op == "bundle_gui_replays":
+    if op == "bundle_application_replays":
         from xlsliberator.gui_worker import bundle_gui_replays
 
         return bundle_gui_replays(request)

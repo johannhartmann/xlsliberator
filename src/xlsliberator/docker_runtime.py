@@ -449,12 +449,15 @@ class LibreOfficeDockerRuntime:
     ) -> tuple[dict[str, Any], list[tuple[str, Path]]]:
         mapped = dict(payload)
         outputs: list[tuple[str, Path]] = []
-        for key in ("input_path", "ods_path"):
+        for key in ("input_path", "ods_path", "candidate_path"):
             raw = payload.get(key)
             if not raw:
                 continue
             source = self.workspace_paths.input_file(str(raw))
-            validate_untrusted_workbook(source)
+            if key != "candidate_path":
+                validate_untrusted_workbook(source)
+            elif source.suffix.lower() != ".zip" or source.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("candidate_path must be a ZIP no larger than 16 MiB")
             staged_name = f"input-{key}{source.suffix}"
             shutil.copy2(source, input_dir / staged_name)
             (input_dir / staged_name).chmod(0o444)

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "scenario_id": "timer-tick",
-  "timer_enabled": true,
+  "adapter_config": {"timer_enabled": true},
   "actions": [
     {"kind": "click_control", "control_name": "GameStart"},
     {"kind": "click_control", "control_name": "GameHighScores"},

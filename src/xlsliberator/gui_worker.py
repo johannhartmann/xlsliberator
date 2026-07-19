@@ -16,7 +16,34 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Never
 from zipfile import ZIP_DEFLATED, ZipFile
 
-_ALLOWED_KEYS = frozenset({"Left", "Right", "Down", "Up", "ctrl", "Escape", "space"})
+from xlsliberator.candidate_runtime import load_candidate_entrypoint
+from xlsliberator.docker_runtime import LIBREOFFICE_VERSION
+
+_NAMED_KEYS = frozenset(
+    {
+        "Alt",
+        "BackSpace",
+        "Control",
+        "Delete",
+        "Down",
+        "End",
+        "Escape",
+        "Home",
+        "Insert",
+        "Left",
+        "Page_Down",
+        "Page_Up",
+        "Return",
+        "Right",
+        "Shift",
+        "Tab",
+        "Up",
+        "alt",
+        "ctrl",
+        "shift",
+        "space",
+    }
+)
 _ALLOWED_ACTIONS = frozenset(
     {
         "click_control",
@@ -28,17 +55,10 @@ _ALLOWED_ACTIONS = frozenset(
         "close",
         "reopen",
         "screenshot",
-        "load_game_state",
+        "load_fixture",
     }
 )
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
-_PUBLIC_SCENARIOS = (
-    "keyboard-control",
-    "timer-tick",
-    "native-controls",
-    "document-events",
-    "line-collapse",
-)
 
 
 def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
@@ -55,6 +75,12 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
         root=Path(os.environ.get("XLSLIBERATOR_INPUT_DIR", "/input")),
         must_exist=True,
         label="GUI scenario input",
+    )
+    candidate_path = _confined_path(
+        request["candidate_path"],
+        root=Path(os.environ.get("XLSLIBERATOR_INPUT_DIR", "/input")),
+        must_exist=True,
+        label="GUI candidate bundle",
     )
     archive_path = _confined_path(
         request["output_path"],
@@ -85,6 +111,8 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     screenshots: list[str] = []
     controller_evidence: list[dict[str, Any]] = []
+    candidate_id = ""
+    candidate_bundle_sha256 = ""
     office_runtime = _office_session(
         {
             **request,
@@ -95,10 +123,16 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        with office_runtime as session:
-            document, game_controller, window_id = _open_ready_document(
+        with (
+            load_candidate_entrypoint(candidate_path, "controller") as loaded_controller,
+            office_runtime as session,
+        ):
+            candidate_id = loaded_controller.manifest.candidate_id
+            candidate_bundle_sha256 = loaded_controller.bundle_sha256
+            document, application_controller, window_id = _open_ready_document(
                 session,
                 working_copy,
+                loaded_controller.callback,
                 request,
             )
             # Keep the encoder out of LibreOffice's GUI startup allocation peak.
@@ -118,21 +152,15 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
                     if kind == "click_control":
                         name = _safe_name(raw_action.get("control_name"), "control_name")
-                        if game_controller is None:
-                            raise RuntimeError(
-                                "click_control requires the interactive-game adapter"
-                            )
                         result = _click_control(
                             session,
                             document,
-                            game_controller,
+                            application_controller,
                             name,
                             window_id,
                         )
                     elif kind == "key":
-                        key = str(raw_action.get("key") or "")
-                        if key not in _ALLOWED_KEYS:
-                            raise ValueError(f"unsupported GUI key: {key}")
+                        key = _safe_key(raw_action.get("key"))
                         _xdotool("key", "--clearmodifiers", "--window", window_id, key)
                         result = {"key": key, "event_surface": "x11-keyboard"}
                     elif kind == "wait":
@@ -147,31 +175,31 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                         document.calculateAll()
                         result = {"recalculated": True}
                     elif kind == "save":
-                        if game_controller is None:
-                            raise RuntimeError("save requires the interactive-game adapter")
-                        game_controller.prepare_for_save()
+                        prepared = _prepare_controller_for_save(application_controller)
                         try:
                             document.store()
                         finally:
-                            game_controller.restore_after_save()
+                            if prepared:
+                                application_controller.restore_after_save()
                         result = {"saved_sha256": _sha256_file(working_copy)}
                     elif kind == "close":
-                        if game_controller is not None:
-                            controller_evidence.append(game_controller.evidence())
-                            game_controller.dispose()
-                            game_controller = None
+                        if application_controller is not None:
+                            controller_evidence.append(application_controller.evidence())
+                            application_controller.dispose()
+                            application_controller = None
                         _close_document(document, save=False)
                         document = None
                         result = {"closed": True}
                     elif kind == "reopen":
-                        if game_controller is not None:
-                            controller_evidence.append(game_controller.evidence())
-                            game_controller.dispose()
+                        if application_controller is not None:
+                            controller_evidence.append(application_controller.evidence())
+                            application_controller.dispose()
                         if document is not None:
                             _close_document(document, save=False)
-                        document, game_controller, window_id = _open_ready_document(
+                        document, application_controller, window_id = _open_ready_document(
                             session,
                             working_copy,
+                            loaded_controller.callback,
                             request,
                         )
                         result = {"reopened_sha256": _sha256_file(working_copy)}
@@ -181,22 +209,24 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                         _run_checked(["scrot", "--focused", str(screenshot)])
                         screenshots.append(screenshot.name)
                         result = {"path": screenshot.name, "sha256": _sha256_file(screenshot)}
-                    elif kind == "load_game_state":
-                        if game_controller is None:
-                            raise RuntimeError(
-                                "load_game_state requires the interactive-game adapter"
-                            )
-                        state_json = str(raw_action.get("state_json") or "")
-                        if len(state_json.encode()) > 100_000:
-                            raise ValueError("game fixture exceeds the bounded state size")
-                        game_controller.load_fixture(state_json)
+                    elif kind == "load_fixture":
+                        if application_controller is None or not hasattr(
+                            application_controller, "load_fixture"
+                        ):
+                            raise RuntimeError("candidate controller does not accept fixtures")
+                        fixture = str(raw_action.get("payload") or "")
+                        if len(fixture.encode()) > 100_000:
+                            raise ValueError("scenario fixture exceeds the bounded state size")
+                        application_controller.load_fixture(fixture)
                         result = {
-                            "loaded_state_sha256": hashlib.sha256(state_json.encode()).hexdigest()
+                            "loaded_fixture_sha256": hashlib.sha256(fixture.encode()).hexdigest()
                         }
 
                     _drain_ui(session)
-                    if game_controller is not None:
-                        game_controller.pump_timer()
+                    if application_controller is not None and hasattr(
+                        application_controller, "pump_timer"
+                    ):
+                        application_controller.pump_timer()
                     after = _document_state_hash(document, raw_action)
                     records.append(
                         {
@@ -214,7 +244,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                 raise
             finally:
                 _cleanup_gui_session(
-                    game_controller,
+                    application_controller,
                     document,
                     controller_evidence,
                     _close_document,
@@ -228,12 +258,17 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
     if not recording.is_file() or recording.stat().st_size == 0:
         raise RuntimeError("GUI recording was not produced")
+    if not candidate_id or not candidate_bundle_sha256:
+        raise RuntimeError("GUI scenario did not retain its candidate identity")
     response: dict[str, Any] = {
         "status": "passed",
         "scenario_id": scenario_id,
+        "target_build": LIBREOFFICE_VERSION,
         "event_layer": "xvfb-openbox-xdotool",
         "display": display,
-        "source_sha256": _sha256_file(source),
+        "target_sha256": _sha256_file(source),
+        "candidate_id": candidate_id,
+        "candidate_bundle_sha256": candidate_bundle_sha256,
         "working_copy_sha256": _sha256_file(working_copy),
         "recording": {
             "path": recording.name,
@@ -261,7 +296,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _cleanup_gui_session(
-    game_controller: Any,
+    application_controller: Any,
     document: Any,
     controller_evidence: list[dict[str, Any]],
     close_document: Any,
@@ -270,23 +305,23 @@ def _cleanup_gui_session(
 ) -> None:
     """Close GUI resources without replacing an action's causal exception."""
     if preserve_primary_error:
-        if game_controller is not None:
+        if application_controller is not None:
             with suppress(Exception):
-                controller_evidence.append(game_controller.evidence())
+                controller_evidence.append(application_controller.evidence())
             with suppress(Exception):
-                game_controller.dispose()
+                application_controller.dispose()
         with suppress(Exception):
             close_document(document, save=False)
         return
 
-    if game_controller is not None:
-        controller_evidence.append(game_controller.evidence())
-        game_controller.dispose()
+    if application_controller is not None:
+        controller_evidence.append(application_controller.evidence())
+        application_controller.dispose()
     close_document(document, save=False)
 
 
 def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
-    """Validate and combine all public GUI recordings into one replay bundle."""
+    """Validate and combine a declared set of GUI recordings into one replay bundle."""
     _require_gui_container()
     from xlsliberator.lo_worker import _sha256_file
 
@@ -304,6 +339,17 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
     )
     if source.suffix.lower() != ".zip" or archive_path.suffix.lower() != ".zip":
         raise ValueError("GUI replay input and output must be ZIP archives")
+    raw_scenario_ids = request.get("scenario_ids")
+    if (
+        not isinstance(raw_scenario_ids, list)
+        or not 1 <= len(raw_scenario_ids) <= 100
+        or not all(isinstance(item, str) for item in raw_scenario_ids)
+    ):
+        raise ValueError("scenario_ids must contain between 1 and 100 unique safe IDs")
+    scenario_ids = [_safe_name(item, "scenario_id") for item in raw_scenario_ids]
+    if len(set(scenario_ids)) != len(scenario_ids):
+        raise ValueError("scenario_ids must contain between 1 and 100 unique safe IDs")
+    replay_id = _safe_name(request.get("replay_id"), "replay_id")
 
     output_dir = archive_path.parent / f".{archive_path.stem}-public-replay"
     if output_dir.exists():
@@ -316,11 +362,13 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
 
     flattened: list[dict[str, Any]] = []
     target_sha256: str | None = None
+    candidate_id: str | None = None
+    candidate_bundle_sha256: str | None = None
     recordings: list[Path] = []
-    expected_outer = {f"{scenario_id}.zip" for scenario_id in _PUBLIC_SCENARIOS}
+    expected_outer = {f"{scenario_id}.zip" for scenario_id in scenario_ids}
     with ZipFile(source) as outer:
         _validate_zip_members(outer, expected=expected_outer, label="replay input")
-        for scenario_id in _PUBLIC_SCENARIOS:
+        for scenario_id in scenario_ids:
             nested_payload = outer.read(f"{scenario_id}.zip")
             if len(nested_payload) > 128 * 1024**2:
                 raise ValueError(f"scenario replay is oversized: {scenario_id}")
@@ -339,11 +387,23 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
                     result = json.loads(result_payload)
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ValueError(f"scenario result is not valid JSON: {scenario_id}") from exc
-                scenario_target = _validated_scenario_result(result, scenario_id)
+                (
+                    scenario_target,
+                    scenario_candidate_id,
+                    scenario_candidate_sha256,
+                ) = _validated_scenario_result(result, scenario_id)
                 if target_sha256 is None:
                     target_sha256 = scenario_target
                 elif scenario_target != target_sha256:
                     raise ValueError("scenario replays do not exercise one identical target")
+                if candidate_id is None:
+                    candidate_id = scenario_candidate_id
+                    candidate_bundle_sha256 = scenario_candidate_sha256
+                elif (
+                    scenario_candidate_id != candidate_id
+                    or scenario_candidate_sha256 != candidate_bundle_sha256
+                ):
+                    raise ValueError("scenario replays do not use one identical candidate")
 
                 recording_payload = evidence.read("recording.webm")
                 if (
@@ -378,10 +438,12 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
     events: dict[str, Any] = {
         "schema_version": "1.0.0",
         "status": "passed",
-        "scenario_id": "interactive-game",
-        "target_build": "26.2.4.2",
+        "scenario_id": replay_id,
+        "target_build": LIBREOFFICE_VERSION,
         "target_sha256": target_sha256,
-        "covered_scenarios": list(_PUBLIC_SCENARIOS),
+        "candidate_id": candidate_id,
+        "candidate_bundle_sha256": candidate_bundle_sha256,
+        "covered_scenarios": list(scenario_ids),
         "operations": flattened,
     }
     event_log = replay_dir / "events.json"
@@ -395,9 +457,11 @@ def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
             archive.write(path, f"public/replay/{path.name}")
     return {
         "status": "passed",
-        "target_build": "26.2.4.2",
+        "target_build": LIBREOFFICE_VERSION,
         "target_sha256": target_sha256,
-        "covered_scenarios": list(_PUBLIC_SCENARIOS),
+        "candidate_id": candidate_id,
+        "candidate_bundle_sha256": candidate_bundle_sha256,
+        "covered_scenarios": list(scenario_ids),
         "operation_count": len(flattened),
         "recording_sha256": _sha256_file(recording),
         "event_log_sha256": _sha256_file(event_log),
@@ -425,8 +489,10 @@ def _validate_zip_members(
         if (
             info.is_dir()
             or stat.S_ISLNK(mode)
+            or info.flag_bits & 0x1
             or path.is_absolute()
             or ".." in path.parts
+            or "." in path.parts
             or "\\" in info.filename
             or info.filename != path.as_posix()
             or info.filename in names
@@ -439,24 +505,34 @@ def _validate_zip_members(
             raise ValueError(f"{label} exceeds the uncompressed size limit")
         names.add(info.filename)
     if expected is not None and names != expected:
-        raise ValueError(f"{label} does not contain the exact canonical scenarios")
+        raise ValueError(f"{label} does not contain the exact declared scenarios")
     if required is not None and not required.issubset(names):
         raise ValueError(f"{label} is missing required evidence")
     return names
 
 
-def _validated_scenario_result(result: object, scenario_id: str) -> str:
+def _validated_scenario_result(result: object, scenario_id: str) -> tuple[str, str, str]:
     if not isinstance(result, dict):
         raise ValueError(f"scenario result must be an object: {scenario_id}")
     if (
         result.get("status") != "passed"
         or result.get("scenario_id") != scenario_id
+        or result.get("target_build") != LIBREOFFICE_VERSION
         or result.get("event_layer") != "xvfb-openbox-xdotool"
     ):
         raise ValueError(f"scenario result did not pass the real GUI contract: {scenario_id}")
-    target_sha256 = result.get("source_sha256")
+    target_sha256 = result.get("target_sha256")
     if not isinstance(target_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", target_sha256) is None:
         raise ValueError(f"scenario target identity is invalid: {scenario_id}")
+    candidate_id = result.get("candidate_id")
+    candidate_bundle_sha256 = result.get("candidate_bundle_sha256")
+    if (
+        not isinstance(candidate_id, str)
+        or _SAFE_NAME.fullmatch(candidate_id) is None
+        or not isinstance(candidate_bundle_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", candidate_bundle_sha256) is None
+    ):
+        raise ValueError(f"scenario candidate identity is invalid: {scenario_id}")
     recording = result.get("recording")
     if (
         not isinstance(recording, dict)
@@ -485,7 +561,7 @@ def _validated_scenario_result(result: object, scenario_id: str) -> str:
                 or re.fullmatch(r"[0-9a-f]{64}", operation[key]) is None
             ):
                 raise ValueError(f"scenario state identity is invalid: {scenario_id}")
-    return target_sha256
+    return target_sha256, candidate_id, candidate_bundle_sha256
 
 
 def _concatenate_recordings(recordings: list[Path], output: Path) -> None:
@@ -547,8 +623,8 @@ def _write_showcase_replay_html(output_dir: Path, events: dict[str, Any]) -> Non
   </style>
 </head>
 <body>
-  <h1>Interactive game — five-scenario LibreOffice replay</h1>
-  <p>Real X11 input in LibreOffice <code>26.2.4.2</code>; all events are public and sanitized.</p>
+  <h1>LibreOffice migration replay</h1>
+  <p>Real X11 input in LibreOffice <code>{LIBREOFFICE_VERSION}</code>; all events are public and sanitized.</p>
   <video id="recording" controls preload="metadata" src="showcase.webm"></video>
   <ol id="timeline"></ol>
   <script id="evidence" type="application/json">{payload}</script>
@@ -586,7 +662,7 @@ def _write_replay_html(output_dir: Path, response: dict[str, Any]) -> None:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>XLSLiberator interactive-game replay</title>
+  <title>XLSLiberator migration replay</title>
   <style>
     :root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
     body {{ max-width: 72rem; margin: 0 auto; padding: 2rem; background: #111827; color: #f8fafc; }}
@@ -599,8 +675,8 @@ def _write_replay_html(output_dir: Path, response: dict[str, Any]) -> None:
   </style>
 </head>
 <body>
-  <h1>Interactive game — recorded LibreOffice replay</h1>
-  <p>Real X11 input in LibreOffice <code>26.2.4.2</code>. Select an operation to seek.</p>
+  <h1>Recorded LibreOffice migration replay</h1>
+  <p>Real X11 input in LibreOffice <code>{LIBREOFFICE_VERSION}</code>. Select an operation to seek.</p>
   <video id="recording" controls preload="metadata" src="recording.webm"></video>
   <ol id="timeline"></ol>
   <script id="evidence" type="application/json">{payload}</script>
@@ -647,7 +723,10 @@ def _confined_path(
     label: str,
 ) -> Path:
     root = root.resolve()
-    path = Path(str(raw)).resolve()
+    unresolved = Path(str(raw))
+    if unresolved.is_symlink():
+        raise ValueError(f"{label} cannot be a symlink")
+    path = unresolved.resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"{label} must remain inside {root}")
     if must_exist and not path.is_file():
@@ -659,6 +738,23 @@ def _safe_name(raw: object, label: str) -> str:
     value = str(raw or "")
     if not _SAFE_NAME.fullmatch(value):
         raise ValueError(f"{label} is malformed")
+    return value
+
+
+def _safe_key(raw: object) -> str:
+    """Validate one bounded xdotool key or modifier chord."""
+    value = str(raw or "")
+    parts = value.split("+")
+    if (
+        not 1 <= len(parts) <= 4
+        or len(value) > 64
+        or any(
+            part not in _NAMED_KEYS
+            and re.fullmatch(r"(?:[A-Za-z0-9]|F(?:[1-9]|1[0-2]))", part) is None
+            for part in parts
+        )
+    ):
+        raise ValueError(f"unsupported GUI key: {value}")
     return value
 
 
@@ -683,6 +779,7 @@ def _open_document(session: dict[str, Any], path: Path) -> Any:
 def _open_ready_document(
     session: dict[str, Any],
     path: Path,
+    controller_factory: Any,
     request: dict[str, Any],
 ) -> tuple[Any, Any, str]:
     """Wait for the live Calc view before installing controller-backed controls."""
@@ -691,8 +788,13 @@ def _open_ready_document(
     else:
         document = _open_document(session, path)
     window_id = _wait_for_calc_window()
-    game_controller = _install_game_controller(session, document, request)
-    return document, game_controller, window_id
+    application_controller = _install_application_controller(
+        session,
+        document,
+        controller_factory,
+        request,
+    )
+    return document, application_controller, window_id
 
 
 def _wait_for_startup_document(session: dict[str, Any]) -> Any:
@@ -714,20 +816,19 @@ def _wait_for_startup_document(session: dict[str, Any]) -> Any:
     raise RuntimeError(f"LibreOffice did not expose its startup Calc document{detail}")
 
 
-def _install_game_controller(
+def _install_application_controller(
     session: dict[str, Any],
     document: Any,
+    controller_factory: Any,
     request: dict[str, Any],
 ) -> Any:
-    if request.get("adapter") != "interactive-game":
-        return None
-    from xlsliberator.interactive_game_uno import InteractiveGameController
-
-    controller = InteractiveGameController(
-        session,
-        document,
-        enable_timer=bool(request.get("timer_enabled", True)),
-    )
+    adapter_config = request.get("adapter_config") or {}
+    if not isinstance(adapter_config, dict):
+        raise ValueError("adapter_config must be an object")
+    controller = controller_factory(session, document, dict(adapter_config))
+    for operation in ("install", "dispose", "evidence"):
+        if not callable(getattr(controller, operation, None)):
+            raise RuntimeError(f"candidate controller does not implement {operation}()")
     controller.install()
     _drain_ui(session)
     return controller
@@ -754,16 +855,16 @@ def _wait_for_calc_window() -> str:
 def _click_control(
     session: dict[str, Any],
     document: Any,
-    game_controller: Any,
+    application_controller: Any,
     name: str,
     window_id: str,
 ) -> dict[str, Any]:
-    from xlsliberator.interactive_game_uno import _wait_for_control_view
-
     model = _find_control_model(document, name)
     controller = document.getCurrentController()
     view = _wait_for_control_view(controller, model, name)
-    game_controller.ensure_action_listener(name, view)
+    ensure_listener = getattr(application_controller, "ensure_action_listener", None)
+    if callable(ensure_listener):
+        ensure_listener(name, view)
     control = _control_screen_rectangle(view, name)
     geometry = _window_geometry(window_id)
     x = control["X"] + max(1, control["WIDTH"] // 2)
@@ -775,14 +876,21 @@ def _click_control(
         raise RuntimeError(f"native control is outside the Calc window: {name}")
     _xdotool("windowactivate", "--sync", window_id)
     _xdotool("mousemove", "--sync", str(x), str(y))
-    event_count = len(game_controller.evidence()["events"])
+    events_before = _controller_events(application_controller)
+    event_count = len(events_before) if events_before is not None else 0
     _xdotool("mousedown", "1")
     time.sleep(0.1)
     _xdotool("mouseup", "1")
     deadline = time.monotonic() + 1.5
     while time.monotonic() < deadline:
         _drain_ui(session)
-        events = game_controller.evidence()["events"]
+        events = _controller_events(application_controller)
+        if events is None:
+            return {
+                "control_name": name,
+                "event_surface": "x11-pointer",
+                "screen_rectangle": control,
+            }
         for event in events[event_count:]:
             if event.get("kind") == "control" and event.get("control_name") == name:
                 return {
@@ -818,8 +926,6 @@ def _control_screen_rectangle(view: Any, name: str) -> dict[str, int]:
 
 
 def _find_control_model(document: Any, name: str) -> Any:
-    from xlsliberator.interactive_game_uno import _control_logical_name
-
     sheets = document.getSheets()
     for sheet_index in range(sheets.getCount()):
         forms = sheets.getByIndex(sheet_index).getDrawPage().getForms()
@@ -830,6 +936,53 @@ def _find_control_model(document: Any, name: str) -> Any:
                 if _control_logical_name(control) == name:
                     return control
     raise ValueError(f"control was not found: {name}")
+
+
+def _control_logical_name(model: Any) -> str:
+    tag = str(getattr(model, "Tag", "") or "")
+    return tag or str(getattr(model, "Name", "") or "")
+
+
+def _wait_for_control_view(controller: Any, model: Any, name: str) -> Any:
+    deadline = time.monotonic() + 2.0
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            control = controller.getControl(model)
+            if control is not None:
+                control.setDesignMode(False)
+                control.setEnable(True)
+                control.setVisible(True)
+                if not bool(control.isDesignMode()):
+                    return control
+                last_error = RuntimeError(f"native control remained in design mode: {name}")
+        except Exception as exc:
+            last_error = exc
+        time.sleep(0.05)
+    raise RuntimeError(f"native control view is unavailable: {name}") from last_error
+
+
+def _controller_events(controller: Any) -> list[dict[str, Any]] | None:
+    evidence = controller.evidence()
+    if not isinstance(evidence, dict):
+        raise RuntimeError("candidate controller evidence must be an object")
+    events = evidence.get("events")
+    if events is None:
+        return None
+    if not isinstance(events, list) or not all(isinstance(item, dict) for item in events):
+        raise RuntimeError("candidate controller events must be an array of objects")
+    return events
+
+
+def _prepare_controller_for_save(controller: Any) -> bool:
+    prepare = getattr(controller, "prepare_for_save", None)
+    restore = getattr(controller, "restore_after_save", None)
+    if prepare is None and restore is None:
+        return False
+    if not callable(prepare) or not callable(restore):
+        raise RuntimeError("candidate save hooks must be implemented as a pair")
+    prepare()
+    return True
 
 
 def _window_geometry(window_id: str) -> dict[str, int]:
@@ -895,11 +1048,15 @@ def _document_state_hash(document: Any, action: dict[str, Any]) -> str:
         return hashlib.sha256(b"closed").hexdigest()
     observations = action.get("state_cells")
     if not isinstance(observations, list):
-        observations = [
-            {"sheet": "_XLSLIBERATOR_STATE", "address": "A2"},
-            {"sheet": "game", "address": "B2"},
-            {"sheet": "game", "address": "B3"},
-        ]
+        sheets = document.getSheets()
+        payload = {
+            "sheet_names": list(sheets.getElementNames()),
+            "active_sheet": str(document.getCurrentController().getActiveSheet().Name),
+            "modified": bool(document.isModified()),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
     values: list[dict[str, Any]] = []
     for observation in observations[:20]:
         if not isinstance(observation, dict):

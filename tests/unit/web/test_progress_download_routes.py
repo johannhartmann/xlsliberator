@@ -204,7 +204,7 @@ def test_completed_showcase_replays_real_job_artifacts(tmp_path: Path) -> None:
     response = client.get(f"/jobs/{job_id}/showcase")
 
     assert response.status_code == 200
-    assert "Interactive game · keyboard-control" in response.text
+    assert "Application replay · keyboard-control" in response.text
     assert f"/jobs/{job_id}/artifacts/{'a' * 24}" in response.text
     assert "operation.duration_ms" in response.text
     assert client.get(f"/api/jobs/{job_id}").json()["downloads"]["showcase_replay"] == (

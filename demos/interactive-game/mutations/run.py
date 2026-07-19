@@ -89,9 +89,9 @@ def _apply_mutation(source: str, mutation: MutationSpec) -> str:
 def run_campaign(repository_root: Path, output_dir: Path) -> dict[str, object]:
     """Run every mutant against an isolated copy of the public engine tests."""
     root = repository_root.resolve()
-    engine = root / "src/xlsliberator/interactive_game_engine.py"
+    package = root / "demos/interactive-game/candidate/candidate_interactive_game"
+    engine = package / "engine.py"
     validator = root / "tests/unit/test_interactive_game_engine.py"
-    package = root / "src/xlsliberator"
     if not engine.is_file() or not validator.is_file() or not package.is_dir():
         raise FileNotFoundError("interactive-game mutation inputs are incomplete")
 
@@ -104,7 +104,7 @@ def run_campaign(repository_root: Path, output_dir: Path) -> dict[str, object]:
 
     for mutation in MUTATIONS:
         case_root = output / "work" / mutation.mutation_id
-        mutant_package = case_root / "src/xlsliberator"
+        mutant_package = case_root / "candidate/candidate_interactive_game"
         tests_dir = case_root / "tests"
         shutil.copytree(package, mutant_package)
         tests_dir.mkdir(parents=True)
@@ -125,7 +125,9 @@ def run_campaign(repository_root: Path, output_dir: Path) -> dict[str, object]:
             f"tests/{validator.name}",
         ]
         environment = dict(os.environ)
-        environment["PYTHONPATH"] = str(case_root / "src")
+        environment["XLSLIBERATOR_INTERACTIVE_CANDIDATE_ROOT"] = str(
+            case_root / "candidate"
+        )
         completed = subprocess.run(
             command,
             cwd=case_root,
