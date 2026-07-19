@@ -150,10 +150,7 @@ def test_injection_preserves_package_and_adds_styled_native_model(tmp_path: Path
         == "true"
     )
     assert target_url is not None
-    assert (
-        target_url.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"]
-        == ""
-    )
+    assert target_url.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == ""
     assert root.find(".//table:shapes/draw:control", namespaces) is shape
     assert default_control is not None
     assert (
