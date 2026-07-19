@@ -12,9 +12,11 @@ RUN apt-get update \
 
 COPY docker/office/gui/runtime-entrypoint /usr/local/bin/gui-runtime-entrypoint
 
-RUN chmod 0555 /usr/local/bin/gui-runtime-entrypoint
+RUN chmod 0555 /usr/local/bin/gui-runtime-entrypoint \
+    && command -v dbus-run-session >/dev/null
 
 ENV DISPLAY=:99 \
+    SAL_LOG=+WARN \
     SAL_USE_VCLPLUGIN=gen \
     XLSLIBERATOR_UI_EVENT_CONTAINER=1 \
     XLSLIBERATOR_WORKER_WRAPPER=/usr/local/bin/gui-runtime-entrypoint

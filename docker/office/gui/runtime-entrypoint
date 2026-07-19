@@ -3,8 +3,15 @@ set -eu
 
 display="${DISPLAY:-:99}"
 screen="${XLSLIBERATOR_XVFB_SCREEN:-1280x1024x24}"
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp/xlsliberator-runtime}"
+export XLSLIBERATOR_XVFB_LOG=/tmp/xvfb.log
+export XLSLIBERATOR_OPENBOX_LOG=/tmp/openbox.log
+export XDG_RUNTIME_DIR="$runtime_dir"
 
-Xvfb "$display" -screen 0 "$screen" -nolisten tcp -noreset &
+mkdir -p "$runtime_dir"
+chmod 0700 "$runtime_dir"
+
+Xvfb "$display" -screen 0 "$screen" -nolisten tcp -noreset >"$XLSLIBERATOR_XVFB_LOG" 2>&1 &
 xvfb_pid=$!
 
 cleanup() {
@@ -30,7 +37,7 @@ if [ "$ready" -ne 1 ]; then
   exit 70
 fi
 
-openbox --display "$display" >/tmp/openbox.log 2>&1 &
+openbox --display "$display" >"$XLSLIBERATOR_OPENBOX_LOG" 2>&1 &
 openbox_pid=$!
 
-/usr/local/bin/runtime-entrypoint "$@"
+dbus-run-session -- /usr/local/bin/runtime-entrypoint "$@"

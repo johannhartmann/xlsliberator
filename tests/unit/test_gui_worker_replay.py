@@ -1,10 +1,16 @@
 """Office-free checks for the portable GUI replay artifact."""
 
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from xlsliberator.gui_worker import _confined_path, _write_replay_html
+from xlsliberator.gui_worker import (
+    _confined_path,
+    _raise_with_office_diagnostics,
+    _write_replay_html,
+)
 
 
 def test_replay_html_embeds_timeline_without_interpreting_result_markup(tmp_path: Path) -> None:
@@ -61,4 +67,30 @@ def test_gui_worker_separates_read_only_inputs_from_job_outputs(tmp_path: Path) 
             root=job_root,
             must_exist=True,
             label="output",
+        )
+
+
+def test_gui_failure_preserves_bounded_desktop_diagnostics(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    xvfb_log = tmp_path / "xvfb.log"
+    openbox_log = tmp_path / "openbox.log"
+    xvfb_log.write_text("x" * 3_000, encoding="utf-8")
+    openbox_log.write_text("openbox-ready", encoding="utf-8")
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setenv("XLSLIBERATOR_XVFB_LOG", str(xvfb_log))
+    monkeypatch.setenv("XLSLIBERATOR_OPENBOX_LOG", str(openbox_log))
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker.subprocess.run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "display-ready", ""),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"(?s)bridge disposed.*xvfb_log=x+.*openbox_log=openbox-ready"
+        r".*x11_probe_exit_code=0.*display-ready",
+    ):
+        _raise_with_office_diagnostics(
+            RuntimeError("bridge disposed"),
+            {"office_exit_code": 255, "office_log": "office-abort"},
         )

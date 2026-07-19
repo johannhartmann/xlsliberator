@@ -776,8 +776,35 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     """Preserve bounded office-process evidence when the UNO bridge disappears."""
     exit_code = session.get("office_exit_code")
     office_log = str(session.get("office_log") or "").strip()
-    detail = office_log[-4_000:] if office_log else "<empty>"
-    raise RuntimeError(f"{exc}; office_exit_code={exit_code!r}; office_log={detail}") from exc
+    details = [
+        f"office_exit_code={exit_code!r}",
+        f"office_log={office_log[-4_000:] if office_log else '<empty>'}",
+    ]
+    for label, variable in (
+        ("xvfb_log", "XLSLIBERATOR_XVFB_LOG"),
+        ("openbox_log", "XLSLIBERATOR_OPENBOX_LOG"),
+    ):
+        path = Path(os.environ.get(variable, ""))
+        if path.is_file():
+            text = path.read_text(errors="replace").strip()
+            details.append(f"{label}={text[-2_000:] if text else '<empty>'}")
+    display = str(os.environ.get("DISPLAY") or "")
+    try:
+        probe = subprocess.run(
+            ["xdpyinfo", "-display", display],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        probe_text = (probe.stderr or probe.stdout).strip()
+        details.append(
+            f"x11_probe_exit_code={probe.returncode}; "
+            f"x11_probe={probe_text[-1_000:] if probe_text else '<empty>'}"
+        )
+    except (OSError, subprocess.SubprocessError) as probe_error:
+        details.append(f"x11_probe_error={probe_error}")
+    raise RuntimeError(f"{exc}; {'; '.join(details)}") from exc
 
 
 def _xdotool(*arguments: str) -> None:
