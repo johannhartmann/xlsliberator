@@ -182,6 +182,17 @@ def test_office_image_registers_its_non_root_runtime_identity() -> None:
     assert "USER 10001:10001" in dockerfile
 
 
+def test_application_image_registers_the_shared_non_root_service_identity() -> None:
+    root = Path(__file__).parents[2]
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "groupadd --gid 10001 appuser" in dockerfile
+    assert "--uid 10001" in dockerfile
+    assert "--gid 10001" in dockerfile
+    assert "--shell /usr/sbin/nologin" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+
+
 def test_gui_entrypoint_starts_openbox_on_the_private_display() -> None:
     root = Path(__file__).parents[2]
     entrypoint = (root / "docker/office/gui/runtime-entrypoint").read_text(encoding="utf-8")
