@@ -10,7 +10,9 @@ from zipfile import ZipFile
 
 import pytest
 
+from xlsliberator.docker_runtime import LibreOfficeDockerRuntime
 from xlsliberator.interactive_game_showcase import (
+    GUI_IMAGE,
     build_target,
     bundle_gui_replays,
     run_gui_scenario,
@@ -29,11 +31,58 @@ def _scenario(name: str) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _evidence_root(tmp_path: Path) -> Path:
+    configured = os.environ.get("XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR")
+    root = Path(configured) if configured else tmp_path
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def test_minimal_calc_document_opens_in_real_gui_runtime(tmp_path: Path) -> None:
+    """Prove the pinned GUI runtime can expose and inspect a basic Calc view."""
+    source = Path("tests/fixtures/scenarios/basic.ods")
+    evidence = _evidence_root(tmp_path) / "minimal-calc.zip"
+    runtime = LibreOfficeDockerRuntime(image=GUI_IMAGE, timeout_seconds=180)
+
+    response = runtime.request(
+        {
+            "op": "run_gui_scenario",
+            "ods_path": str(source),
+            "output_path": str(evidence),
+            "scenario_id": "minimal-calc",
+            "actions": [
+                {
+                    "kind": "observe",
+                    "sheet": "Sheet1",
+                    "address": "A1",
+                    "expect_value": 2,
+                    "state_cells": [{"sheet": "Sheet1", "address": "A1"}],
+                }
+            ],
+            "timer_enabled": False,
+            "timeout_seconds": 180,
+        }
+    )
+
+    assert response.get("success"), response
+    result = response["data"]
+    assert result["status"] == "passed"
+    assert result["scenario_id"] == "minimal-calc"
+    assert result["controller_sessions"] == []
+    assert result["operations"][0]["result"]["value"] == 2
+    assert evidence.is_file()
+    with ZipFile(evidence) as archive:
+        assert {
+            "recording.webm",
+            "replay.html",
+            "result.json",
+            "working-copy.ods",
+        } <= set(archive.namelist())
+
+
 def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path) -> None:
     source = Path("demos/interactive-game/source/TetrisGameDemo.xlsb")
-    configured = os.environ.get("XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR")
-    evidence_root = Path(configured) if configured else tmp_path
-    evidence_root.mkdir(parents=True, exist_ok=True)
+    evidence_root = _evidence_root(tmp_path)
     target = evidence_root / "interactive-game.ods"
     source_before = _sha256(source)
 
