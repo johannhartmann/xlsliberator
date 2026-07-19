@@ -12,13 +12,12 @@ and persisted by LibreOffice before it is accepted.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from io import BytesIO
-from pathlib import Path
-
 # Used only for element construction, namespace registration, and serialization.
 # ODS input is parsed exclusively with defusedxml below.
 import xml.etree.ElementTree as ElementTree  # nosec B405
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 from defusedxml.ElementTree import fromstring as safe_fromstring
