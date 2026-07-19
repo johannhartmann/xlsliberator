@@ -529,8 +529,11 @@ class LibreOfficeDockerRuntime:
 
     @staticmethod
     def _parse_response(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
+        stdout = result.stdout.strip()
+        lines = stdout.splitlines()
+        candidate = lines[-1] if lines else ""
         try:
-            response = json.loads(result.stdout.strip())
+            response = json.loads(candidate)
         except json.JSONDecodeError as exc:
             failure = (
                 f"exit {result.returncode}: {result.stderr.strip()}" if result.returncode else ""
@@ -540,6 +543,11 @@ class LibreOfficeDockerRuntime:
             ) from exc
         if not isinstance(response, dict):
             raise MalformedWorkerResponse("Docker worker response is not an object")
+        prefix = "\n".join(lines[:-1]).strip()
+        if prefix:
+            data = dict(response.get("data") or {})
+            data.setdefault("container_stdout_prefix", prefix[-16000:])
+            response["data"] = data
         return response
 
 

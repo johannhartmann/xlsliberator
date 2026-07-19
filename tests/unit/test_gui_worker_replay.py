@@ -10,6 +10,7 @@ from xlsliberator.gui_worker import (
     _confined_path,
     _open_ready_document,
     _raise_with_office_diagnostics,
+    _wait_for_startup_document,
     _write_replay_html,
 )
 
@@ -102,6 +103,53 @@ def test_gui_document_waits_for_visible_calc_window_before_installing_controls(
 
     assert result == (document, "controller", "42")
     assert calls == ["open", "window", "controls"]
+
+
+def test_gui_document_uses_native_startup_component_before_remote_reopen(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    calls: list[str] = []
+    document = object()
+    session: dict[str, Any] = {"startup_document_pending": True}
+
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._wait_for_startup_document",
+        lambda _session: calls.append("startup") or document,
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._open_document",
+        lambda _session, _path: pytest.fail("startup document must not be opened twice"),
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._wait_for_calc_window",
+        lambda: calls.append("window") or "42",
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._install_game_controller",
+        lambda _session, _document, _request: calls.append("controls") or "controller",
+    )
+
+    result = _open_ready_document(session, tmp_path / "target.ods", {})
+
+    assert result == (document, "controller", "42")
+    assert session == {}
+    assert calls == ["startup", "window", "controls"]
+
+
+def test_startup_document_waits_for_calc_service(monkeypatch: Any) -> None:
+    class Document:
+        def supportsService(self, name: str) -> bool:  # noqa: N802
+            return name == "com.sun.star.sheet.SpreadsheetDocument"
+
+    class Desktop:
+        def getCurrentComponent(self) -> Document:  # noqa: N802
+            return Document()
+
+    monkeypatch.setattr("xlsliberator.gui_worker._drain_ui", lambda _session: None)
+
+    document = _wait_for_startup_document({"desktop": Desktop()})
+
+    assert document.supportsService("com.sun.star.sheet.SpreadsheetDocument")
 
 
 def test_gui_failure_preserves_bounded_desktop_diagnostics(

@@ -1839,6 +1839,17 @@ class _OfficeSession:
         display = str(self.request.get("session_display") or "")
         if display and not re.fullmatch(r":\d{1,5}", display):
             raise ValueError("session display identifier is malformed")
+        startup_document: Path | None = None
+        startup_document_raw = str(self.request.get("startup_document_path") or "")
+        if startup_document_raw:
+            if not self.use_gui:
+                raise ValueError("startup documents are supported only for GUI office sessions")
+            startup_document = Path(startup_document_raw)
+            if startup_document.is_symlink():
+                raise ValueError("GUI startup document cannot be a symlink")
+            startup_document = startup_document.resolve(strict=True)
+            if not startup_document.is_file() or not startup_document.is_relative_to(Path("/job")):
+                raise ValueError("GUI startup document must be a regular file beneath /job")
         pipe_name = f"xlsliberator_{profile_identifier}"
         self.tmpdir = tempfile.TemporaryDirectory(prefix="xlsliberator-lo-worker-")
         profile_dir = Path(self.tmpdir.name) / profile_identifier
@@ -1863,6 +1874,8 @@ class _OfficeSession:
             uno_url = f"uno:socket,host=127.0.0.1,port={port};urp;StarOffice.ComponentContext"
         if not self.use_gui:
             cmd.insert(1, "--headless")
+        elif startup_document is not None:
+            cmd.extend(("--calc", uno.systemPathToFileUrl(str(startup_document))))
 
         env = dict(os.environ)
         if self.use_gui:
@@ -1907,6 +1920,7 @@ class _OfficeSession:
             "display": display or None,
             "office_executable": executable,
             "office_pid": self.process.pid,
+            "startup_document_pending": startup_document is not None,
         }
         return self.data
 

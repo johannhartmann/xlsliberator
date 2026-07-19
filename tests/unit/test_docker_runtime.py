@@ -445,3 +445,18 @@ def test_malformed_worker_response_retains_protocol_failure_type() -> None:
 
     with pytest.raises(MalformedWorkerResponse, match="malformed JSON"):
         LibreOfficeDockerRuntime._parse_response(result)  # noqa: SLF001
+
+
+def test_worker_response_retains_bounded_desktop_service_prefix() -> None:
+    response = {"success": False, "op": "run_gui_scenario", "data": {}, "error": {}}
+    result = subprocess.CompletedProcess(
+        ["docker", "run"],
+        1,
+        stdout=f"SpiRegistry daemon ready\n{json.dumps(response)}\n",
+        stderr="",
+    )
+
+    parsed = LibreOfficeDockerRuntime._parse_response(result)  # noqa: SLF001
+
+    assert parsed["success"] is False
+    assert parsed["data"]["container_stdout_prefix"] == "SpiRegistry daemon ready"

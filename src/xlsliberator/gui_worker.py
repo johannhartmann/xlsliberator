@@ -88,6 +88,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
         {
             **request,
             "session_display": display,
+            "startup_document_path": str(working_copy),
         },
         use_gui=True,
     )
@@ -634,10 +635,32 @@ def _open_ready_document(
     request: dict[str, Any],
 ) -> tuple[Any, Any, str]:
     """Wait for the live Calc view before installing controller-backed controls."""
-    document = _open_document(session, path)
+    if session.pop("startup_document_pending", False):
+        document = _wait_for_startup_document(session)
+    else:
+        document = _open_document(session, path)
     window_id = _wait_for_calc_window()
     game_controller = _install_game_controller(session, document, request)
     return document, game_controller, window_id
+
+
+def _wait_for_startup_document(session: dict[str, Any]) -> Any:
+    """Wait for the document opened by LibreOffice's native GUI startup path."""
+    deadline = time.monotonic() + 20
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            document = session["desktop"].getCurrentComponent()
+            if document is not None and document.supportsService(
+                "com.sun.star.sheet.SpreadsheetDocument"
+            ):
+                _drain_ui(session)
+                return document
+        except Exception as exc:
+            last_error = exc
+        time.sleep(0.1)
+    detail = f": {last_error}" if last_error is not None else ""
+    raise RuntimeError(f"LibreOffice did not expose its startup Calc document{detail}")
 
 
 def _install_game_controller(
