@@ -198,8 +198,25 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 _qname("form", "command-type"): "table",
                 _qname("form", "control-implementation"): ("ooo:com.sun.star.form.component.Form"),
                 _qname("office", "target-frame"): "",
-                _qname("xlink", "href"): "",
-                _qname("xlink", "type"): "simple",
+            },
+        )
+        form_properties = ElementTree.SubElement(form, _qname("form", "properties"))
+        ElementTree.SubElement(
+            form_properties,
+            _qname("form", "property"),
+            {
+                _qname("form", "property-name"): "PropertyChangeNotificationEnabled",
+                _qname("office", "value-type"): "boolean",
+                _qname("office", "boolean-value"): "true",
+            },
+        )
+        ElementTree.SubElement(
+            form_properties,
+            _qname("form", "property"),
+            {
+                _qname("form", "property-name"): "TargetURL",
+                _qname("office", "value-type"): "string",
+                _qname("office", "string-value"): "",
             },
         )
         shapes = table.find("./table:shapes", _NAMESPACES)
@@ -390,9 +407,17 @@ def _forms_xml(controls: list[tuple[NativeButton, str]]) -> str:
       form:apply-filter="true"
       form:command-type="table"
       form:control-implementation="ooo:com.sun.star.form.component.Form"
-      office:target-frame=""
-      xlink:href=""
-      xlink:type="simple">
+      office:target-frame="">
+      <form:properties>
+       <form:property
+        form:property-name="PropertyChangeNotificationEnabled"
+        office:value-type="boolean"
+        office:boolean-value="true"/>
+       <form:property
+        form:property-name="TargetURL"
+        office:value-type="string"
+        office:string-value=""/>
+      </form:properties>
 {buttons}     </form:form>
     </office:forms>
 """

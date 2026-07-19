@@ -68,6 +68,9 @@ def test_seed_uses_native_sheet_forms_and_table_shapes(tmp_path: Path) -> None:
     assert 'form:name="Certification &quot;Button&quot;"' in serialized
     assert 'form:command-type="table"' in serialized
     assert 'form:apply-filter="true"' in serialized
+    assert 'form:property-name="PropertyChangeNotificationEnabled"' in serialized
+    assert 'office:boolean-value="true"' in serialized
+    assert 'form:property-name="TargetURL"' in serialized
     assert "com.sun.star.form.control.CommandButton" in serialized
     assert "<table:shapes>" in serialized
     assert root.find(".//table:shapes/draw:control", namespaces) is not None
@@ -124,8 +127,33 @@ def test_injection_preserves_package_and_adds_styled_native_model(tmp_path: Path
         ".//form:property[@form:property-name='DefaultControl']",
         namespaces,
     )
+    form = root.find(".//form:form", namespaces)
+    notification_enabled = root.find(
+        ".//form:form/form:properties/"
+        "form:property[@form:property-name='PropertyChangeNotificationEnabled']",
+        namespaces,
+    )
+    target_url = root.find(
+        ".//form:form/form:properties/form:property[@form:property-name='TargetURL']",
+        namespaces,
+    )
     assert button is not None
     assert shape is not None
+    assert form is not None
+    assert "{http://www.w3.org/1999/xlink}href" not in form.attrib
+    assert "{http://www.w3.org/1999/xlink}type" not in form.attrib
+    assert notification_enabled is not None
+    assert (
+        notification_enabled.attrib[
+            "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}boolean-value"
+        ]
+        == "true"
+    )
+    assert target_url is not None
+    assert (
+        target_url.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"]
+        == ""
+    )
     assert root.find(".//table:shapes/draw:control", namespaces) is shape
     assert default_control is not None
     assert (
