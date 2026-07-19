@@ -274,6 +274,32 @@ def _convert_document(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _store_ods_roundtrip_copy(
+    session: dict[str, Any],
+    document: Any,
+    destination: Path,
+) -> Path:
+    """Export an imported document to a fresh ODS before replacing its source."""
+    roundtrip = destination.with_name(
+        f".{destination.stem}.xlsliberator-roundtrip{destination.suffix}"
+    )
+    roundtrip.unlink(missing_ok=True)
+    try:
+        document.storeToURL(
+            session["uno"].systemPathToFileUrl(str(roundtrip)),
+            (
+                _property_value("FilterName", "calc8"),
+                _property_value("Overwrite", True),
+            ),
+        )
+        if not roundtrip.is_file():
+            raise RuntimeError("LibreOffice returned without producing the ODS round-trip copy")
+        return roundtrip
+    except Exception:
+        roundtrip.unlink(missing_ok=True)
+        raise
+
+
 def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
     """Round-trip a real native Calc control through the pinned office."""
     from xlsliberator.native_control_fods import (
@@ -337,13 +363,17 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             )
             if document is None:
                 raise RuntimeError("LibreOffice could not import the native controls fixture")
+            roundtrip = None
             try:
                 forms = document.getSheets().getByIndex(0).getDrawPage().getForms()
                 if forms.getCount() != 1 or forms.getByIndex(0).getCount() != 1:
                     raise RuntimeError("LibreOffice did not materialize the native button model")
-                document.store()
+                roundtrip = _store_ods_roundtrip_copy(session, document, output_path)
             finally:
                 _close_document(document, save=False)
+            if roundtrip is None:
+                raise RuntimeError("LibreOffice did not create the controls fixture round-trip")
+            roundtrip.replace(output_path)
     except Exception:
         output_path.unlink(missing_ok=True)
         raise

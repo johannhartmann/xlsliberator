@@ -90,6 +90,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         _office_session,
         _property_value,
         _sha256_file,
+        _store_ods_roundtrip_copy,
     )
 
     source = Path(str(request["input_path"])).resolve()
@@ -128,7 +129,13 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
             finally:
                 _close_document(document, save=False)
             inject_native_buttons(output, native_sheets)
-            _round_trip_native_target(session, output, _property_value, _close_document)
+            _round_trip_native_target(
+                session,
+                output,
+                _property_value,
+                _close_document,
+                _store_ods_roundtrip_copy,
+            )
     except Exception:
         output.unlink(missing_ok=True)
         raise
@@ -167,6 +174,7 @@ def _round_trip_native_target(
     output: Path,
     property_value: Any,
     close_document: Any,
+    store_roundtrip_copy: Any,
 ) -> None:
     output_url = session["uno"].systemPathToFileUrl(str(output))
     document = session["desktop"].loadComponentFromURL(
@@ -177,12 +185,16 @@ def _round_trip_native_target(
     )
     if document is None:
         raise RuntimeError("LibreOffice did not import the native-control target")
+    roundtrip = None
     try:
         for control_name in CONTROL_NAMES:
             _find_control_model(document, control_name)
-        document.store()
+        roundtrip = store_roundtrip_copy(session, document, output)
     finally:
         close_document(document, save=False)
+    if roundtrip is None:
+        raise RuntimeError("LibreOffice did not create the native-control round-trip")
+    roundtrip.replace(output)
 
     reopened = session["desktop"].loadComponentFromURL(
         output_url,
