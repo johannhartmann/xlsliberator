@@ -20,8 +20,8 @@ auditable implementation ledger is
 - Open-SWE is the only agent and orchestrator.
 - Pinned upstream Open-SWE and the XLSLiberator graph/API are built into the
   repository's `xlsliberator-open-swe` service.
-- There is no embedded legacy agent, second repository, or repository-owned
-  deterministic migration orchestrator.
+- There is no embedded legacy agent, second repository, or other migration
+  orchestrator.
 
 ## Evidence policy
 

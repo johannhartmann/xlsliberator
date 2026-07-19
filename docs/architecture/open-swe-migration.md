@@ -6,14 +6,14 @@ Date: 2026-07-19
 ## Decision
 
 Open-SWE is XLSLiberator's only agent and only agentic orchestrator.
-XLSLiberator remains a deterministic, provider-neutral toolbelt.
+XLSLiberator provides the provider-neutral workbook, package, LibreOffice, and
+evidence capabilities used by that agent.
 
 There is no second XLSLiberator repository, no maintained Open-SWE fork, no
-repository-owned deterministic migration orchestrator, and no alternate or
-legacy model agent. The only embedded agent surface is the XLSLiberator graph
-loaded on pinned upstream Open-SWE. Deterministic tool sequencing inside a
-command or validation gate is ordinary application logic, not an alternative
-agent.
+other migration orchestrator, and no alternate or legacy model agent. The only
+embedded agent surface is the XLSLiberator graph loaded on pinned upstream
+Open-SWE. Supporting commands and validation gates are implementation
+capabilities, not an alternative workflow.
 
 ## Runtime boundary
 
@@ -40,7 +40,7 @@ The internal `xlsliberator-open-swe` service owns:
 XLSLiberator owns:
 
 - bounded workbook inspection and raw VBA extraction;
-- deterministic ODS package operations;
+- transactional ODS package operations;
 - the pinned LibreOffice `26.2.4.2` Docker target;
 - explicit acceptance scenarios and evidence;
 - fail-closed certification gates.
@@ -62,7 +62,7 @@ no Docker socket.
 
 ## Provider and cost policy
 
-No deterministic XLSLiberator operation reads a model credential. Open-SWE
+Model-free XLSLiberator operations do not read a model credential. Open-SWE
 provider use must be explicitly configured by the operator. GitHub Models is
 not an automatic fallback, cannot be a release or execution gate, and must not
 be invoked merely because GitHub authentication exists.

@@ -2,18 +2,19 @@
 
 Last updated: 2026-07-19.
 
-This ledger records the currently supported architecture. Evidence from the
-retired separate-fork and deterministic-orchestrator experiments is historical
-only and is not a product dependency or proof of the current deployment.
+This ledger records the currently supported architecture. Evidence from retired
+architecture experiments is historical only and is not a product dependency or
+proof of the current deployment.
 
 ## Accepted architecture
 
 - Open-SWE is the only agent and only agentic orchestrator.
-- XLSLiberator is a deterministic, provider-neutral toolbelt.
+- XLSLiberator's workbook, package, LibreOffice, and evidence capabilities are
+  tools used by Open-SWE.
 - There is one XLSLiberator repository.
 - There is no maintained Open-SWE fork.
 - There is no embedded `legacy_agent` package.
-- There is no repository-owned deterministic migration orchestrator.
+- There is no other migration orchestrator.
 - The web service delegates exclusively to Open-SWE and has no local conversion
   fallback.
 - Docker is the only supported application, test, and runtime platform.
@@ -24,7 +25,7 @@ only and is not a product dependency or proof of the current deployment.
 
 | Surface | Current state |
 |---|---|
-| Deterministic primitives | workbook inspection, native conversion, VBA extraction, ODS upsert, target lifecycle, and evidence gates |
+| Agent capabilities | workbook inspection, native conversion, VBA extraction, ODS upsert, target lifecycle, and evidence gates |
 | LibreOffice boundary | pinned Docker image and disposable runtime profiles |
 | Open-SWE runtime | archive-hash-verified upstream commit built into `xlsliberator-open-swe` |
 | Agent graph | thread-confined Deep Agents graph with forensics, target-native migration, and independent-review specialists |
@@ -32,7 +33,7 @@ only and is not a product dependency or proof of the current deployment.
 | Web client | authenticated owner-scoped Open-SWE migration client |
 | Web safety | bounded uploads, sanitized public state, safe artifact names, cleanup, no Docker socket |
 | Failure behavior | absent/unreachable Open-SWE or missing model fails closed; no local conversion |
-| Architecture guards | tests reject legacy/alternate agents, a deterministic orchestrator, old env names, and local web fallback |
+| Architecture guards | tests reject legacy/alternate agents, another orchestrator, old env names, and local web fallback |
 | Provider dependency | no model/provider SDK in package dependencies |
 
 ## Remaining acceptance work
@@ -59,5 +60,5 @@ arbitrary workbook migrations are behaviorally complete.
 ## Provider and cost rule
 
 Provider use is an explicit Open-SWE operator decision. GitHub Models is not an
-automatic default or fallback, cannot gate deterministic execution, and must
+automatic default or fallback, cannot gate model-free execution, and must
 not be invoked solely because GitHub credentials or paid usage are available.

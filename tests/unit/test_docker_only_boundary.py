@@ -158,9 +158,7 @@ def test_only_mcp_is_a_trusted_docker_execution_gateway() -> None:
     open_swe_service = compose.split("  xlsliberator-open-swe:\n", 1)[1].split(
         "\n  xlsliberator-web:", 1
     )[0]
-    web_service = compose.split("  xlsliberator-web:\n", 1)[1].split(
-        "\n  xlsliberator-mcp:", 1
-    )[0]
+    web_service = compose.split("  xlsliberator-web:\n", 1)[1].split("\n  xlsliberator-mcp:", 1)[0]
     mcp_service = compose.split("  xlsliberator-mcp:\n", 1)[1].split("\nvolumes:", 1)[0]
     runtime_service = compose.split("  libreoffice-runtime:\n", 1)[1].split(
         "\n  office-source-fetch:", 1

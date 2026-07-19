@@ -5,7 +5,7 @@ object-model emulator, repair agent, or alternative orchestrator. Open-SWE is
 the only supported agent and orchestrator.
 
 Open-SWE reads the extracted VBA and workbook dossier, generates target-native
-Python/UNO modules, and submits those artifacts to deterministic XLSLiberator
+Python/UNO modules, and submits those artifacts to transactional XLSLiberator
 primitives. XLSLiberator embeds the supplied modules, runs them in the pinned
 LibreOffice `26.2.4.2` Docker runtime, and emits explicit evidence. It never
 loads a model or decides which provider Open-SWE should use.

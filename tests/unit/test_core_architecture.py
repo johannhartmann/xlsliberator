@@ -88,9 +88,12 @@ def test_open_swe_image_uses_verified_upstream_source_and_lockfile() -> None:
     assert "uv sync --frozen --no-dev" in dockerfile
     assert "LANGGRAPH_CLI_NO_ANALYTICS=1" in dockerfile
     assert "LANGGRAPH_NO_VERSION_CHECK=1" in dockerfile
-    assert "/var/run/docker.sock" not in compose.split(
-        "  xlsliberator-open-swe:\n", 1
-    )[1].split("\n  xlsliberator-web:", 1)[0]
+    assert (
+        "/var/run/docker.sock"
+        not in compose.split("  xlsliberator-open-swe:\n", 1)[1].split("\n  xlsliberator-web:", 1)[
+            0
+        ]
+    )
 
 
 def test_prohibited_excel_runtime_and_oracle_modules_are_absent() -> None:

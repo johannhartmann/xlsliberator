@@ -107,9 +107,7 @@ def test_nested_gateway_translates_only_runtime_temp_paths(
     assert "/var/run/docker.sock" not in " ".join(command)
 
 
-def test_nested_gateway_rejects_path_outside_runtime_root(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_nested_gateway_rejects_path_outside_runtime_root(tmp_path: Path, monkeypatch: Any) -> None:
     runtime_root = tmp_path / "runtime"
     runtime_root.mkdir()
     outside = tmp_path / "outside"

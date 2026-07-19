@@ -5,13 +5,21 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-**Open-SWE-orchestrated Excel-to-LibreOffice migration**
+**An Open-SWE agent for Excel-to-LibreOffice migration**
 
-XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files. Formula, VBA, control, and runtime support varies by artifact and must be read from the [evidence-backed capability matrix](docs/capability_matrix.md).
+XLSLiberator uses an embedded Open-SWE workflow to migrate Excel files
+(`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files. Open-SWE
+inspects the workbook, plans and performs the migration, exercises the result in
+the pinned LibreOffice Docker target, reviews the evidence, and produces the
+deliverables. Formula, VBA, control, and runtime support varies by workbook and
+must be read from the
+[evidence-backed capability matrix](docs/capability_matrix.md).
 
 ## Features
 
-- **Formula Translation**: Deterministic AST-based formula transformation for Excel→Calc compatibility
+- **Open-SWE Migration Agent**: Owns the migration thread, tool use, repairs,
+  validation, review, and delivery
+- **Formula Translation**: AST-based formula repair tools for Excel→Calc compatibility
 - **Raw VBA Extraction**: Preserves complete source modules for the embedded Open-SWE workflow
 - **Target-native Script Upsert**: Transactionally embeds caller-supplied Python/UNO modules
 - **Translation Evidence**: Records syntax, export, provenance, runtime, and
@@ -33,14 +41,16 @@ XLSLiberator experimentally converts Excel files (`.xlsx`, `.xlsm`, `.xlsb`, `.x
 host office installation is neither required nor supported, including for
 diagnostics.
 
-No model-provider credential is read by deterministic commands. Open-SWE is the
-only supported agent and orchestrator. This repository builds a pinned upstream
-Open-SWE runtime plus its XLSLiberator graph and authenticated workbook API as
-the internal `xlsliberator-open-swe` Compose service. There is no second
-repository, maintained fork, alternate agent, deterministic migration
-orchestrator, or local web fallback. A model and its matching credential must be
-selected explicitly; GitHub Models is disabled by default and never acts as a
-fallback or gate.
+Open-SWE is the only supported agent and orchestrator. This repository builds a
+pinned upstream Open-SWE runtime plus its XLSLiberator graph and authenticated
+workbook API as the internal `xlsliberator-open-swe` Compose service. There is
+no second repository, maintained fork, alternate agent, competing migration
+orchestrator, or local web fallback. The inspection, package-editing, and
+LibreOffice interfaces are tools used by Open-SWE, not a second workflow.
+
+A model and its matching credential must be selected explicitly. GitHub Models
+is disabled by default and never acts as a fallback or gate. Model-free
+inspection and validation tools do not read provider credentials.
 
 ## Installation
 
@@ -54,14 +64,33 @@ docker compose build test libreoffice-runtime xlsliberator-open-swe xlsliberator
 
 ## Quick Start
 
-### Command Line
+### Open-SWE web workflow
 
 ```bash
-# Basic conversion from the Docker test runner
+mkdir -p artifacts/runtime-tmp
+cp .env.example .env
+# Select one supported model and set only its matching provider key in .env.
+# Example: XLSLIBERATOR_OPEN_SWE_MODEL=openai:gpt-5.5
+docker compose up -d --build xlsliberator-web
+```
+
+Open `http://127.0.0.1:8080/`, choose an example workbook or upload your own,
+and start the migration. The web service creates an authenticated Open-SWE
+thread and streams its progress. It does not run a local converter or fall back
+to another orchestrator.
+
+### Component command line
+
+These Docker-only commands expose individual XLSLiberator tools for development,
+diagnostics, and explicit component use. They are not an alternate migration
+agent.
+
+```bash
+# Run the base LibreOffice conversion tool
 docker compose --profile ci-runner run --rm test-runner \
   xlsliberator convert "$PWD/input.xlsx" "$PWD/output.ods"
 
-# VBA is inventoried but not silently translated by the deterministic converter
+# Inventory VBA without asking Open-SWE to migrate it
 docker compose --profile ci-runner run --rm test-runner \
   xlsliberator convert --no-macros "$PWD/input.xlsm" "$PWD/output.ods"
 
@@ -113,7 +142,7 @@ refuses concurrent source changes, and never replaces an existing dossier.
 
 ### Transactional ODS package edits
 
-`odstool` is the deterministic mutation boundary for scripts and event bindings.
+`odstool` is the transactional package-editing boundary for scripts and event bindings.
 It verifies the source package before editing, writes and verifies a complete
 candidate beside the original, fsyncs it, rejects concurrent source changes,
 and atomically replaces the source only after every check passes. Existing
@@ -225,19 +254,10 @@ tool names are not registered. See [`docs/mcp_tools.md`](docs/mcp_tools.md).
 
 ### Browser Web App
 
-Run the Docker web app for the closest production-like setup:
-
-```bash
-mkdir -p artifacts/runtime-tmp
-cp .env.example .env
-# Select one supported model and set only its matching provider key in .env.
-# Example: XLSLIBERATOR_OPEN_SWE_MODEL=openai:gpt-5.5
-docker compose up -d --build xlsliberator-web
-```
-
-Open `http://127.0.0.1:8080/` for the landing page and its embedded live demo: pick a
-bundled example workbook (or upload your own), start a real conversion, watch the pipeline
-progress inline, and download the converted `.ods` file plus JSON and Markdown reports.
+The [Quick Start](#open-swe-web-workflow) launches the complete browser-facing
+stack. Pick a bundled example workbook or upload your own, start a real
+migration, watch Open-SWE progress inline, and download the converted `.ods`
+file plus JSON and Markdown reports.
 Compose starts the internal MCP, Open-SWE, and web services in dependency order.
 The web container is only an authenticated Open-SWE client. It fails closed
 when the internal Open-SWE service is absent or unreachable and never invokes
@@ -290,10 +310,10 @@ print(report.to_markdown())
 
 ## Python Macro Support
 
-XLSLiberator does not choose a model or translate VBA in its deterministic
-conversion API. The embedded Open-SWE workflow reads raw VBA and the workbook
-dossier, generates target-native Python/UNO modules, and passes those artifacts
-to deterministic tools for transactional upsert and independent validation.
+The low-level conversion API does not choose a model or translate VBA by itself.
+The embedded Open-SWE workflow reads raw VBA and the workbook dossier, generates
+target-native Python/UNO modules, inserts those artifacts transactionally, and
+validates them in the LibreOffice target.
 
 ### How It Works
 
@@ -320,15 +340,24 @@ only an isolated, disposable profile inside the pinned office container.
 
 ## Architecture
 
-XLSLiberator uses a deterministic target-tool approach:
+Open-SWE owns the complete migration:
 
-1. **Native Conversion**: the pinned LibreOffice Docker runtime provides the base conversion; equivalence is evaluated separately
-2. **Source Inspection**: extracts workbook metadata and raw VBA without model calls
-3. **Open-SWE Orchestration**: Open-SWE owns the only agentic workflow, durable
-   migration thread, model selection, specialist work, and independent review
-4. **Artifact Upsert**: embeds explicitly supplied target-native Python/UNO modules
-5. **Isolated Runtime Validation**: runs required validation in disposable, resource-limited LibreOffice containers and profiles
-6. **Formula Repair**: deterministic transformations address known incompatibilities
+1. **Migration Thread**: the web app creates or resumes one authenticated,
+   durable Open-SWE thread for the workbook
+2. **Source Investigation**: Open-SWE uses the workbook dossier, formula, VBA,
+   control, and dependency tools to understand the source
+3. **Target Implementation**: Open-SWE plans the migration and produces the
+   LibreOffice-compatible formulas, scripts, event bindings, and package changes
+4. **LibreOffice Execution**: every office operation runs in the pinned
+   LibreOffice 26.2.4.2 Docker target
+5. **Evidence and Repair**: Open-SWE evaluates target behavior, performs bounded
+   repairs, and records unresolved capabilities explicitly
+6. **Independent Review and Delivery**: the migration is delivered only after
+   the required review and acceptance evidence are present
+
+The CLI, MCP methods, workbook inspection, package editing, and validation
+modules are the tools behind this workflow. They do not constitute another
+agent or orchestrator.
 
 ## Development
 
@@ -357,7 +386,7 @@ make test     # Run test suite
 ```
 xlsliberator/
 ├── src/xlsliberator/                # Main source code
-│   ├── api.py                       # Deterministic conversion pipeline
+│   ├── api.py                       # Base conversion and artifact application
 │   ├── primitives.py                # Typed public operations
 │   ├── xlsprobe.py                  # Bounded workbook forensics and dossiers
 │   ├── validated_api.py             # Validated transformation (transform_validated)
@@ -415,9 +444,9 @@ Measured results are generated from the conformance corpus and published in the
 [capability matrix](docs/capability_matrix.md) and generated
 [release-readiness report](docs/release_readiness.md); unavailable, skipped,
 unsupported, waived, and failed runs remain distinct from passing results.
-The checked-in generated readiness report belongs to the earlier certification
-architecture. It is not evidence that agentic VBA translation is complete. See
-the [agentic implementation ledger](docs/agentic_implementation_status.md) and
+Tool-level capability results do not by themselves prove a complete Open-SWE
+migration. Agent acceptance evidence is tracked separately. See the
+[agentic implementation ledger](docs/agentic_implementation_status.md) and the
 [Open-SWE architecture](docs/architecture/open-swe-migration.md).
 
 ## Known Limitations
