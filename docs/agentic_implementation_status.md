@@ -1,6 +1,6 @@
 # Autonomous migration implementation status
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This ledger tracks the Open-SWE migration prompt pack generated on 2026-07-18.
 It supersedes `docs/implementation_status.md` for that migration. The older
@@ -265,15 +265,20 @@ when applicable, and ledger update are linked.
 | 15 — deterministic middleware | COMPLETE IN `xlsliberator-swe` AT `49164719` | checkpoint and anti-fake-success/anti-test-weakening tests |
 | 16 — migration lead | COMPLETE IN `xlsliberator-swe` AT `18e0d770` | workflow tests and end-to-end thread trajectory |
 | 17 — independent reviewer | COMPLETE IN `xlsliberator-swe`; REMOTE CI GREEN AT `7c7ee4c8` | separate reviewer identity, hidden/mutation gate evidence; Agent and sandbox runs `29654989184` and `29654989178` |
-| 18 — web to Open-SWE threads | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI FINALIZATION IN PROGRESS | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
-| 19 — serious demos and corpus | IMPLEMENTED; CI EVIDENCE PENDING | eight licensed episodes, behavioral public scenarios, corpus search/subsets, evidence-derived feature report |
-| 20 — repair promotion/build farm | COMPLETE IN `xlsliberator`; OPEN-SWE CI REPAIR PUSHED | validated repair records, public/reviewer corpus MCP, fail-closed build-farm contract, real TDF-172479 differential |
-| 21 — execution hardening | COMPLETE IN `xlsliberator`; REMOTE CI GREEN AT `b49f486` | networkless/read-only runtime, bounded hostile-input parser, typed grants, escape probes, security-adversary evaluator, Bandit and dependency audit; full run `29658220586` |
-| 22 — LangSmith evaluations | IMPLEMENTED ACROSS BOTH REPOSITORIES; CI EVIDENCE PENDING | exactly fourteen typed evaluator results, five-state public/hidden reports, format/feature/configuration groups, cross-repository release schema, required agent-evaluation gate |
-| 23 — autonomous showcase | PENDING | reproducible full episode, target evidence, independent verdict |
+| 18 — web to Open-SWE threads | COMPLETE ACROSS BOTH REPOSITORIES | authenticated job/thread mapping, safe stages, resume, cancellation, owner-scoped artifact delivery and fake-service Docker smoke |
+| 19 — serious demos and corpus | COMPLETE; REMOTE CI GREEN AT `496c0e6` | eight licensed episodes, behavioral public scenarios, corpus search/subsets, evidence-derived feature report; full main run [29680745042](https://github.com/johannhartmann/xlsliberator/actions/runs/29680745042) |
+| 20 — repair promotion/build farm | COMPLETE; REMOTE CI GREEN AT `496c0e6` | validated repair records, public/reviewer corpus MCP, fail-closed build-farm contract, real TDF-172479 differential |
+| 21 — execution hardening | COMPLETE; REMOTE CI GREEN AT `496c0e6` | networkless/read-only runtime, bounded hostile-input parser, typed grants, escape probes, security-adversary evaluator, Bandit and dependency audit |
+| 22 — LangSmith evaluations | COMPLETE IMPLEMENTATION; CURRENT CI GREEN | exactly fourteen typed evaluator results, five-state public/hidden reports, format/feature/configuration groups, cross-repository release schema, and fail-closed agent-evaluation gate; main run [29680745042](https://github.com/johannhartmann/xlsliberator/actions/runs/29680745042), Open-SWE Agent CI [29684882696](https://github.com/johannhartmann/xlsliberator-swe/actions/runs/29684882696), and sandbox run [29684882689](https://github.com/johannhartmann/xlsliberator-swe/actions/runs/29684882689) |
+| 23 — autonomous showcase | BLOCKED BY EXTERNAL PUBLIC-MODEL QUOTA | the Docker pipeline built exact LibreOffice/application images, hydrated the public workbook, started trusted services, and triggered the API in [run 29684882715](https://github.com/johannhartmann/xlsliberator-swe/actions/runs/29684882715), but the first GitHub Models call and all bounded retries returned HTTP 429; no candidate, independent `APPROVE`, or human-use proof was produced |
 
 ## Next action
 
-Obtain blocking remote CI evidence for Prompts 21–22, then execute **Prompt 23 —
-the first autonomous showcase**. Local commands continue exclusively in Docker;
-no local Python or office fallback is permitted.
+Rerun Prompt 23 after the public GitHub Models daily quota resets, or configure
+an authorized provider credential for the same generic workflow. Require a
+real candidate, target evidence, independent `APPROVE`, and human-usable replay
+before marking it complete. Do not substitute a fixture-specific converter,
+checked-in demo copy, or fabricated evidence. Production code remains generic:
+workbook names, hashes, sheets, controls, rules, and scenarios may be known only
+to the separate showcase/proof harness. Local commands continue exclusively in
+Docker; no local Python or office fallback is permitted.
