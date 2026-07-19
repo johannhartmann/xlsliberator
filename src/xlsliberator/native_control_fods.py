@@ -1,8 +1,10 @@
 """Build and augment ODF spreadsheets containing native LibreOffice controls.
 
-The native form structure follows LibreOffice's own current Calc test fixture:
+The form model and export-safe draw-page placement follow LibreOffice's current
+Calc fixtures and round-trip export test:
 
 https://github.com/LibreOffice/core/blob/master/sc/qa/unit/tiledrendering/data/form-image-link.fods
+https://github.com/LibreOffice/core/blob/master/sc/qa/unit/data/fods/shapes_foreground_background.fods
 
 Production workers first let the pinned LibreOffice runtime create a complete
 ODS package, close it, and then use :func:`inject_native_buttons` to add only
@@ -190,10 +192,10 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 _qname("xlink", "type"): "simple",
             },
         )
-        anchor_cell = table.find(".//table:table-cell", _NAMESPACES)
-        if anchor_cell is None:
-            row = ElementTree.SubElement(table, _qname("table", "table-row"))
-            anchor_cell = ElementTree.SubElement(row, _qname("table", "table-cell"))
+        shapes = table.find("./table:shapes", _NAMESPACES)
+        created_shapes = shapes is None
+        if shapes is None:
+            shapes = ElementTree.Element(_qname("table", "shapes"))
 
         for z_index, button in enumerate(native_sheet.buttons):
             while f"control{next_control}" in existing_ids:
@@ -239,7 +241,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 },
             )
             ElementTree.SubElement(
-                anchor_cell,
+                shapes,
                 _qname("draw", "control"),
                 {
                     _qname("draw", "control"): control_id,
@@ -252,6 +254,8 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 },
             )
         table.insert(0, forms)
+        if created_shapes:
+            table.insert(1, shapes)
 
     # ElementTree otherwise drops this declaration when ``ooo`` is used only in
     # QName-valued attributes.  LibreOffice needs it to resolve form services.
@@ -315,13 +319,18 @@ def _sheet_xml(
 ) -> str:
     visibility = ' table:visibility="collapse"' if sheet.hidden else ""
     forms = _forms_xml(controls) if controls else ""
-    shapes = "".join(_shape_xml(button, control_id) for button, control_id in controls)
+    shapes = (
+        "    <table:shapes>\n"
+        + "".join(_shape_xml(button, control_id) for button, control_id in controls)
+        + "    </table:shapes>\n"
+        if controls
+        else ""
+    )
     return f"""   <table:table table:name="{_xml_attr(sheet.name)}"{visibility}>
-{forms}    <table:table-column table:number-columns-repeated="32"/>
+{forms}{shapes}    <table:table-column table:number-columns-repeated="32"/>
     <table:table-row>
      <table:table-cell>
       <text:p/>
-{shapes}\
      </table:table-cell>
     </table:table-row>
    </table:table>
@@ -369,7 +378,7 @@ def _button_xml(button: NativeButton, control_id: str) -> str:
 
 
 def _shape_xml(button: NativeButton, control_id: str) -> str:
-    return f"""      <draw:control
+    return f"""     <draw:control
        draw:z-index="0"
        draw:name="{_xml_attr(button.name)}"
        svg:width="{_cm(button.width)}"

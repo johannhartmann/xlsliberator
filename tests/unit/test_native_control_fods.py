@@ -15,7 +15,7 @@ from xlsliberator.native_control_fods import (
 )
 
 
-def test_seed_uses_native_sheet_forms_and_cell_anchored_controls(tmp_path: Path) -> None:
+def test_seed_uses_native_sheet_forms_and_table_shapes(tmp_path: Path) -> None:
     seed = tmp_path / "controls.ods"
 
     write_native_button_seed(
@@ -70,8 +70,9 @@ def test_seed_uses_native_sheet_forms_and_cell_anchored_controls(tmp_path: Path)
     assert 'form:command-type="table"' in serialized
     assert 'form:apply-filter="true"' in serialized
     assert "com.sun.star.form.control.CommandButton" in serialized
-    assert "<table:shapes>" not in serialized
-    assert root.find(".//table:table-cell/draw:control", namespaces) is not None
+    assert "<table:shapes>" in serialized
+    assert root.find(".//table:shapes/draw:control", namespaces) is not None
+    assert root.find(".//table:table-cell/draw:control", namespaces) is None
 
 
 def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
@@ -117,6 +118,7 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
         "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
         "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
         "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+        "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
     }
     button = root.find(".//form:button", namespaces)
     shape = root.find(".//draw:control", namespaces)
@@ -130,6 +132,7 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
     )
     assert button is not None
     assert shape is not None
+    assert root.find(".//table:shapes/draw:control", namespaces) is shape
     assert tag is not None
     assert default_control is not None
     assert (
