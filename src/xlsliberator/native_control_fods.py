@@ -283,9 +283,7 @@ def _register_document_namespaces(content: bytes) -> None:
 
 def _validate_content_xml(content: bytes) -> None:
     if len(content) > _MAX_CONTENT_XML_BYTES:
-        raise ValueError(
-            f"ODS content.xml exceeds the {_MAX_CONTENT_XML_BYTES}-byte safety limit"
-        )
+        raise ValueError(f"ODS content.xml exceeds the {_MAX_CONTENT_XML_BYTES}-byte safety limit")
     if b"\x00" in content:
         raise ValueError("ODS content.xml must use an ASCII-compatible XML encoding")
     normalized = content.upper()
