@@ -75,11 +75,11 @@ def test_convert_xlsx_to_ods_reopens_in_real_libreoffice(
 
 @pytest.mark.integration
 @pytest.mark.docker
-def test_native_control_fixture_serializes_in_real_libreoffice(
+def test_native_control_fixture_uses_export_safe_runtime_lifecycle(
     tmp_path: Path,
     skip_if_no_lo: None,
 ) -> None:
-    """Create and reopen a native Calc control using the pinned Docker runtime."""
+    """Create a native control at runtime and reopen its clean ODS state."""
     output_path = tmp_path / "controls.ods"
     runtime = LibreOfficeDockerRuntime()
 
@@ -92,10 +92,11 @@ def test_native_control_fixture_serializes_in_real_libreoffice(
 
     assert created["success"] is True, created
     assert created["data"]["button_name"] == "CertificationButton"
+    assert created["data"]["control_lifecycle"] == "docker-runtime-native"
     assert output_path.is_file()
     with ZipFile(output_path) as archive:
         content = archive.read("content.xml")
-    assert b"com.sun.star.form.component.CommandButton" in content
+    assert b"com.sun.star.form.component.CommandButton" not in content
     assert b"CertificationButton" in content
 
     validation = runtime.validate_document(output_path)

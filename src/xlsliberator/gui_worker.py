@@ -128,7 +128,13 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                         document.calculateAll()
                         result = {"recalculated": True}
                     elif kind == "save":
-                        document.store()
+                        if game_controller is None:
+                            raise RuntimeError("save requires the interactive-game adapter")
+                        game_controller.prepare_for_save()
+                        try:
+                            document.store()
+                        finally:
+                            game_controller.restore_after_save()
                         result = {"saved_sha256": _sha256_file(working_copy)}
                     elif kind == "close":
                         if game_controller is not None:

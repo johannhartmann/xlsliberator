@@ -89,6 +89,26 @@ Sound remains unresolved and optional. No host sound device, host process,
 arbitrary host path, Windows API, COM server, Excel runtime, VBA runtime,
 LibreOffice Basic program, or proprietary add-in is granted by this dossier.
 
+## Native control lifecycle and pinned-runtime limitation
+
+The migrated application creates `com.sun.star.form.component.CommandButton`
+models and `com.sun.star.drawing.ControlShape` views through UNO inside the
+repository's pinned Docker GUI runtime. Bounded external Python/UNO listeners
+handle the control events; the ODS contains no embedded script binding.
+
+LibreOffice `26.2.4.2` reproducibly throws `std::bad_alloc` when its Calc
+exporter serializes even the isolated one-button form model used by the
+integration fixture. The runtime therefore detaches its transient controls
+before each save, stores the document-contained game state in a clean ODS, and
+reinstalls the controls after the save or reopen. This avoids the failing
+exporter path without introducing a VBA, Basic, COM, Windows, Excel, or add-in
+runtime.
+
+The interactive control surface consequently requires the repository's Docker
+GUI adapter. Opening the saved ODS outside that managed runtime exposes the
+persisted game state but does not install active controls. The limitation and
+the exact runtime build must remain visible in delivered evidence.
+
 ## Public acceptance sources
 
 - Task: `demos/interactive-game/task.md`

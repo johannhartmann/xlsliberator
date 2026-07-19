@@ -274,60 +274,14 @@ def _convert_document(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _store_ods_roundtrip_copy(
-    session: dict[str, Any],
-    document: Any,
-    destination: Path,
-) -> Path:
-    """Export an imported document to a fresh ODS before replacing its source."""
-    roundtrip = destination.with_name(
-        f".{destination.stem}.xlsliberator-roundtrip{destination.suffix}"
-    )
-    roundtrip.unlink(missing_ok=True)
-    try:
-        document.storeToURL(
-            session["uno"].systemPathToFileUrl(str(roundtrip)),
-            (
-                _property_value("FilterName", "calc8"),
-                _property_value("Overwrite", True),
-            ),
-        )
-        if not roundtrip.is_file():
-            raise RuntimeError("LibreOffice returned without producing the ODS round-trip copy")
-        return roundtrip
-    except Exception:
-        roundtrip.unlink(missing_ok=True)
-        raise
-
-
 def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
-    """Round-trip a real native Calc control through the pinned office."""
-    from xlsliberator.native_control_fods import (
-        NativeButton,
-        NativeSheet,
-        inject_native_buttons,
-    )
-
+    """Exercise the export-safe lifecycle for a real native Calc control."""
     output_path = Path(str(request["output_path"])).resolve()
     button_name = str(request.get("button_name") or "CertificationButton")
     marker_address = str(request.get("marker_address") or "D4")
     marker_value = str(request.get("marker_value") or "control-event-fired")
     output_path.unlink(missing_ok=True)
     try:
-        native_sheets = (
-            NativeSheet(
-                name="Sheet1",
-                buttons=(
-                    NativeButton(
-                        name=button_name,
-                        label="Run certification event",
-                        x=1_000,
-                        y=1_000,
-                        width=5_000,
-                    ),
-                ),
-            ),
-        )
         with _office_session(request, use_gui=False) as session:
             document = None
             try:
@@ -342,6 +296,32 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
                 sheet = document.getSheets().getByIndex(0)
                 sheet.setName("Sheet1")
                 sheet.getCellRangeByName("A1").setString("Controls certification fixture")
+                sheet.getCellRangeByName("A2").setString(f"runtime-control:{button_name}")
+                forms = sheet.getDrawPage().getForms()
+                form = document.createInstance("com.sun.star.form.component.Form")
+                form.Name = "XLSLiberatorFixtureControls"
+                forms.insertByName(form.Name, form)
+                model = document.createInstance("com.sun.star.form.component.CommandButton")
+                model.Name = button_name
+                model.Label = "Run certification event"
+                form.insertByName(button_name, model)
+                shape = document.createInstance("com.sun.star.drawing.ControlShape")
+                position = session["uno"].createUnoStruct("com.sun.star.awt.Point")
+                position.X = 1_000
+                position.Y = 1_000
+                size = session["uno"].createUnoStruct("com.sun.star.awt.Size")
+                size.Width = 5_000
+                size.Height = 1_200
+                shape.setPosition(position)
+                shape.setSize(size)
+                shape.setControl(model)
+                sheet.getDrawPage().add(shape)
+                if forms.getCount() != 1 or forms.getByIndex(0).getCount() != 1:
+                    raise RuntimeError("LibreOffice did not materialize the native button model")
+                sheet.getDrawPage().remove(shape)
+                forms.removeByName(form.Name)
+                if forms.getCount() != 0:
+                    raise RuntimeError("LibreOffice retained a transient native control")
                 document.storeAsURL(
                     session["uno"].systemPathToFileUrl(str(output_path)),
                     (
@@ -354,7 +334,6 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
                 raise
             finally:
                 _close_document(document, save=False)
-            inject_native_buttons(output_path, native_sheets)
             document = session["desktop"].loadComponentFromURL(
                 session["uno"].systemPathToFileUrl(str(output_path)),
                 "_blank",
@@ -362,18 +341,15 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
                 (_property_value("Hidden", True),),
             )
             if document is None:
-                raise RuntimeError("LibreOffice could not import the native controls fixture")
-            roundtrip = None
+                raise RuntimeError("LibreOffice could not reopen the controls fixture")
             try:
-                forms = document.getSheets().getByIndex(0).getDrawPage().getForms()
-                if forms.getCount() != 1 or forms.getByIndex(0).getCount() != 1:
-                    raise RuntimeError("LibreOffice did not materialize the native button model")
-                roundtrip = _store_ods_roundtrip_copy(session, document, output_path)
+                sheet = document.getSheets().getByIndex(0)
+                if sheet.getDrawPage().getForms().getCount() != 0:
+                    raise RuntimeError("controls fixture persisted a transient form model")
+                if sheet.getCellRangeByName("A2").getString() != f"runtime-control:{button_name}":
+                    raise RuntimeError("controls fixture lost its runtime control manifest")
             finally:
                 _close_document(document, save=False)
-            if roundtrip is None:
-                raise RuntimeError("LibreOffice did not create the controls fixture round-trip")
-            roundtrip.replace(output_path)
     except Exception:
         output_path.unlink(missing_ok=True)
         raise
@@ -383,6 +359,7 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
         "output_path": str(output_path),
         "output_sha256": _sha256_file(output_path),
         "button_name": button_name,
+        "control_lifecycle": "docker-runtime-native",
         "marker_address": marker_address,
         "marker_value": marker_value,
     }

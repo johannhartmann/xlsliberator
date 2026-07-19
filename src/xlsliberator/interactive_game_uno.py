@@ -1,10 +1,11 @@
 """Target-native LibreOffice adapter for the interactive-game showcase.
 
 This module is imported by LibreOffice's bundled Python only.  It creates a
-plain ODS target with native form controls and attaches bounded Python/UNO
-listeners while the document is operated by the dedicated GUI runtime.  The
-document contains no VBA project, LibreOffice Basic, or embedded script event
-binding.
+plain ODS target and installs native form controls only inside the dedicated
+Docker GUI runtime.  Controls are detached before Calc saves because pinned
+LibreOffice 26.2.4.2 crashes while exporting CommandButton models.  The saved
+document contains no VBA project, LibreOffice Basic, embedded script event
+binding, or persisted form model.
 """
 
 from __future__ import annotations
@@ -33,11 +34,6 @@ from xlsliberator.interactive_game_engine import (
     tick,
     tick_interval_ms,
 )
-from xlsliberator.native_control_fods import (
-    NativeButton,
-    NativeSheet,
-    inject_native_buttons,
-)
 
 SOURCE_SHA256: Final = "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1"
 TARGET_BUILD: Final = "26.2.4.2"
@@ -54,13 +50,6 @@ CONTROL_NAMES: Final = (
     "GameHighScores",
     "ScoreReturn",
 )
-_CONTROL_MODEL_NAMES: Final = {
-    "GameStart": "CertificationButton",
-    "GamePause": "Control2",
-    "GameReset": "Control3",
-    "GameHighScores": "Control4",
-    "ScoreReturn": "ScoreReturnButton",
-}
 _LOGICAL_CONTROL_NAMES: Final = {
     "CertificationButton": "GameStart",
     "Control2": "GamePause",
@@ -68,6 +57,16 @@ _LOGICAL_CONTROL_NAMES: Final = {
     "Control4": "GameHighScores",
     "ScoreReturnButton": "ScoreReturn",
 }
+_RUNTIME_FORM_NAMES: Final = (
+    "XLSLiberatorGameControls",
+    "XLSLiberatorScoreControls",
+)
+_GAME_CONTROLS: Final = (
+    ("GameStart", "Start"),
+    ("GamePause", "Pause / Resume"),
+    ("GameReset", "Reset"),
+    ("GameHighScores", "High Scores"),
+)
 
 _BACKGROUND: Final = 0x101820
 _GRID: Final = 0x1E293B
@@ -90,7 +89,6 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         _office_session,
         _property_value,
         _sha256_file,
-        _store_ods_roundtrip_copy,
     )
 
     source = Path(str(request["input_path"])).resolve()
@@ -100,7 +98,6 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
     if output.suffix.lower() != ".ods":
         raise ValueError("interactive-game target must use the ODS format")
 
-    native_sheets = _interactive_game_native_sheets()
     output.unlink(missing_ok=True)
     try:
         with _office_session(request, use_gui=False) as session:
@@ -128,14 +125,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
                 raise
             finally:
                 _close_document(document, save=False)
-            inject_native_buttons(output, native_sheets)
-            _round_trip_native_target(
-                session,
-                output,
-                _property_value,
-                _close_document,
-                _store_ods_roundtrip_copy,
-            )
+            _verify_clean_target(session, output, _property_value, _close_document)
     except Exception:
         output.unlink(missing_ok=True)
         raise
@@ -148,6 +138,7 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
         "target_build": TARGET_BUILD,
         "target_format": "ods",
         "controls": list(CONTROL_NAMES),
+        "control_lifecycle": "docker-runtime-native",
         "state_sheet": STATE_SHEET,
         "board_range": BOARD_RANGE,
         "embedded_script_bindings": 0,
@@ -169,12 +160,11 @@ def _create_game_sheets(document: Any) -> None:
     sheets.insertNewByName(STATE_SHEET, 2)
 
 
-def _round_trip_native_target(
+def _verify_clean_target(
     session: dict[str, Any],
     output: Path,
     property_value: Any,
     close_document: Any,
-    store_roundtrip_copy: Any,
 ) -> None:
     output_url = session["uno"].systemPathToFileUrl(str(output))
     document = session["desktop"].loadComponentFromURL(
@@ -184,31 +174,18 @@ def _round_trip_native_target(
         (property_value("Hidden", True),),
     )
     if document is None:
-        raise RuntimeError("LibreOffice did not import the native-control target")
-    roundtrip = None
+        raise RuntimeError("LibreOffice did not reopen the interactive-game target")
     try:
-        for control_name in CONTROL_NAMES:
-            _find_control_model(document, control_name)
-        roundtrip = store_roundtrip_copy(session, document, output)
+        state_sheet = document.getSheets().getByName(STATE_SHEET)
+        persisted_names = {
+            str(state_sheet.getCellRangeByName(f"A{row}").getString())
+            for row in range(7, 7 + len(CONTROL_NAMES))
+        }
+        if persisted_names != set(CONTROL_NAMES):
+            raise RuntimeError("interactive-game target lost its runtime control manifest")
+        _assert_no_persisted_form_controls(document)
     finally:
         close_document(document, save=False)
-    if roundtrip is None:
-        raise RuntimeError("LibreOffice did not create the native-control round-trip")
-    roundtrip.replace(output)
-
-    reopened = session["desktop"].loadComponentFromURL(
-        output_url,
-        "_blank",
-        0,
-        (property_value("Hidden", True),),
-    )
-    if reopened is None:
-        raise RuntimeError("LibreOffice did not reopen the persisted native-control target")
-    try:
-        for control_name in CONTROL_NAMES:
-            _find_control_model(reopened, control_name)
-    finally:
-        close_document(reopened, save=False)
 
 
 def _initialize_document(document: Any, game: Any) -> None:
@@ -268,36 +245,105 @@ def _set_cell(sheet: Any, address: str, value: str) -> None:
     sheet.getCellRangeByName(address).setString(value)
 
 
-def _interactive_game_native_sheets() -> tuple[NativeSheet, ...]:
-    game_buttons = tuple(
-        NativeButton(
-            name=_CONTROL_MODEL_NAMES[name],
+def _install_runtime_controls(document: Any, uno: Any) -> None:
+    """Create native UNO controls only for the live Docker-contained session."""
+    _assert_no_persisted_form_controls(document)
+    sheets = document.getSheets()
+    game = sheets.getByName(GAME_SHEET)
+    score = sheets.getByName(SCORE_SHEET)
+    game_form = document.createInstance("com.sun.star.form.component.Form")
+    game_form.Name = _RUNTIME_FORM_NAMES[0]
+    game.getDrawPage().getForms().insertByName(game_form.Name, game_form)
+    for index, (name, label) in enumerate(_GAME_CONTROLS):
+        _add_runtime_button(
+            document,
+            game,
+            game_form,
+            uno,
+            name=name,
             label=label,
             x=1_000,
             y=1_000 + index * 1_500,
             width=5_000,
         )
-        for index, (name, label) in enumerate(
-            (
-                ("GameStart", "Start"),
-                ("GamePause", "Pause / Resume"),
-                ("GameReset", "Reset"),
-                ("GameHighScores", "High Scores"),
-            )
-        )
-    )
-    score_button = NativeButton(
-        name=_CONTROL_MODEL_NAMES["ScoreReturn"],
+
+    score_form = document.createInstance("com.sun.star.form.component.Form")
+    score_form.Name = _RUNTIME_FORM_NAMES[1]
+    score.getDrawPage().getForms().insertByName(score_form.Name, score_form)
+    _add_runtime_button(
+        document,
+        score,
+        score_form,
+        uno,
+        name="ScoreReturn",
         label="Return to Game",
         x=1_000,
         y=1_000,
         width=5_000,
     )
-    return (
-        NativeSheet(name=GAME_SHEET, buttons=game_buttons),
-        NativeSheet(name=SCORE_SHEET, buttons=(score_button,)),
-        NativeSheet(name=STATE_SHEET, hidden=True),
-    )
+
+
+def _add_runtime_button(
+    document: Any,
+    sheet: Any,
+    form: Any,
+    uno: Any,
+    *,
+    name: str,
+    label: str,
+    x: int,
+    y: int,
+    width: int,
+) -> None:
+    model = document.createInstance("com.sun.star.form.component.CommandButton")
+    model.Name = name
+    model.Label = label
+    model.Tabstop = True
+    form.insertByName(name, model)
+    shape = document.createInstance("com.sun.star.drawing.ControlShape")
+    position = uno.createUnoStruct("com.sun.star.awt.Point")
+    position.X = x
+    position.Y = y
+    size = uno.createUnoStruct("com.sun.star.awt.Size")
+    size.Width = width
+    size.Height = 1_200
+    shape.setPosition(position)
+    shape.setSize(size)
+    shape.setControl(model)
+    sheet.getDrawPage().add(shape)
+
+
+def _remove_runtime_controls(document: Any) -> None:
+    sheets = document.getSheets()
+    for sheet_index in range(sheets.getCount()):
+        draw_page = sheets.getByIndex(sheet_index).getDrawPage()
+        for shape_index in reversed(range(draw_page.getCount())):
+            shape = draw_page.getByIndex(shape_index)
+            try:
+                model = shape.getControl()
+            except Exception:
+                continue
+            if _control_logical_name(model) in CONTROL_NAMES:
+                draw_page.remove(shape)
+        forms = draw_page.getForms()
+        for form_name in _RUNTIME_FORM_NAMES:
+            if forms.hasByName(form_name):
+                forms.removeByName(form_name)
+        for shape_index in range(draw_page.getCount()):
+            shape = draw_page.getByIndex(shape_index)
+            try:
+                model = shape.getControl()
+            except Exception:
+                continue
+            if _control_logical_name(model) in CONTROL_NAMES:
+                raise RuntimeError("LibreOffice retained a transient native control shape")
+
+
+def _assert_no_persisted_form_controls(document: Any) -> None:
+    sheets = document.getSheets()
+    for sheet_index in range(sheets.getCount()):
+        if sheets.getByIndex(sheet_index).getDrawPage().getForms().getCount():
+            raise RuntimeError("interactive-game controls must not enter the ODS form exporter")
 
 
 class InteractiveGameController:
@@ -319,6 +365,7 @@ class InteractiveGameController:
         self.timer_listener: Any = None
         self.timer: Any = None
         self.disposed = False
+        self.runtime_controls_installed = False
         self.event_log: list[dict[str, Any]] = []
 
     def install(self) -> None:
@@ -327,14 +374,12 @@ class InteractiveGameController:
         if self.listeners or self.key_listener is not None:
             raise RuntimeError("game controller listeners are already installed")
         controller = self.document.getCurrentController()
+        _install_runtime_controls(self.document, self.session["uno"])
+        self.runtime_controls_installed = True
         if hasattr(controller, "setFormDesignMode"):
             controller.setFormDesignMode(False)
-        action_type, key_type, timer_type = _listener_types()
-        for name in CONTROL_NAMES:
-            model = _find_control_model(self.document, name)
-            listener = action_type(self)
-            model.addActionListener(listener)
-            self.listeners.append((model, listener))
+        _action_type, key_type, timer_type = _listener_types()
+        self._attach_action_listeners()
         self.key_listener = key_type(self)
         controller.addKeyHandler(self.key_listener)
 
@@ -365,11 +410,46 @@ class InteractiveGameController:
         if controller is not None and self.key_listener is not None:
             with suppress(Exception):
                 controller.removeKeyHandler(self.key_listener)
+        self._detach_action_listeners()
+        if self.runtime_controls_installed:
+            _remove_runtime_controls(self.document)
+            self.runtime_controls_installed = False
+        self._record("document-close")
+
+    def prepare_for_save(self) -> None:
+        """Detach transient controls before LibreOffice enters its form exporter."""
+        if self.disposed or not self.runtime_controls_installed:
+            raise RuntimeError("game controller has no live runtime controls")
+        self._detach_action_listeners()
+        _remove_runtime_controls(self.document)
+        self.runtime_controls_installed = False
+
+    def restore_after_save(self) -> None:
+        """Restore target-native controls after a clean ODS save."""
+        if self.disposed or self.runtime_controls_installed:
+            raise RuntimeError("game controller cannot restore runtime controls")
+        _install_runtime_controls(self.document, self.session["uno"])
+        self.runtime_controls_installed = True
+        controller = self.document.getCurrentController()
+        if hasattr(controller, "setFormDesignMode"):
+            controller.setFormDesignMode(False)
+        self._attach_action_listeners()
+
+    def _attach_action_listeners(self) -> None:
+        if self.listeners:
+            raise RuntimeError("runtime control listeners are already attached")
+        action_type, _key_type, _timer_type = _listener_types()
+        for name in CONTROL_NAMES:
+            model = _find_control_model(self.document, name)
+            listener = action_type(self)
+            model.addActionListener(listener)
+            self.listeners.append((model, listener))
+
+    def _detach_action_listeners(self) -> None:
         for model, listener in self.listeners:
             with suppress(Exception):
                 model.removeActionListener(listener)
         self.listeners.clear()
-        self._record("document-close")
 
     def action(self, control_name: str) -> None:
         before = self.state

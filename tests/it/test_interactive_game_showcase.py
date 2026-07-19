@@ -43,6 +43,7 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
     assert build["target_build"] == "26.2.4.2"
     assert build["source_sha256"] == SOURCE_SHA256
     assert build["embedded_script_bindings"] == 0
+    assert build["control_lifecycle"] == "docker-runtime-native"
     assert target.is_file()
     target_sha256 = _sha256(target)
     with ZipFile(target) as archive:
@@ -51,6 +52,7 @@ def test_complete_interactive_game_acceptance_in_real_gui_runtime(tmp_path: Path
         assert not any(name.endswith("vbaProject.bin") for name in names)
         content = archive.read("content.xml")
         assert b"script:event-listener" not in content
+        assert b"com.sun.star.form.component.CommandButton" not in content
         assert b"GameStart" in content
         assert b"GamePause" in content
         assert b"GameReset" in content
