@@ -9,6 +9,7 @@ import pytest
 from xlsliberator.native_control_fods import (
     NativeButton,
     NativeSheet,
+    inject_native_buttons,
     write_native_button_seed,
 )
 
@@ -78,3 +79,69 @@ def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
             tmp_path / "hidden.ods",
             (NativeSheet(name="_state", hidden=True),),
         )
+
+
+def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path) -> None:
+    seed = tmp_path / "libreoffice-base.ods"
+    write_native_button_seed(seed, (NativeSheet(name="Sheet1"),))
+
+    inject_native_buttons(
+        seed,
+        (
+            NativeSheet(
+                name="Sheet1",
+                buttons=(
+                    NativeButton(
+                        name="CertificationButton",
+                        label="Run",
+                        tag="GameStart",
+                        x=1_000,
+                        y=1_000,
+                        width=5_000,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    with ZipFile(seed) as package:
+        assert package.infolist()[0].filename == "mimetype"
+        assert package.infolist()[0].compress_type == ZIP_STORED
+        assert package.read("styles.xml")
+        root = ElementTree.fromstring(package.read("content.xml"))
+    namespaces = {
+        "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+        "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
+        "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+    }
+    button = root.find(".//form:button", namespaces)
+    shape = root.find(".//draw:control", namespaces)
+    tag = root.find(
+        ".//form:property[@form:property-name='Tag']",
+        namespaces,
+    )
+    assert button is not None
+    assert shape is not None
+    assert tag is not None
+    assert tag.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == (
+        "GameStart"
+    )
+
+
+def test_injection_rejects_missing_sheet_and_duplicate_forms(tmp_path: Path) -> None:
+    seed = tmp_path / "base.ods"
+    button = NativeButton(
+        name="Button",
+        label="Run",
+        tag="Run",
+        x=0,
+        y=0,
+        width=1_000,
+    )
+    write_native_button_seed(seed, (NativeSheet(name="Sheet1"),))
+    with pytest.raises(ValueError, match="sheet is missing"):
+        inject_native_buttons(seed, (NativeSheet(name="Missing", buttons=(button,)),))
+
+    inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))
+    with pytest.raises(ValueError, match="already contains forms"):
+        inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))

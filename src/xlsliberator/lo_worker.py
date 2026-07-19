@@ -279,7 +279,7 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
     from xlsliberator.native_control_fods import (
         NativeButton,
         NativeSheet,
-        write_native_button_seed,
+        inject_native_buttons,
     )
 
     output_path = Path(str(request["output_path"])).resolve()
@@ -288,20 +288,17 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
     marker_value = str(request.get("marker_value") or "control-event-fired")
     output_path.unlink(missing_ok=True)
     try:
-        write_native_button_seed(
-            output_path,
-            (
-                NativeSheet(
-                    name="Sheet1",
-                    buttons=(
-                        NativeButton(
-                            name=button_name,
-                            label="Run certification event",
-                            tag=button_name,
-                            x=1_000,
-                            y=1_000,
-                            width=5_000,
-                        ),
+        native_sheets = (
+            NativeSheet(
+                name="Sheet1",
+                buttons=(
+                    NativeButton(
+                        name=button_name,
+                        label="Run certification event",
+                        tag=button_name,
+                        x=1_000,
+                        y=1_000,
+                        width=5_000,
                     ),
                 ),
             ),
@@ -310,19 +307,42 @@ def _create_controls_fixture(request: dict[str, Any]) -> dict[str, Any]:
             document = None
             try:
                 document = session["desktop"].loadComponentFromURL(
-                    session["uno"].systemPathToFileUrl(str(output_path)),
+                    "private:factory/scalc",
                     "_blank",
                     0,
                     (_property_value("Hidden", True),),
                 )
                 if document is None:
-                    raise RuntimeError("LibreOffice could not import the controls fixture")
+                    raise RuntimeError("LibreOffice could not create the controls fixture")
                 sheet = document.getSheets().getByIndex(0)
+                sheet.setName("Sheet1")
                 sheet.getCellRangeByName("A1").setString("Controls certification fixture")
-                document.store()
+                document.storeAsURL(
+                    session["uno"].systemPathToFileUrl(str(output_path)),
+                    (
+                        _property_value("FilterName", "calc8"),
+                        _property_value("Overwrite", True),
+                    ),
+                )
             except Exception:
                 output_path.unlink(missing_ok=True)
                 raise
+            finally:
+                _close_document(document, save=False)
+            inject_native_buttons(output_path, native_sheets)
+            document = session["desktop"].loadComponentFromURL(
+                session["uno"].systemPathToFileUrl(str(output_path)),
+                "_blank",
+                0,
+                (_property_value("Hidden", True),),
+            )
+            if document is None:
+                raise RuntimeError("LibreOffice could not import the native controls fixture")
+            try:
+                forms = document.getSheets().getByIndex(0).getDrawPage().getForms()
+                if forms.getCount() != 1 or forms.getByIndex(0).getCount() != 1:
+                    raise RuntimeError("LibreOffice did not materialize the native button model")
+                document.store()
             finally:
                 _close_document(document, save=False)
     except Exception:

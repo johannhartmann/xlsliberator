@@ -1,21 +1,32 @@
-"""Build minimal ODF spreadsheets containing native LibreOffice controls.
+"""Build and augment ODF spreadsheets containing native LibreOffice controls.
 
 The native form structure follows LibreOffice's own current Calc test fixture:
 
 https://github.com/LibreOffice/core/blob/master/sc/qa/unit/tiledrendering/data/form-image-link.fods
 
-The package writer avoids LibreOffice's unstable FODS-to-ODS ``storeAsURL``
-path. The pinned Docker worker opens this valid ODS seed, populates it through
-UNO, and persists it through the document's normal ``store`` lifecycle.
+Production workers first let the pinned LibreOffice runtime create a complete
+ODS package, close it, and then use :func:`inject_native_buttons` to add only
+the target-native form models and draw-page shapes.  The document is reopened
+and persisted by LibreOffice before it is accepted.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
+from xml.etree import ElementTree
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 _MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
+_NAMESPACES = {
+    "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+    "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
+    "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
+    "svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
+    "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "xml": "http://www.w3.org/XML/1998/namespace",
+}
 
 
 @dataclass(frozen=True)
@@ -109,6 +120,144 @@ def write_native_button_seed(path: Path, sheets: tuple[NativeSheet, ...]) -> Non
         package.writestr("styles.xml", styles, compress_type=ZIP_DEFLATED)
 
 
+def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
+    """Inject native button models into a closed LibreOffice-created ODS.
+
+    All existing package members and their ZIP metadata are retained.  Only
+    ``content.xml`` is rewritten, and callers must round-trip the result
+    through the pinned LibreOffice runtime before treating it as usable.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"native-control ODS does not exist: {path}")
+    requested = tuple(sheet for sheet in sheets if sheet.buttons)
+    if not requested:
+        raise ValueError("native-control injection requires at least one button")
+
+    with ZipFile(path) as package:
+        infos = package.infolist()
+        members = {info.filename: package.read(info.filename) for info in infos}
+    if members.get("mimetype") != _MIMETYPE.encode():
+        raise ValueError("native controls can be injected only into an ODS package")
+    content = members.get("content.xml")
+    if content is None:
+        raise ValueError("ODS package has no content.xml")
+
+    _register_document_namespaces(content)
+    root = ElementTree.fromstring(content)
+    table_name = _qname("table", "name")
+    tables = {
+        str(table.attrib.get(table_name, "")): table
+        for table in root.findall(".//table:table", _NAMESPACES)
+    }
+    existing_ids = {
+        value
+        for element in root.iter()
+        for name, value in element.attrib.items()
+        if name in {_qname("form", "id"), _qname("xml", "id")}
+    }
+    next_control = 1
+    for native_sheet in requested:
+        table = tables.get(native_sheet.name)
+        if table is None:
+            raise ValueError(f"native-control sheet is missing from ODS: {native_sheet.name}")
+        if table.find("./office:forms", _NAMESPACES) is not None:
+            raise ValueError(f"native-control sheet already contains forms: {native_sheet.name}")
+
+        forms = ElementTree.Element(
+            _qname("office", "forms"),
+            {
+                _qname("form", "automatic-focus"): "false",
+                _qname("form", "apply-design-mode"): "false",
+            },
+        )
+        form = ElementTree.SubElement(
+            forms,
+            _qname("form", "form"),
+            {
+                _qname("form", "name"): f"XLSLiberatorForm{next_control}",
+                _qname("form", "control-implementation"): (
+                    "ooo:com.sun.star.form.component.Form"
+                ),
+            },
+        )
+        shapes = table.find("./table:shapes", _NAMESPACES)
+        if shapes is None:
+            shapes = ElementTree.Element(_qname("table", "shapes"))
+            table.append(shapes)
+
+        for z_index, button in enumerate(native_sheet.buttons):
+            while f"control{next_control}" in existing_ids:
+                next_control += 1
+            control_id = f"control{next_control}"
+            existing_ids.add(control_id)
+            next_control += 1
+            model = ElementTree.SubElement(
+                form,
+                _qname("form", "button"),
+                {
+                    _qname("form", "id"): control_id,
+                    _qname("xml", "id"): control_id,
+                    _qname("form", "name"): button.name,
+                    _qname("form", "control-implementation"): (
+                        "ooo:com.sun.star.form.component.CommandButton"
+                    ),
+                    _qname("form", "label"): button.label,
+                },
+            )
+            properties = ElementTree.SubElement(model, _qname("form", "properties"))
+            ElementTree.SubElement(
+                properties,
+                _qname("form", "property"),
+                {
+                    _qname("form", "property-name"): "Tag",
+                    _qname("office", "value-type"): "string",
+                    _qname("office", "string-value"): button.tag,
+                },
+            )
+            ElementTree.SubElement(
+                shapes,
+                _qname("draw", "control"),
+                {
+                    _qname("draw", "control"): control_id,
+                    _qname("draw", "name"): button.name,
+                    _qname("draw", "z-index"): str(z_index),
+                    _qname("svg", "x"): _cm(button.x),
+                    _qname("svg", "y"): _cm(button.y),
+                    _qname("svg", "width"): _cm(button.width),
+                    _qname("svg", "height"): _cm(button.height),
+                },
+            )
+        table.insert(0, forms)
+
+    members["content.xml"] = ElementTree.tostring(
+        root,
+        encoding="utf-8",
+        xml_declaration=True,
+    )
+    temporary = path.with_name(f".{path.name}.native-controls")
+    temporary.unlink(missing_ok=True)
+    try:
+        with ZipFile(temporary, "w") as package:
+            for info in infos:
+                package.writestr(info, members[info.filename])
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _register_document_namespaces(content: bytes) -> None:
+    for _event, namespace in ElementTree.iterparse(BytesIO(content), events=("start-ns",)):
+        prefix, uri = namespace
+        if not prefix.startswith("ns"):
+            ElementTree.register_namespace(prefix, uri)
+    for prefix, uri in _NAMESPACES.items():
+        ElementTree.register_namespace(prefix, uri)
+
+
+def _qname(prefix: str, local_name: str) -> str:
+    return f"{{{_NAMESPACES[prefix]}}}{local_name}"
+
+
 def _sheet_xml(
     sheet: NativeSheet,
     controls: list[tuple[NativeButton, str]],
@@ -170,4 +319,9 @@ def _cm(value: int) -> str:
     return f"{value / 1000:g}cm"
 
 
-__all__ = ["NativeButton", "NativeSheet", "write_native_button_seed"]
+__all__ = [
+    "NativeButton",
+    "NativeSheet",
+    "inject_native_buttons",
+    "write_native_button_seed",
+]

@@ -36,7 +36,7 @@ from xlsliberator.interactive_game_engine import (
 from xlsliberator.native_control_fods import (
     NativeButton,
     NativeSheet,
-    write_native_button_seed,
+    inject_native_buttons,
 )
 
 SOURCE_SHA256: Final = "da1bddc2c20ed8f5557b547e04a84cb1b476eca010e30a6be549be650894e4d1"
@@ -99,27 +99,36 @@ def build_interactive_game_target(request: dict[str, Any]) -> dict[str, Any]:
     if output.suffix.lower() != ".ods":
         raise ValueError("interactive-game target must use the ODS format")
 
+    native_sheets = _interactive_game_native_sheets()
     output.unlink(missing_ok=True)
     try:
-        _write_interactive_game_seed(output)
         with _office_session(request, use_gui=False) as session:
             document = session["desktop"].loadComponentFromURL(
-                session["uno"].systemPathToFileUrl(str(output)),
+                "private:factory/scalc",
                 "_blank",
                 0,
                 (_property_value("Hidden", True),),
             )
             if document is None:
-                raise RuntimeError("LibreOffice did not import the native-control seed")
+                raise RuntimeError("LibreOffice did not create the interactive-game target")
             try:
+                _create_game_sheets(document)
                 game = _prepare_game_sheet(document)
                 _initialize_document(document, game)
-                document.store()
+                document.storeAsURL(
+                    session["uno"].systemPathToFileUrl(str(output)),
+                    (
+                        _property_value("FilterName", "calc8"),
+                        _property_value("Overwrite", True),
+                    ),
+                )
             except Exception:
                 output.unlink(missing_ok=True)
                 raise
             finally:
                 _close_document(document, save=False)
+            inject_native_buttons(output, native_sheets)
+            _round_trip_native_target(session, output, _property_value, _close_document)
     except Exception:
         output.unlink(missing_ok=True)
         raise
@@ -143,6 +152,51 @@ def _prepare_game_sheet(document: Any) -> Any:
     game = sheets.getByName(GAME_SHEET)
     _set_cell(game, "A1", "XLSLiberator interactive game target")
     return game
+
+
+def _create_game_sheets(document: Any) -> None:
+    sheets = document.getSheets()
+    first = sheets.getByIndex(0)
+    first.setName(GAME_SHEET)
+    sheets.insertNewByName(SCORE_SHEET, 1)
+    sheets.insertNewByName(STATE_SHEET, 2)
+
+
+def _round_trip_native_target(
+    session: dict[str, Any],
+    output: Path,
+    property_value: Any,
+    close_document: Any,
+) -> None:
+    output_url = session["uno"].systemPathToFileUrl(str(output))
+    document = session["desktop"].loadComponentFromURL(
+        output_url,
+        "_blank",
+        0,
+        (property_value("Hidden", True),),
+    )
+    if document is None:
+        raise RuntimeError("LibreOffice did not import the native-control target")
+    try:
+        for control_name in CONTROL_NAMES:
+            _find_control_model(document, control_name)
+        document.store()
+    finally:
+        close_document(document, save=False)
+
+    reopened = session["desktop"].loadComponentFromURL(
+        output_url,
+        "_blank",
+        0,
+        (property_value("Hidden", True),),
+    )
+    if reopened is None:
+        raise RuntimeError("LibreOffice did not reopen the persisted native-control target")
+    try:
+        for control_name in CONTROL_NAMES:
+            _find_control_model(reopened, control_name)
+    finally:
+        close_document(reopened, save=False)
 
 
 def _initialize_document(document: Any, game: Any) -> None:
@@ -202,7 +256,7 @@ def _set_cell(sheet: Any, address: str, value: str) -> None:
     sheet.getCellRangeByName(address).setString(value)
 
 
-def _write_interactive_game_seed(path: Path) -> None:
+def _interactive_game_native_sheets() -> tuple[NativeSheet, ...]:
     game_buttons = tuple(
         NativeButton(
             name=_CONTROL_MODEL_NAMES[name],
@@ -229,13 +283,10 @@ def _write_interactive_game_seed(path: Path) -> None:
         y=1_000,
         width=5_000,
     )
-    write_native_button_seed(
-        path,
-        (
-            NativeSheet(name=GAME_SHEET, buttons=game_buttons),
-            NativeSheet(name=SCORE_SHEET, buttons=(score_button,)),
-            NativeSheet(name=STATE_SHEET, hidden=True),
-        ),
+    return (
+        NativeSheet(name=GAME_SHEET, buttons=game_buttons),
+        NativeSheet(name=SCORE_SHEET, buttons=(score_button,)),
+        NativeSheet(name=STATE_SHEET, hidden=True),
     )
 
 
