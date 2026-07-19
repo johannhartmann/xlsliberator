@@ -10,6 +10,7 @@ import shutil
 import stat
 import subprocess
 import time
+from contextlib import suppress
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Any, Never
@@ -103,6 +104,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
             # Keep the encoder out of LibreOffice's GUI startup allocation peak.
             # The evidence video still covers every declared user interaction.
             video = _start_recording(display, recording)
+            scenario_error: BaseException | None = None
             try:
                 for sequence, raw_action in enumerate(actions, start=1):
                     if not isinstance(raw_action, dict):
@@ -198,11 +200,17 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                             "result": result,
                         }
                     )
+            except BaseException as exc:
+                scenario_error = exc
+                raise
             finally:
-                if game_controller is not None:
-                    controller_evidence.append(game_controller.evidence())
-                    game_controller.dispose()
-                _close_document(document, save=False)
+                _cleanup_gui_session(
+                    game_controller,
+                    document,
+                    controller_evidence,
+                    _close_document,
+                    preserve_primary_error=scenario_error is not None,
+                )
     except Exception as exc:
         _raise_with_office_diagnostics(exc, office_runtime.data)
     finally:
@@ -241,6 +249,31 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     response["evidence_archive_sha256"] = _sha256_file(archive_path)
     response["evidence_archive_bytes"] = archive_path.stat().st_size
     return response
+
+
+def _cleanup_gui_session(
+    game_controller: Any,
+    document: Any,
+    controller_evidence: list[dict[str, Any]],
+    close_document: Any,
+    *,
+    preserve_primary_error: bool,
+) -> None:
+    """Close GUI resources without replacing an action's causal exception."""
+    if preserve_primary_error:
+        if game_controller is not None:
+            with suppress(Exception):
+                controller_evidence.append(game_controller.evidence())
+            with suppress(Exception):
+                game_controller.dispose()
+        with suppress(Exception):
+            close_document(document, save=False)
+        return
+
+    if game_controller is not None:
+        controller_evidence.append(game_controller.evidence())
+        game_controller.dispose()
+    close_document(document, save=False)
 
 
 def bundle_gui_replays(request: dict[str, Any]) -> dict[str, Any]:
@@ -712,12 +745,37 @@ def _click_control(document: Any, name: str, window_id: str) -> None:
     model = _find_control_model(document, name)
     controller = document.getCurrentController()
     view = _wait_for_control_view(controller, model, name)
-    position = view.getPosSize()
+    control = _control_screen_rectangle(view, name)
     geometry = _window_geometry(window_id)
-    x = geometry["X"] + int(position.X) + max(1, int(position.Width) // 2)
-    y = geometry["Y"] + int(position.Y) + max(1, int(position.Height) // 2)
+    x = control["X"] + max(1, control["WIDTH"] // 2)
+    y = control["Y"] + max(1, control["HEIGHT"] // 2)
+    if not (
+        geometry["X"] <= x < geometry["X"] + geometry["WIDTH"]
+        and geometry["Y"] <= y < geometry["Y"] + geometry["HEIGHT"]
+    ):
+        raise RuntimeError(f"native control is outside the Calc window: {name}")
+    _xdotool("windowactivate", "--sync", window_id)
     _xdotool("mousemove", "--sync", str(x), str(y))
     _xdotool("click", "1")
+
+
+def _control_screen_rectangle(view: Any, name: str) -> dict[str, int]:
+    """Read native control bounds in absolute pixels through UNO accessibility."""
+    try:
+        context = view.getAccessibleContext()
+        position = context.getLocationOnScreen()
+        size = context.getSize()
+        rectangle = {
+            "X": int(position.X),
+            "Y": int(position.Y),
+            "WIDTH": int(size.Width),
+            "HEIGHT": int(size.Height),
+        }
+    except Exception as exc:
+        raise RuntimeError(f"native control has no accessible screen geometry: {name}") from exc
+    if rectangle["WIDTH"] <= 0 or rectangle["HEIGHT"] <= 0:
+        raise RuntimeError(f"native control has empty accessible screen geometry: {name}")
+    return rectangle
 
 
 def _find_control_model(document: Any, name: str) -> Any:

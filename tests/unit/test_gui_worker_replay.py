@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 
 from xlsliberator.gui_worker import (
+    _cleanup_gui_session,
     _confined_path,
+    _control_screen_rectangle,
     _open_ready_document,
     _raise_with_office_diagnostics,
     _start_recording,
@@ -208,6 +210,68 @@ def test_gui_failure_preserves_x11_error_before_abort_marker(
             RuntimeError("bridge disposed"),
             {"office_exit_code": 134, "office_log": preamble + marker},
         )
+
+
+def test_gui_cleanup_preserves_primary_failure_but_not_standalone_cleanup_error() -> None:
+    evidence: list[dict[str, Any]] = []
+
+    class Controller:
+        def evidence(self) -> dict[str, Any]:
+            return {"status": "partial"}
+
+        def dispose(self) -> None:
+            raise RuntimeError("disposed bridge")
+
+    def close_document(_document: Any, *, save: bool) -> None:
+        del save
+        raise RuntimeError("closed bridge")
+
+    _cleanup_gui_session(
+        Controller(),
+        object(),
+        evidence,
+        close_document,
+        preserve_primary_error=True,
+    )
+
+    assert evidence == [{"status": "partial"}]
+    with pytest.raises(RuntimeError, match="disposed bridge"):
+        _cleanup_gui_session(
+            Controller(),
+            object(),
+            [],
+            close_document,
+            preserve_primary_error=False,
+        )
+
+
+def test_native_control_geometry_uses_accessible_screen_coordinates() -> None:
+    class Geometry:
+        X = 70
+        Y = 171
+        Width = 198
+        Height = 45
+
+    class Context:
+        def getLocationOnScreen(self) -> Geometry:  # noqa: N802
+            return Geometry()
+
+        def getSize(self) -> Geometry:  # noqa: N802
+            return Geometry()
+
+    class View:
+        def getAccessibleContext(self) -> Context:  # noqa: N802
+            return Context()
+
+        def getPosSize(self) -> None:  # noqa: N802
+            pytest.fail("parent-relative XWindow geometry must not drive X11 clicks")
+
+    assert _control_screen_rectangle(View(), "GameStart") == {
+        "X": 70,
+        "Y": 171,
+        "WIDTH": 198,
+        "HEIGHT": 45,
+    }
 
 
 def test_gui_recorder_uses_one_encoder_thread(tmp_path: Path, monkeypatch: Any) -> None:
