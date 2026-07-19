@@ -118,8 +118,17 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
 
                     if kind == "click_control":
                         name = _safe_name(raw_action.get("control_name"), "control_name")
-                        _click_control(document, name, window_id)
-                        result = {"control_name": name, "event_surface": "x11-pointer"}
+                        if game_controller is None:
+                            raise RuntimeError(
+                                "click_control requires the interactive-game adapter"
+                            )
+                        result = _click_control(
+                            session,
+                            document,
+                            game_controller,
+                            name,
+                            window_id,
+                        )
                     elif kind == "key":
                         key = str(raw_action.get("key") or "")
                         if key not in _ALLOWED_KEYS:
@@ -739,7 +748,13 @@ def _wait_for_calc_window() -> str:
     raise RuntimeError("LibreOffice Calc X11 window did not become visible")
 
 
-def _click_control(document: Any, name: str, window_id: str) -> None:
+def _click_control(
+    session: dict[str, Any],
+    document: Any,
+    game_controller: Any,
+    name: str,
+    window_id: str,
+) -> dict[str, Any]:
     from xlsliberator.interactive_game_uno import _wait_for_control_view
 
     model = _find_control_model(document, name)
@@ -756,7 +771,25 @@ def _click_control(document: Any, name: str, window_id: str) -> None:
         raise RuntimeError(f"native control is outside the Calc window: {name}")
     _xdotool("windowactivate", "--sync", window_id)
     _xdotool("mousemove", "--sync", str(x), str(y))
+    event_count = len(game_controller.evidence()["events"])
     _xdotool("click", "1")
+    deadline = time.monotonic() + 1.5
+    while time.monotonic() < deadline:
+        _drain_ui(session)
+        events = game_controller.evidence()["events"]
+        for event in events[event_count:]:
+            if event.get("kind") == "control" and event.get("control_name") == name:
+                return {
+                    "control_name": name,
+                    "event_surface": "x11-pointer",
+                    "event_sequence": event["sequence"],
+                    "screen_rectangle": control,
+                }
+    active_sheet = str(getattr(controller.getActiveSheet(), "Name", "<unknown>"))
+    raise RuntimeError(
+        f"native control click emitted no matching action: {name}; "
+        f"active_sheet={active_sheet}; screen_rectangle={control}"
+    )
 
 
 def _control_screen_rectangle(view: Any, name: str) -> dict[str, int]:

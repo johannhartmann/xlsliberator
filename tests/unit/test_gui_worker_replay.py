@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from xlsliberator.gui_worker import (
+    _click_control,
     _cleanup_gui_session,
     _confined_path,
     _control_screen_rectangle,
@@ -271,6 +272,58 @@ def test_native_control_geometry_uses_accessible_screen_coordinates() -> None:
         "Y": 171,
         "WIDTH": 198,
         "HEIGHT": 45,
+    }
+
+
+def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> None:
+    events: list[dict[str, Any]] = []
+
+    class Sheet:
+        Name = "game"
+
+    class Controller:
+        def getActiveSheet(self) -> Sheet:  # noqa: N802
+            return Sheet()
+
+    class Document:
+        def getCurrentController(self) -> Controller:  # noqa: N802
+            return Controller()
+
+    class GameController:
+        def evidence(self) -> dict[str, Any]:
+            return {"events": list(events)}
+
+    def xdotool(*arguments: str) -> None:
+        if arguments == ("click", "1"):
+            events.append(
+                {
+                    "kind": "control",
+                    "control_name": "GameStart",
+                    "sequence": 2,
+                }
+            )
+
+    monkeypatch.setattr("xlsliberator.gui_worker._find_control_model", lambda *_args: object())
+    monkeypatch.setattr(
+        "xlsliberator.interactive_game_uno._wait_for_control_view",
+        lambda *_args: object(),
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._control_screen_rectangle",
+        lambda *_args: {"X": 70, "Y": 171, "WIDTH": 198, "HEIGHT": 45},
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._window_geometry",
+        lambda *_args: {"X": 0, "Y": 0, "WIDTH": 1280, "HEIGHT": 1024},
+    )
+    monkeypatch.setattr("xlsliberator.gui_worker._xdotool", xdotool)
+    monkeypatch.setattr("xlsliberator.gui_worker._drain_ui", lambda _session: None)
+
+    assert _click_control({}, Document(), GameController(), "GameStart", "42") == {
+        "control_name": "GameStart",
+        "event_surface": "x11-pointer",
+        "event_sequence": 2,
+        "screen_rectangle": {"X": 70, "Y": 171, "WIDTH": 198, "HEIGHT": 45},
     }
 
 
