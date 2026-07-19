@@ -17,7 +17,7 @@ from typing import Any, Never
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from xlsliberator.candidate_runtime import load_candidate_entrypoint
-from xlsliberator.docker_runtime import LIBREOFFICE_VERSION
+from xlsliberator.office_target import LIBREOFFICE_VERSION
 
 _NAMED_KEYS = frozenset(
     {

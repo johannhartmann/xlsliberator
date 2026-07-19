@@ -22,9 +22,9 @@ from xlsliberator.execution_sandbox import (
     WorkspacePathPolicy,
     docker_sandbox_arguments,
 )
+from xlsliberator.office_target import LIBREOFFICE_VERSION
 from xlsliberator.workbook_security import validate_untrusted_workbook
 
-LIBREOFFICE_VERSION = "26.2.4.2"
 BASE_IMAGE_DIGEST = "sha256:60eac759739651111db372c07be67863818726f754804b8707c90979bda511df"
 OFFICE_PROGRAM_PREFIX = "/opt/libreoffice26.2/program/"
 DEFAULT_IMAGE = "xlsliberator-libreoffice:26.2.4.2"

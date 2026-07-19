@@ -22,7 +22,7 @@ from types import ModuleType
 from typing import Any, Final
 from zipfile import ZIP_STORED, BadZipFile, ZipFile, ZipInfo
 
-from xlsliberator.docker_runtime import LIBREOFFICE_VERSION
+from xlsliberator.office_target import LIBREOFFICE_VERSION
 
 _SCHEMA_VERSION: Final = "1.0.0"
 _MAX_FILES: Final = 100
