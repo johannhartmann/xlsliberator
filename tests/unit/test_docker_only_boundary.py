@@ -195,12 +195,15 @@ def test_gui_image_disables_unsafe_desktop_autodiscovery_and_acceleration() -> N
     root = Path(__file__).parents[2]
     dockerfile = (root / "docker/office/gui/Dockerfile").read_text(encoding="utf-8")
 
+    assert "libgtk-3-0" in dockerfile
+    assert "ATSPI_DBUS_IMPLEMENTATION=dbus-daemon" in dockerfile
+    assert "GDK_BACKEND=x11" in dockerfile
     assert "SAL_DISABLE_CUPS=true" in dockerfile
     assert "SAL_DISABLEGL=1" in dockerfile
     assert "SAL_DISABLE_OPENCL=1" in dockerfile
     assert "SAL_DISABLESKIA=1" in dockerfile
     assert "SAL_NO_MOUSEGRABS=1" in dockerfile
-    assert "SAL_USE_VCLPLUGIN=gen" in dockerfile
+    assert "SAL_USE_VCLPLUGIN=gtk3" in dockerfile
 
 
 def test_dependency_audit_has_network_without_office_or_docker_socket_access() -> None:
