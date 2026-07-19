@@ -13,10 +13,10 @@ def test_secure_office_profile_disables_in_process_python(tmp_path: Path) -> Non
     root = ElementTree.parse(registry_path).getroot()
     namespace = {"oor": "http://openoffice.org/2001/registry"}
     item = root.find(
-        "oor:item[@oor:path='/org.openoffice.Office.Common/Security/Scripting']",
+        "item[@oor:path='/org.openoffice.Office.Common/Security/Scripting']",
         namespace,
     )
     assert item is not None
-    setting = item.find("oor:prop[@oor:name='DisablePythonRuntime']", namespace)
+    setting = item.find("prop[@oor:name='DisablePythonRuntime']", namespace)
     assert setting is not None
     assert setting.findtext("value") == "true"
