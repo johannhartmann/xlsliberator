@@ -226,9 +226,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 {
                     _qname("form", "property-name"): "DefaultControl",
                     _qname("office", "value-type"): "string",
-                    _qname("office", "string-value"): (
-                        "com.sun.star.form.control.CommandButton"
-                    ),
+                    _qname("office", "string-value"): ("com.sun.star.form.control.CommandButton"),
                 },
             )
             ElementTree.SubElement(

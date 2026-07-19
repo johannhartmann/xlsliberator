@@ -130,9 +130,10 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
     assert shape is not None
     assert tag is not None
     assert default_control is not None
-    assert default_control.attrib[
-        "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"
-    ] == "com.sun.star.form.control.CommandButton"
+    assert (
+        default_control.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"]
+        == "com.sun.star.form.control.CommandButton"
+    )
     assert tag.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == (
         "GameStart"
     )
