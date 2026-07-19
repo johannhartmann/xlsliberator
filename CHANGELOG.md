@@ -8,23 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Evidence-derived capability matrix, corpus statistics, and release-readiness report
-- Reproducible LibreOffice `26.2.4.2` source build with a proven stock-fails,
-  patched-passes TDF-172479 regression
+- Embedded pinned upstream Open-SWE runtime and XLSLiberator migration graph
+- Authenticated Open-SWE web transport with fail-closed dependency readiness
+- Pinned LibreOffice `26.2.4.2` application and source-build images
 - GitHub Actions CI/CD workflows for testing, linting, and security scanning
 - Configuration management module (`config.py`) with environment variable support
-- Authenticated Open-SWE web transport with fail-closed dependency readiness
-- Comprehensive CONTRIBUTING.md with development guidelines
-- Pre-commit hooks configuration
-- Project metadata updates (author, repository URLs)
 
 ### Changed
 - Docker is now the only supported application, test, and LibreOffice runtime platform
 - Open-SWE is now the only supported agent and migration orchestrator
 - Removed the embedded provider-backed translator and its compatibility switches
-- Release publication now fails closed when required corpus evidence is unavailable
-- Updated README with correct author information and repository links
-- Improved package metadata in pyproject.toml
+- Removed the unused corpus, demo, repair-promotion, skill-registry, and generated
+  capability-report subsystems
+- Simplified CI and release workflows around the supported Docker stack
 
 ### Security
 - Pinned `setuptools` to 83.0.0 in application and audit images to address

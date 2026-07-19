@@ -174,7 +174,7 @@ def test_yaml_models_cover_public_actions_observations_and_independent_review(
 
 
 def test_checked_in_yaml_models_save_close_reopen_as_first_class_actions() -> None:
-    acceptance = load_acceptance(Path("examples/scenarios/public-acceptance.yaml"))
+    acceptance = load_acceptance(Path("tests/fixtures/scenarios/public_acceptance.yaml"))
 
     assert [step.action.kind for step in acceptance.scenario.steps] == [
         ActionKind.OPEN,

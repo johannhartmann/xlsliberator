@@ -2,7 +2,12 @@
 
 ## Project Structure & Module Organization
 
-XLSLiberator is a Python package under `src/xlsliberator/`. Core entry points are `api.py`, `cli.py`, `mcp_server.py`, and `mcp_tools.py`; LibreOffice/UNO support lives in modules such as `uno_conn.py`, `lo_worker.py`, and `lo_worker_client.py`. Formula, validation, VBA translation, and macro embedding code use focused `formula_*`, `validation_*`, `vba*`, and `embed_macros.py` modules. Tests are split into `tests/unit/`, `tests/it/`, `tests/real/`, and `tests/bench/`. Mapping rules are in `rules/`, examples in `examples/`, and documentation in `docs/`.
+XLSLiberator is a Python package under `src/xlsliberator/`. The sole agent
+implementation lives in `open_swe_agent/`; the browser client lives in `web/`.
+Core workbook and LibreOffice entry points include `api.py`, `cli.py`,
+`mcp_server.py`, `libreoffice_mcp.py`, and `lo_worker.py`. Tests are split into
+`tests/unit/`, `tests/it/`, `tests/integration/`, and `tests/real/`. Docker
+definitions are in `docker/`, and current documentation is in `docs/`.
 
 ## Build, Test, and Development Commands
 

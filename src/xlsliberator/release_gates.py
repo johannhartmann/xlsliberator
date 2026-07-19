@@ -13,10 +13,8 @@ GateCheck = Literal["quality", "security", "office", "docker-web", "package"]
 
 _RELEASE_INPUT_DIRECTORIES = (
     ".github",
-    "corpus",
     "docker",
     "office",
-    "rules",
     "src",
     "tests",
     "tools",

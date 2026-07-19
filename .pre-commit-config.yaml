@@ -44,7 +44,6 @@ repos:
         additional_dependencies: ["bandit[toml]"]
         files: ^src/
         stages: [manual]
-        # Known issues documented in QA_REPORT.md (B405, B314, B110)
         # Run manually with: pre-commit run bandit --all-files
 
   - repo: local

@@ -3,9 +3,9 @@
 
 These are genuine ``.xlsx`` files (multi-sheet, cross-sheet formulas) so the
 landing-page demo performs a real conversion rather than a simulation. Run
-from the repository root::
+from the repository root through the test container::
 
-    python scripts/generate_web_samples.py
+    docker compose run --rm test python scripts/generate_web_samples.py
 
 Output lands in ``src/xlsliberator/web/static/samples/``.
 """

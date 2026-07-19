@@ -2,497 +2,212 @@
 
 [![CI](https://github.com/johannhartmann/xlsliberator/workflows/CI/badge.svg)](https://github.com/johannhartmann/xlsliberator/actions/workflows/ci.yml)
 [![Security](https://github.com/johannhartmann/xlsliberator/workflows/Security/badge.svg)](https://github.com/johannhartmann/xlsliberator/actions/workflows/security.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-**An Open-SWE agent for Excel-to-LibreOffice migration**
+XLSLiberator is an Open-SWE agent for migrating Excel workbooks to LibreOffice
+Calc. It accepts `.xls`, `.xlsx`, `.xlsm`, and `.xlsb` sources and produces a
+LibreOffice `.ods` deliverable with migration and review evidence.
 
-XLSLiberator uses an embedded Open-SWE workflow to migrate Excel files
-(`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) to LibreOffice Calc `.ods` files. Open-SWE
-inspects the workbook, plans and performs the migration, exercises the result in
-the pinned LibreOffice Docker target, reviews the evidence, and produces the
-deliverables. Formula, VBA, control, and runtime support varies by workbook and
-must be read from the
-[evidence-backed capability matrix](docs/capability_matrix.md).
+Open-SWE is the only agent and orchestrator in this repository. LibreOffice
+`26.2.4.2` is the only target. Docker is the only supported development and
+runtime platform.
 
-## Features
+## How it works
 
-- **Open-SWE Migration Agent**: Owns the migration thread, tool use, repairs,
-  validation, review, and delivery
-- **Formula Translation**: AST-based formula repair tools for Excel→Calc compatibility
-- **Raw VBA Extraction**: Preserves complete source modules for the embedded Open-SWE workflow
-- **Target-native Script Upsert**: Transactionally embeds caller-supplied Python/UNO modules
-- **Translation Evidence**: Records syntax, export, provenance, runtime, and
-  unresolved-artifact outcomes without promoting model confidence to success
-- **Embedded Python Macros**: Embeds converted macros directly into the ODS file with event handling
-- **Safe-by-Default Macros**: Never changes host macro security; runtime checks,
-  when requested, run only in disposable Docker profiles
-- **Validated Transformation**: Experimental certification pipeline for the pinned LibreOffice Docker runtime; current measured capabilities are listed in the [capability matrix](docs/capability_matrix.md)
-- **Native LibreOffice Conversion**: Uses LibreOffice as the base converter; semantic equivalence requires scenario evidence
-- **Artifact Inventory**: Detects supported and unsupported workbook structures without claiming universal coverage
-- **MCP Server**: FastMCP server with explicit transport and operation status;
-  unimplemented capabilities return `UNAVAILABLE`
+For each workbook, Open-SWE:
 
-## Prerequisites
+1. inspects workbook structure, formulas, VBA, controls, and dependencies;
+2. creates a baseline ODS through the pinned LibreOffice image;
+3. delegates focused analysis to its workbook, VBA, and review specialists;
+4. builds target-native repairs when the source requires them;
+5. validates the result and performs a real save, close, and reopen cycle;
+6. delivers the ODS and evidence only after independent review.
 
-### System Requirements
+The repository's CLI, MCP methods, package editors, and validation modules are
+tools used by Open-SWE. They are not a second migration workflow.
 
-**Docker with the pinned LibreOffice 26.2.4.2 runtime image.** A host Python or
-host office installation is neither required nor supported, including for
-diagnostics.
+There is no separate XLSLiberator repository, maintained Open-SWE fork,
+deterministic orchestrator, host-office fallback, or local PyUNO fallback.
 
-Open-SWE is the only supported agent and orchestrator. This repository builds a
-pinned upstream Open-SWE runtime plus its XLSLiberator graph and authenticated
-workbook API as the internal `xlsliberator-open-swe` Compose service. There is
-no second repository, maintained fork, alternate agent, competing migration
-orchestrator, or local web fallback. The inspection, package-editing, and
-LibreOffice interfaces are tools used by Open-SWE, not a second workflow.
+## Quick start
 
-A model and its matching credential must be selected explicitly. GitHub Models
-is disabled by default and never acts as a fallback or gate. Model-free
-inspection and validation tools do not read provider credentials.
+Prerequisites:
 
-## Installation
-
-XLSLiberator is Docker-only. Do not install or run its Python package on the host.
+- Docker with Docker Compose
+- an explicitly selected Open-SWE model
+- the credential for that model's provider
 
 ```bash
 git clone https://github.com/johannhartmann/xlsliberator.git
 cd xlsliberator
-docker compose build test libreoffice-runtime xlsliberator-open-swe xlsliberator-web
+cp .env.example .env
 ```
 
-## Quick Start
-
-### Open-SWE web workflow
+Set `XLSLIBERATOR_OPEN_SWE_MODEL` and only the matching provider credential in
+`.env`, then start the stack:
 
 ```bash
-mkdir -p artifacts/runtime-tmp
-cp .env.example .env
-# Select one supported model and set only its matching provider key in .env.
-# Example: XLSLIBERATOR_OPEN_SWE_MODEL=openai:gpt-5.5
+mkdir -p artifacts/runtime-tmp artifacts/open-swe-workspaces
 docker compose up -d --build xlsliberator-web
 ```
 
-Open `http://127.0.0.1:8080/`, choose an example workbook or upload your own,
-and start the migration. The web service creates an authenticated Open-SWE
-thread and streams its progress. It does not run a local converter or fall back
-to another orchestrator.
+Open `http://127.0.0.1:8080/`, upload a workbook or select one of the two small
+web samples, and start the migration.
 
-### Component command line
+If no model is configured, the services remain healthy but migration creation
+fails before a model run starts. GitHub Models is disabled by default and is
+never selected as a fallback. It requires all three of:
 
-These Docker-only commands expose individual XLSLiberator tools for development,
-diagnostics, and explicit component use. They are not an alternate migration
-agent.
+```dotenv
+XLSLIBERATOR_OPEN_SWE_MODEL=github_models:<model-id>
+XLSLIBERATOR_GITHUB_MODELS_ENABLED=1
+GITHUB_MODELS_TOKEN=<dedicated-token>
+```
+
+## Runtime boundary
+
+The Compose stack contains three application services:
+
+- `xlsliberator-web`: stores uploads, creates authenticated Open-SWE threads,
+  streams progress, and serves owner-checked artifacts;
+- `xlsliberator-open-swe`: runs the pinned upstream Open-SWE package with the
+  XLSLiberator graph from this repository;
+- `xlsliberator-mcp`: exposes the curated workbook and LibreOffice tools used by
+  that graph.
+
+Only the MCP application boundary receives the Docker socket so it can create
+disposable office workers. The web and Open-SWE containers receive neither the
+socket nor a host shell. LibreOffice, its bundled Python, UNO, PyUNO, and
+`soffice` run only in the pinned office image.
+
+See [Open-SWE architecture](docs/architecture/open-swe-migration.md) and
+[web application](docs/web_app.md) for the detailed trust boundaries.
+
+## Component tools
+
+The following commands are useful for development and diagnosis. Run them only
+through Docker; they do not replace the Open-SWE workflow.
 
 ```bash
-# Run the base LibreOffice conversion tool
+# Source inventory
+docker compose --profile ci-runner run --rm test-runner \
+  xlsliberator inspect "$PWD/input.xlsm"
+
+# Baseline conversion
 docker compose --profile ci-runner run --rm test-runner \
   xlsliberator convert "$PWD/input.xlsx" "$PWD/output.ods"
 
-# Inventory VBA without asking Open-SWE to migrate it
+# Validate an existing candidate
 docker compose --profile ci-runner run --rm test-runner \
-  xlsliberator convert --no-macros "$PWD/input.xlsm" "$PWD/output.ods"
+  xlsliberator validate "$PWD/input.xlsx" "$PWD/output.ods"
 
-# Convert and run validation gates, producing a certification report
+# Full low-level transform and certification
 docker compose --profile ci-runner run --rm test-runner \
   xlsliberator transform-validated "$PWD/input.xlsm" "$PWD/output.ods"
-
-# Inspect a workbook, or validate an existing conversion, without converting
-docker compose --profile ci-runner run --rm test-runner \
-  xlsliberator inspect "$PWD/input.xlsm"
-docker compose --profile ci-runner run --rm test-runner \
-  xlsliberator validate "$PWD/input.xlsm" "$PWD/output.ods"
 ```
 
 ### Workbook forensics
 
-`xlsprobe` is the read-only, model-free source inspection CLI used to prepare
-migrations. Run it only in the Docker application boundary:
+`xlsprobe` creates a bounded, source-derived dossier without executing workbook
+content:
 
 ```bash
-# Create the complete migration dossier under artifacts/source-case/migration/
 mkdir -p artifacts/source-case
 docker compose --profile ci-runner run --rm test-runner \
   xlsprobe dossier "$PWD/input.xlsm" --output "$PWD/artifacts/source-case"
-
-# Query individual evidence surfaces without creating a dossier
-docker compose --profile ci-runner run --rm test-runner \
-  xlsprobe package-tree "$PWD/input.xlsm"
-docker compose --profile ci-runner run --rm test-runner \
-  xlsprobe extract-vba "$PWD/input.xlsm"
-docker compose --profile ci-runner run --rm test-runner \
-  xlsprobe formulas "$PWD/input.xlsm"
 ```
 
-The other focused commands are `inspect`, `controls`, `dependencies`, and
-`previews`. Every command accepts `--timeout-seconds` and `--max-source-mib`.
-Programmatic callers can apply the stricter `ProbeLimits` contract for archive
-entry counts, per-entry and aggregate expansion size, compression ratio, and
-preview size. Nested archives are retained as raw evidence and never expanded.
+Focused commands include `package-tree`, `extract-vba`, `formulas`, `controls`,
+`dependencies`, and `previews`.
 
-The versioned dossier contains a byte-for-byte `workbook.original`, bounded
-metadata and sheet previews, formulas grouped by sheet or defined name, complete
-extracted VBA module text and boundaries, controls, relationships, dependency
-findings, raw package parts or OLE streams, and explicit coverage gaps. Its
-`dossier.md` is an index with an untrusted-content boundary; large or
-executable-looking workbook content is referenced instead of copied into the
-model-readable markdown. Dossier creation snapshots the source transactionally,
-refuses concurrent source changes, and never replaces an existing dossier.
+### ODS package editing
 
-### Transactional ODS package edits
-
-`odstool` is the transactional package-editing boundary for scripts and event bindings.
-It verifies the source package before editing, writes and verifies a complete
-candidate beside the original, fsyncs it, rejects concurrent source changes,
-and atomically replaces the source only after every check passes. Existing
-scripts, unknown package members, ZIP metadata, and unrelated manifest entries
-are preserved.
+`odstool` performs transactional script and event-binding changes:
 
 ```bash
-# Inspect and verify without changing the package
-docker compose --profile ci-runner run --rm test-runner \
-  odstool list "$PWD/output.ods"
 docker compose --profile ci-runner run --rm test-runner \
   odstool verify "$PWD/output.ods"
 docker compose --profile ci-runner run --rm test-runner \
-  odstool inspect-scripts "$PWD/output.ods"
-
-# Preview an upsert, then commit against the reviewed source hash
-docker compose --profile ci-runner run --rm test-runner \
   odstool upsert-script "$PWD/output.ods" "$PWD/repair.py" --dry-run
-docker compose --profile ci-runner run --rm test-runner \
-  odstool upsert-script "$PWD/output.ods" "$PWD/repair.py" \
-  --expect-sha256 <reviewed-package-sha256>
-
-# Compare or snapshot verified packages
-docker compose --profile ci-runner run --rm test-runner \
-  odstool diff "$PWD/before.ods" "$PWD/after.ods"
-docker compose --profile ci-runner run --rm test-runner \
-  odstool snapshot "$PWD/output.ods" --output "$PWD/artifacts/output-snapshot"
 ```
 
-The remaining mutation commands are `remove-script`, `bind-event`, and
-`unbind-event`; each supports `--dry-run` and `--expect-sha256`. Event binding
-YAML has the closed schema `id`, `control_id`, `event_name`, `module`, and
-`function`. The target module and exported function must already resolve.
-Mutation results include member-level diffs and explicitly report invalidated
-package signatures. A failed validation, write, binding resolution, or
-precondition leaves the original untouched.
+Mutation commands verify the complete candidate before atomically replacing the
+original package.
 
-### Public migration acceptance
+### LibreOffice MCP
 
-`migration-check` loads a strict, versioned YAML or JSON contract containing
-independently reviewed migration metadata, the declared environment and
-capability grants, and an action/observation scenario. Required actions and
-assertions fail closed: `UNAVAILABLE`, `SKIPPED`, and `NOT_RUN` can never
-produce a passing acceptance result. Typed observations keep empty cells,
-empty strings, numbers, Booleans, and formula errors distinct, with explicitly
-declared absolute and relative numeric tolerances.
+The internal MCP service is started as part of the web stack. For explicit
+component work:
 
 ```bash
-# Execute only through the trusted Docker test runner; LibreOffice remains in
-# the pinned office worker image.
-docker compose --profile ci-runner run --rm test-runner \
-  migration-check run "$PWD/public-acceptance.yaml" "$PWD/output.ods" \
-  --output "$PWD/artifacts/acceptance-evidence"
-
-docker compose run --rm test \
-  migration-check inspect "$PWD/artifacts/acceptance-evidence"
-docker compose run --rm test \
-  migration-check diff "$PWD/trace-a.json" "$PWD/trace-b.json"
-
-# Mutants are generated only from copies under <migration-dir>/mutations.
-docker compose --profile ci-runner run --rm test-runner \
-  migration-check mutate "$PWD/migration"
-docker compose run --rm test migration-check report "$PWD/migration"
+mkdir -p artifacts/runtime-tmp artifacts/open-swe-workspaces
+docker compose up -d --build xlsliberator-mcp
 ```
 
-Each run emits content-addressed JSON plus a Markdown report. Mutation campaigns
-change one embedded Python module or ODF formula at a time and pass only when
-the public acceptance detects every executable mutant. Runtime unavailability
-is inconclusive, never a killed mutant. Expected results come from the authored
-requirements and independent review; cached Excel values are explicitly not an
-authoritative oracle. Real target execution uses the stateful session service,
-which keeps the source immutable and executes every Office operation in the
-pinned Docker worker image.
+It exposes workbook inspection, baseline conversion, candidate building,
+validation, and stateful LibreOffice session operations. See
+[MCP tools](docs/mcp_tools.md).
 
-### Stateful LibreOffice MCP service
+## Configuration
 
-Start the trusted-local MCP server for Open-SWE or another explicit MCP client:
+Important Open-SWE variables are documented in `.env.example`:
 
-```bash
-# Build the exact office worker, then start the loopback-only MCP gateway
-mkdir -p artifacts/runtime-tmp artifacts/mcp-workspace
-docker compose build libreoffice-runtime xlsliberator-mcp
-docker compose up -d xlsliberator-mcp
+- `XLSLIBERATOR_OPEN_SWE_MODEL`
+- the selected provider credential
+- `XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT`
+- `XLSLIBERATOR_OPEN_SWE_MAX_OUTPUT_TOKENS`
+- `XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN`
+- `XLSLIBERATOR_GITHUB_MODELS_ENABLED`
 
-# Client connects to: http://localhost:8080/mcp
-
-# Equivalent one-shot server command inside the application image:
-docker compose run --rm --service-ports xlsliberator-mcp \
-  xlsliberator libreoffice-mcp-serve --host 0.0.0.0 --port 8000
-```
-
-The public surface contains exactly these session tools:
-
-```text
-create_session  open_document  inspect_document  list_sheets
-read_cells  write_cells  list_formulas  recalculate  list_controls
-dispatch_control_event  send_keyboard_event  execute_python_macro
-capture_screenshot  export_pdf  save  close  reopen  collect_logs
-destroy_session
-```
-
-`create_session` returns an explicit session ID; every other call requires it.
-Each session has a unique profile identity, port/display, immutable runtime
-identity, disposable working copy, and preserved logs/attachments. UI control,
-keyboard, and screenshot operations return `UNAVAILABLE` unless a real event
-layer can prove the operation; the service never invokes a handler and labels
-that a click. The legacy `mcp-serve` command is deprecated, and legacy loose
-tool names are not registered. See [`docs/mcp_tools.md`](docs/mcp_tools.md).
-
-### Browser Web App
-
-The [Quick Start](#open-swe-web-workflow) launches the complete browser-facing
-stack. Pick a bundled example workbook or upload your own, start a real
-migration, watch Open-SWE progress inline, and download the converted `.ods`
-file plus JSON and Markdown reports.
-Compose starts the internal MCP, Open-SWE, and web services in dependency order.
-The web container is only an authenticated Open-SWE client. It fails closed
-when the internal Open-SWE service is absent or unreachable and never invokes
-conversion locally.
-
-The supported development path is entirely Docker-based. The host shell is limited to Docker,
-Git, and file operations; it must not start Python, `uv`, LibreOffice, UNO, or PyUNO.
-
-The web app accepts `.xls`, `.xlsx`, `.xlsm`, and `.xlsb` uploads. It stores each job
-under a server-generated ID, uses isolated LibreOffice profiles for web conversions,
-and avoids exposing internal filesystem paths in API responses.
-
-See the [User Guide](user_guide.md) for the full workflow and the
-[Web App Guide](docs/web_app.md) for development, API, and Docker details.
-
-### Python API
-
-The Python API is an in-container API. These examples run inside the application
-Docker container; direct host invocation is rejected before any office runtime
-can be constructed.
-
-```python
-from xlsliberator.api import convert
-
-# Simple conversion
-result = convert("input.xlsx", "output.ods")
-
-# With options
-result = convert(
-    "input.xlsm",
-    "output.ods",
-    python_modules={"MigratedModule": generated_python_uno_source},
-    embed_macros=True,
-)
-
-print(f"Conversion completed: {result.success}")
-print(f"Total formulas: {result.total_formulas}")
-print(f"VBA procedures: {result.vba_procedures}")
-```
-
-For the validated transformation pipeline (convert + certify against real office runtimes):
-
-```python
-from xlsliberator.validated_api import transform_validated
-
-report = transform_validated("input.xlsm", "output.ods", targets=["libreoffice"])
-print(f"Certified: {report.certification.certified}")
-print(report.to_markdown())
-```
-
-## Python Macro Support
-
-The low-level conversion API does not choose a model or translate VBA by itself.
-The embedded Open-SWE workflow reads raw VBA and the workbook dossier, generates
-target-native Python/UNO modules, inserts those artifacts transactionally, and
-validates them in the LibreOffice target.
-
-### How It Works
-
-During conversion, XLSLiberator:
-- Embeds Python-UNO macros into the ODS file's `Scripts/python/` directory
-- Rewrites event handlers in `content.xml` from `language=Basic` to `language=Python`
-- Loads documents only in the disposable pinned office worker container, where
-  `MacroExecutionMode=4` is scoped to that isolated job profile
-- Runs requested runtime macro checks inside isolated, temporary LibreOffice
-  profiles; an unavailable or skipped check does not pass validation
-
-**XLSLiberator does not modify global LibreOffice macro security.** The legacy
-option is retained only for API compatibility and reports that global mutation
-is unsupported:
-
-```python
-from xlsliberator.api import convert
-
-convert("input.xlsm", "output.ods", allow_global_macro_security_change=True)
-```
-
-Do not configure or start a host LibreOffice installation. Macro execution uses
-only an isolated, disposable profile inside the pinned office container.
-
-## Architecture
-
-Open-SWE owns the complete migration:
-
-1. **Migration Thread**: the web app creates or resumes one authenticated,
-   durable Open-SWE thread for the workbook
-2. **Source Investigation**: Open-SWE uses the workbook dossier, formula, VBA,
-   control, and dependency tools to understand the source
-3. **Target Implementation**: Open-SWE plans the migration and produces the
-   LibreOffice-compatible formulas, scripts, event bindings, and package changes
-4. **LibreOffice Execution**: every office operation runs in the pinned
-   LibreOffice 26.2.4.2 Docker target
-5. **Evidence and Repair**: Open-SWE evaluates target behavior, performs bounded
-   repairs, and records unresolved capabilities explicitly
-6. **Independent Review and Delivery**: the migration is delivered only after
-   the required review and acceptance evidence are present
-
-The CLI, MCP methods, workbook inspection, package editing, and validation
-modules are the tools behind this workflow. They do not constitute another
-agent or orchestrator.
+Model-free workbook and LibreOffice tools do not read provider credentials.
 
 ## Development
 
-### Setup
+The host shell may run Docker, Git, and file operations only. Do not run host
+Python, `uv`, PyUNO, UNO, LibreOffice, or `soffice`, including for diagnostics.
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/xlsliberator.git
-cd xlsliberator
-
-# Build the development and exact LibreOffice images
-docker compose build test libreoffice-runtime
-
-# Run tests
-docker compose run --rm test pytest
-
-# Code quality checks
-make fmt      # Format code with ruff
-make lint     # Lint with ruff
-make typecheck # Type check with mypy
-make test     # Run test suite
-```
-
-### Project Structure
-
-```
-xlsliberator/
-├── src/xlsliberator/                # Main source code
-│   ├── api.py                       # Base conversion and artifact application
-│   ├── primitives.py                # Typed public operations
-│   ├── xlsprobe.py                  # Bounded workbook forensics and dossiers
-│   ├── validated_api.py             # Validated transformation (transform_validated)
-│   ├── cli.py                       # Command-line interface
-│   ├── config.py                    # Environment-driven configuration
-│   ├── extract_excel.py             # Workbook metadata/IR extraction
-│   ├── extract_vba.py               # VBA extraction (oletools)
-│   ├── python_syntax_validator.py   # Phase 2: Syntax validation
-│   ├── web/open_swe.py              # Authenticated Open-SWE transport
-│   ├── embed_macros.py              # Macro embedding + event binding
-│   ├── python_macro_manager.py      # Scripts/python/ management & validation
-│   ├── formula_ast_transformer.py   # Formula AST transforms
-│   ├── formula_engine.py            # Formula checks & rule registry
-│   ├── fix_native_ods.py            # Post-conversion ODS fixes
-│   ├── validation_runner.py         # Validation gate sequencing
-│   ├── certification_report.py      # Certification report writer
-│   ├── calc_backend.py              # Office backend discovery & isolated profiles
-│   ├── control_inventory.py         # ODS form/control/event inventory
-│   ├── uno_conn.py                  # In-process LibreOffice UNO connection
-│   ├── lo_worker.py                 # Out-of-process UNO worker (stdlib-only)
-│   ├── lo_worker_client.py          # Client for the UNO worker
-│   ├── libreoffice_session.py       # Stateful Docker-only runtime sessions
-│   ├── libreoffice_mcp.py           # Session-oriented MCP tools
-│   ├── mcp_server.py                # Curated FastMCP service
-│   └── web/                         # FastAPI web app
-├── tests/                           # Test suite
-│   ├── unit/                        # Unit tests
-│   ├── it/                          # LibreOffice/UNO integration tests
-│   ├── real/                        # Real-workbook fixtures
-│   ├── bench/                       # Performance benchmarks
-│   └── integration/                 # Docker web-app tests
-├── rules/                           # Formula/event mapping rules (YAML)
-└── docs/                            # Documentation
-```
-
-## Testing
-
-```bash
-# Run all tests in the development container
-docker compose run --rm test pytest
-
-# Run specific test categories
-docker compose run --rm test pytest -m "not integration"
+docker compose build test
+docker compose run --rm test ruff format --check .
+docker compose run --rm test ruff check src tests
+docker compose run --rm test mypy src
+docker compose run --rm test pytest tests/unit
 make test-integration
-docker compose run --rm test pytest -m benchmark
-
-# Run with coverage
-docker compose run --rm test pytest --cov=xlsliberator --cov-report=html
+make test-docker-web
 ```
 
-## Measured capabilities
+`make all` runs the complete local CI sequence in Docker.
 
-No repository-wide equivalence or VBA-success percentage is currently certified.
-Measured results are generated from the conformance corpus and published in the
-[capability matrix](docs/capability_matrix.md) and generated
-[release-readiness report](docs/release_readiness.md); unavailable, skipped,
-unsupported, waived, and failed runs remain distinct from passing results.
-Tool-level capability results do not by themselves prove a complete Open-SWE
-migration. Agent acceptance evidence is tracked separately. See the
-[agentic implementation ledger](docs/agentic_implementation_status.md) and the
-[Open-SWE architecture](docs/architecture/open-swe-migration.md).
+## Repository layout
 
-## Known Limitations
+```text
+src/xlsliberator/
+├── open_swe_agent/    Open-SWE graph, specialists, state, and curated tools
+├── web/               FastAPI web client and browser UI
+├── mcp_server.py      Curated internal MCP server
+├── libreoffice_mcp.py Stateful LibreOffice session tools
+├── docker_runtime.py  Disposable office-container boundary
+├── lo_worker.py       Code executed inside the office image
+├── xlsprobe.py        Bounded source inspection
+├── odstool.py         Transactional ODS editing
+└── validation_*.py    Transformation validation
 
-- Core conversion does not translate VBA; Open-SWE must supply target-native modules
-- Complex migrations require Open-SWE specialist work and independent review
-- Cross-workbook references require manual adjustment
-- COM automation and external DLLs are not supported
+docker/                Pinned application, Open-SWE, test, and office images
+office/                LibreOffice source identity and maintained target patch
+tests/                 Unit, Docker integration, and real-workbook tests
+docs/                  Current architecture, runtime, and security documentation
+```
 
-## Contributing
+## Limitations
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass (`make test`)
-5. Run code quality checks (`make fmt lint typecheck`)
-6. Submit a pull request
+- Migration quality depends on the specific workbook and configured model.
+- Proprietary COM automation, external DLLs, and Windows-only dependencies must
+  be replaced with target-native or open-service implementations.
+- A baseline conversion is not proof of behavioral equivalence.
+- Missing, skipped, unavailable, or not-run validation is never treated as
+  success.
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 or later (GPLv3+)**.
-
-See [LICENSE](LICENSE) for the full license text.
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/johannhartmann/xlsliberator/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/johannhartmann/xlsliberator/discussions)
-
-## Author
-
-**Johann-Peter Hartmann**
-Email: johann-peter.hartmann@mayflower.de
-GitHub: [@johannhartmann](https://github.com/johannhartmann)
-
-## Acknowledgments
-
-- **Lukas Kahwe Smith** ([@lsmith77](https://github.com/lsmith77)): For the original idea and concept
-- **LibreOffice**: For the excellent open-source office suite
-- **oletools**: For VBA extraction capabilities
-
-## Roadmap
-
-- [x] Embed pinned upstream Open-SWE in the single-repository Docker stack
-- [ ] Record explicitly authorized live-model acceptance evidence
-- [ ] Enhanced formula repair logic
-- [ ] Integration tests for VBA quality pipeline
+XLSLiberator is licensed under the
+[GNU General Public License v3.0 or later](LICENSE).

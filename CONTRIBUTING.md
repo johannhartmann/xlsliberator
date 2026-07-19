@@ -170,12 +170,11 @@ def test_feature_name():
 Changes to conversion, validation, formulas, macros, controls, or the LibreOffice
 backend must include:
 
-- [ ] a regression fixture or deterministic unit fixture;
+- [ ] a focused regression or unit fixture;
 - [ ] required gates with explicit passed, failed, skipped, unavailable, or not-run status;
 - [ ] Docker runtime identity and evidence references for runtime claims;
 - [ ] source-artifact disposition and loss accounting where applicable;
-- [ ] updated capability data without manually invented percentages;
-- [ ] exact local commands and outcomes in `docs/implementation_status.md`.
+- [ ] exact Docker commands and outcomes in the PR description.
 
 ### PR Description Template
 ```markdown
@@ -206,14 +205,14 @@ xlsliberator/
 │   ├── cli.py                # Command-line interface
 │   ├── config.py             # Configuration management
 │   ├── extract_vba.py        # VBA extraction
-│   ├── vba2py_uno.py         # VBA→Python translation
+│   ├── open_swe_agent/       # Sole migration agent and specialists
 │   ├── formula_*.py          # Formula handling
 │   └── uno_conn.py           # LibreOffice UNO connection
 ├── tests/                    # Test suite
 │   ├── unit/                 # Unit tests
 │   ├── it/                   # Integration tests
-│   └── data/                 # Test fixtures
-├── rules/                    # YAML mapping rules
+│   └── fixtures/             # Test fixtures
+├── docker/                   # Pinned runtime and test images
 ├── docs/                     # Documentation
 └── .github/workflows/        # CI/CD workflows
 ```

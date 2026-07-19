@@ -21,7 +21,6 @@ jobs:
       - run: docker compose run --rm test ruff format --no-cache --check --diff .
       - run: docker compose run --rm test ruff check --no-cache .
       - run: docker compose run --rm test mypy --cache-dir=/tmp/mypy-cache src/
-      - run: docker compose run --rm test python -m xlsliberator.skill_validation skills
 
   unit:
     name: Unit tests (Python ${{ matrix.python }}, Docker)
@@ -58,33 +57,9 @@ jobs:
           path: artifacts/
           if-no-files-found: error
 
-  corpus:
-    name: Blocking conformance corpus (Docker)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: docker compose build test
-      - name: Verify corpus, minimizer, fuzz accounting, and release fail-closed behavior
-        run: >-
-          docker compose run --rm test pytest -p no:cacheprovider -q
-          tests/unit/test_conformance_corpus.py
-          tests/unit/test_demo_corpus.py
-          tests/unit/test_repair_promotion.py
-          tests/unit/test_capability_matrix.py
-      - name: Validate PR demo subset and generate not-measured capability report
-        run: |
-          mkdir -p artifacts/corpus && chmod 0777 artifacts/corpus
-          docker compose run --rm test xlsliberator demo-corpus-validate
-          docker compose run --rm test xlsliberator demo-corpus-search \
-            --query "" --subset pr > artifacts/corpus/pr-subset.json
-          docker compose run --rm test xlsliberator demo-corpus-report \
-            --results tests/corpus/manifests/not-run-results.json \
-            --output artifacts/corpus/demo-capabilities.json
-
   office-integration:
     name: LibreOffice 26.2.4.2 Docker integration
-    needs: [quality, unit, corpus]
+    needs: [quality, unit]
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -92,16 +67,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
-      - name: Build Docker orchestrator with retained logs
+      - name: Build Docker test runner
+        run: >-
+          docker compose --profile ci-runner build test-runner
+      - name: Run disposable LibreOffice integration tests
         run: |
           set -o pipefail
-          docker compose --profile ci-orchestrator build test-orchestrator \
-            2>&1 | tee artifacts/ci/office-build.log
-      - name: Run Docker-contained orchestrator and disposable office jobs
-        run: |
-          set -o pipefail
-          docker compose --profile ci-orchestrator run --rm \
-            test-orchestrator python tools/ci_check.py office \
+          docker compose --profile ci-runner run --rm \
+            test-runner python tools/ci_check.py office \
             2>&1 | tee artifacts/ci/office-integration.log
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -112,54 +85,8 @@ jobs:
             **/*.evidence/
           if-no-files-found: error
 
-  interactive-showcase:
-    name: Interactive game GUI showcase
-    needs: [quality, unit, corpus]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      XLSLIBERATOR_FAIL_ON_SKIP: "1"
-      XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/showcase-ci
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: mkdir -p artifacts/runtime-tmp artifacts/showcase-ci && chmod -R 0777 artifacts
-      - name: Build pinned stock and GUI LibreOffice images
-        run: |
-          set -o pipefail
-          docker compose --profile office build libreoffice-runtime \
-            2>&1 | tee artifacts/showcase-ci/stock-image-build.log
-          docker compose --profile office-gui build libreoffice-gui-runtime \
-            2>&1 | tee artifacts/showcase-ci/gui-image-build.log
-      - name: Build trusted Docker orchestrator
-        run: >-
-          docker compose --profile ci-orchestrator build test-orchestrator
-      - name: Run five public source-derived GUI scenarios
-        run: |
-          set -o pipefail
-          docker compose --profile ci-orchestrator run --rm \
-            --env XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR \
-            test-orchestrator pytest -p no:cacheprovider -q \
-            tests/it/test_application_candidate_showcase.py \
-            --junitxml=artifacts/showcase-ci/pytest.xml \
-            2>&1 | tee artifacts/showcase-ci/runtime.log
-      - name: Kill source-derived engine mutants without changing the oracle
-        run: |
-          set -o pipefail
-          docker compose --profile ci-orchestrator run --rm \
-            test-orchestrator python \
-            demos/interactive-game/mutations/run.py \
-            --repository-root /workspace \
-            --output /workspace/artifacts/showcase-ci/mutation \
-            2>&1 | tee artifacts/showcase-ci/mutation.log
-      - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: interactive-showcase-evidence
-          path: artifacts/showcase-ci/
-          if-no-files-found: error
-
   docker-web:
-    name: Docker web smoke
+    name: Open-SWE web smoke (Docker)
     needs: quality
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -169,16 +96,16 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts/runtime-tmp artifacts/ci && chmod -R 0777 artifacts
-      - name: Build Docker web orchestrator with retained logs
+      - name: Build Docker test runner
         run: |
           set -o pipefail
-          docker compose --profile ci-orchestrator build test-orchestrator \
+          docker compose --profile ci-runner build test-runner \
             2>&1 | tee artifacts/ci/docker-web-build.log
       - name: Run blocking Docker web smoke
         run: |
           set -o pipefail
-          docker compose --profile ci-orchestrator run --rm \
-            test-orchestrator python tools/ci_check.py docker-web \
+          docker compose --profile ci-runner run --rm \
+            test-runner python tools/ci_check.py docker-web \
             2>&1 | tee artifacts/ci/docker-web.log
       - name: Remove transient nested-Docker test files
         if: always()
@@ -218,9 +145,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts/ci && chmod -R 0777 artifacts
-      - run: docker compose build test
+      - run: docker compose --profile ci-runner build security-audit
       - run: >-
-          docker compose --profile ci-orchestrator run --rm security-audit
+          docker compose --profile ci-runner run --rm security-audit
           python tools/ci_check.py security
       - name: Exercise the real container escape boundary
         run: |

@@ -166,10 +166,7 @@ output_*.ods
 !/tools/office
 !/tools/office.py
 !/tools/ci_check.py
-!/tools/generate_certification_samples.py
-!/tools/write_release_inputs.py
 prompts/
-rules/calc_transforms/
 run_convert.sh
 run_xlsliberator.py
 
@@ -181,19 +178,11 @@ REMAINING_ISSUES.md
 docs/
 !docs/
 docs/*
-!docs/validated_transformation_roadmap.md
 !docs/web_app.md
 !docs/production_hardening.md
-!docs/implementation_status.md
-!docs/agentic_implementation_status.md
-!docs/capability_matrix.md
-!docs/capability_matrix.json
-!docs/corpus_statistics.json
-!docs/agent_repair.md
 !docs/mcp_tools.md
 !docs/security_threat_model.md
 !docs/office_source_integration.md
-!docs/release_readiness.md
 !docs/vba_execution_architecture.md
 !docs/architecture/
 docs/architecture/*

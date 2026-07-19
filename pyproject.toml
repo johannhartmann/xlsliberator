@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "xlsliberator"
 version = "0.1.0"
-description = "Excel to LibreOffice Calc converter with VBA-to-Python-UNO macro translation"
+description = "Open-SWE agent for Excel-to-LibreOffice Calc migration"
 authors = [
     {name = "Johann-Peter Hartmann", email = "johann-peter.hartmann@mayflower.de"}
 ]

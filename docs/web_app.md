@@ -10,9 +10,8 @@ connects to UNO, receives a Docker socket, or falls back to a local conversion
 path. If Open-SWE is not configured or cannot be reached, migrations fail
 closed.
 
-The two bundled sample workbooks are Level 0 pipeline examples. They exercise
-upload, thread creation, progress, and delivery; they are not evidence for
-macro, UI, external-dependency, XLS/XLSB, or hostile-workbook migrations.
+The two bundled sample workbooks exercise upload, thread creation, progress, and
+delivery. They are convenience inputs, not migration-quality evidence.
 
 ## Docker development
 

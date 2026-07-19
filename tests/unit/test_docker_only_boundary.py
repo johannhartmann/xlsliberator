@@ -99,12 +99,10 @@ def test_project_commands_do_not_execute_python_on_the_host() -> None:
     makefile = (root / "Makefile").read_text(encoding="utf-8")
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
-    examples = (root / "examples/README.md").read_text(encoding="utf-8")
     assert "DOCKER_TEST := docker compose run --rm test" in makefile
     assert "dockerfile: docker/test/Dockerfile" in compose
     assert "sudo apt-get install python" not in readme
-    assert re.search(r"(?m)^\s*(?:npx|npm)\s", examples) is None
-    assert "\ncurl " not in examples
+    assert re.search(r"(?m)^\s*(?:python|python3|uv|pytest|ruff|mypy)\s", readme) is None
     for command in ("pytest", "ruff", "mypy", "pip-audit", "bandit"):
         assert f"\t{command} " not in makefile
 
