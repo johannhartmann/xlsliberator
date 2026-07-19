@@ -271,6 +271,8 @@ def _manifest_from_payload(raw: object) -> CandidateManifest:
         raise CandidateBundleError("candidate entrypoints must declare build and controller")
     build_entrypoint = _validated_entrypoint(entrypoints["build"], required=True)
     controller_entrypoint = _validated_entrypoint(entrypoints["controller"], required=False)
+    if build_entrypoint is None:
+        raise CandidateBundleError("candidate build entrypoint is required")
 
     raw_files = raw["files"]
     if not isinstance(raw_files, dict) or not raw_files:
