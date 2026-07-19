@@ -140,10 +140,13 @@ def test_injection_preserves_package_and_adds_styled_native_model(tmp_path: Path
         shape.attrib["{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}text-style-name"]
         == "XLSLiberatorControlText"
     )
-    assert root.find(
-        ".//form:property[@form:property-name='Tag']",
-        namespaces,
-    ) is None
+    assert (
+        root.find(
+            ".//form:property[@form:property-name='Tag']",
+            namespaces,
+        )
+        is None
+    )
     assert b'xmlns:ooo="http://openoffice.org/2004/office"' in content
     assert b'form:control-implementation="ooo:com.sun.star.form.component.CommandButton"' in content
 
