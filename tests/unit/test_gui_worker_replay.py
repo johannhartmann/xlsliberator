@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 
 from xlsliberator.gui_worker import (
-    _click_control,
     _cleanup_gui_session,
+    _click_control,
     _confined_path,
     _control_screen_rectangle,
     _open_ready_document,
