@@ -222,13 +222,13 @@ def _initialize_document(document: Any, game: Any) -> None:
     _set_cell(score, "A3", "Player")
     _set_cell(score, "B3", "Score")
     _set_cell(score, "A4", "LibreOffice player")
-    _set_cell(score, "B4", "0")
+    _set_numeric_cell(score, "B4", 0)
 
     _set_cell(state_sheet, "A1", "xlsliberator.interactive-game.state.v1")
     state_sheet.getCellRangeByName(STATE_CELL).setString(
         state_to_json(new_game_state(seed=20_260_204))
     )
-    _set_cell(state_sheet, "A3", "0")
+    _set_numeric_cell(state_sheet, "A3", 0)
     _set_cell(state_sheet, "A4", SOURCE_SHA256)
     _set_cell(state_sheet, "A5", TARGET_BUILD)
     for row, control_name in enumerate(CONTROL_NAMES, start=7):
@@ -244,6 +244,22 @@ def _initialize_document(document: Any, game: Any) -> None:
 
 def _set_cell(sheet: Any, address: str, value: str) -> None:
     sheet.getCellRangeByName(address).setString(value)
+
+
+def _set_numeric_cell(sheet: Any, address: str, value: int) -> None:
+    """Write a real Calc number so public assertions can use XCell.getValue."""
+    sheet.getCellRangeByName(address).setValue(float(value))
+
+
+def _set_optional_numeric_cell(
+    sheet: Any,
+    address: str,
+    value: int | None,
+) -> None:
+    if value is None:
+        _set_cell(sheet, address, "")
+    else:
+        _set_numeric_cell(sheet, address, value)
 
 
 def _install_runtime_controls(document: Any, uno: Any) -> None:
@@ -566,28 +582,28 @@ class InteractiveGameController:
                 game.getCellByPosition(12 + column, 3 + row).CellBackColor = _ACTIVE
 
         _set_cell(game, "C2", self.state.phase.value)
-        _set_cell(game, "C3", str(self.state.score))
-        _set_cell(game, "C4", str(self.state.completed_lines))
-        _set_cell(game, "C5", str(self.state.high_score))
-        _set_cell(
+        _set_numeric_cell(game, "C3", self.state.score)
+        _set_numeric_cell(game, "C4", self.state.completed_lines)
+        _set_numeric_cell(game, "C5", self.state.high_score)
+        _set_optional_numeric_cell(
             game,
             "C6",
-            str(self.state.active.row) if self.state.active is not None else "",
+            self.state.active.row if self.state.active is not None else None,
         )
-        _set_cell(game, "C7", str(self.state.event_index))
-        _set_cell(game, "C8", str(self.state.tick_index))
-        _set_cell(game, "C9", str(len(self.listeners) + (self.key_listener is not None)))
-        _set_cell(
+        _set_numeric_cell(game, "C7", self.state.event_index)
+        _set_numeric_cell(game, "C8", self.state.tick_index)
+        _set_numeric_cell(game, "C9", len(self.listeners) + (self.key_listener is not None))
+        _set_optional_numeric_cell(
             game,
             "C10",
-            str(self.state.active.column) if self.state.active is not None else "",
+            self.state.active.column if self.state.active is not None else None,
         )
-        _set_cell(
+        _set_optional_numeric_cell(
             game,
             "C11",
-            str(self.state.active.rotation) if self.state.active is not None else "",
+            self.state.active.rotation if self.state.active is not None else None,
         )
-        _set_cell(sheets.getByName(SCORE_SHEET), "B4", str(self.state.high_score))
+        _set_numeric_cell(sheets.getByName(SCORE_SHEET), "B4", self.state.high_score)
 
     def evidence(self) -> dict[str, Any]:
         encoded = state_to_json(self.state)
@@ -610,8 +626,7 @@ class InteractiveGameController:
 
     def _increment_open_count(self) -> None:
         cell = self.document.getSheets().getByName(STATE_SHEET).getCellRangeByName("A3")
-        value = int(str(cell.getString()) or "0") + 1
-        cell.setString(str(value))
+        cell.setValue(float(int(cell.getValue()) + 1))
 
     def _reset_timer_clock(self) -> None:
         self._timer_last_poll = time.monotonic()

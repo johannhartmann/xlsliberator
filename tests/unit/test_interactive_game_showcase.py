@@ -23,6 +23,8 @@ from xlsliberator.interactive_game_uno import (
     SOURCE_SHA256,
     InteractiveGameController,
     _control_logical_name,
+    _set_numeric_cell,
+    _set_optional_numeric_cell,
 )
 
 
@@ -271,3 +273,28 @@ def test_action_listeners_bind_to_native_control_views(
     assert [control for control, _listener in controller.listeners] == list(views.values())
     assert all(len(view.listeners) == 1 for view in views.values())
     assert active_sheets[-2:] == [score_sheet, game_sheet]
+
+
+def test_game_metrics_use_calc_numeric_cells() -> None:
+    class Cell:
+        def __init__(self) -> None:
+            self.numeric: float | None = None
+            self.text: str | None = None
+
+        def setValue(self, value: float) -> None:  # noqa: N802
+            self.numeric = value
+
+        def setString(self, value: str) -> None:  # noqa: N802
+            self.text = value
+
+    cell = Cell()
+    sheet = type("Sheet", (), {"getCellRangeByName": lambda _self, _address: cell})()
+
+    _set_numeric_cell(sheet, "C10", 5)
+
+    assert cell.numeric == 5.0
+    assert cell.text is None
+
+    _set_optional_numeric_cell(sheet, "C10", None)
+
+    assert cell.text == ""
