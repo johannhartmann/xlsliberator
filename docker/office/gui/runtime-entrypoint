@@ -6,6 +6,7 @@ screen="${XLSLIBERATOR_XVFB_SCREEN:-1280x1024x24}"
 runtime_dir="${XDG_RUNTIME_DIR:-/tmp/xlsliberator-runtime}"
 export XLSLIBERATOR_XVFB_LOG=/tmp/xvfb.log
 export XLSLIBERATOR_OPENBOX_LOG=/tmp/openbox.log
+export DISPLAY="$display"
 export XDG_RUNTIME_DIR="$runtime_dir"
 
 mkdir -p "$runtime_dir"
@@ -37,7 +38,7 @@ if [ "$ready" -ne 1 ]; then
   exit 70
 fi
 
-openbox --display "$display" >"$XLSLIBERATOR_OPENBOX_LOG" 2>&1 &
+openbox >"$XLSLIBERATOR_OPENBOX_LOG" 2>&1 &
 openbox_pid=$!
 
 dbus-run-session -- /usr/local/bin/runtime-entrypoint "$@"

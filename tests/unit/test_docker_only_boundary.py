@@ -182,6 +182,15 @@ def test_office_image_registers_its_non_root_runtime_identity() -> None:
     assert "USER 10001:10001" in dockerfile
 
 
+def test_gui_entrypoint_starts_openbox_on_the_private_display() -> None:
+    root = Path(__file__).parents[2]
+    entrypoint = (root / "docker/office/gui/runtime-entrypoint").read_text(encoding="utf-8")
+
+    assert 'export DISPLAY="$display"' in entrypoint
+    assert 'openbox >"$XLSLIBERATOR_OPENBOX_LOG" 2>&1 &' in entrypoint
+    assert "openbox --display" not in entrypoint
+
+
 def test_dependency_audit_has_network_without_office_or_docker_socket_access() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
