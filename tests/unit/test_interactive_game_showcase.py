@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from xlsliberator.interactive_game_engine import state_from_json
+from xlsliberator.interactive_game_engine import new_game_state, start_game, state_from_json
 from xlsliberator.interactive_game_showcase import (
     GUI_IMAGE,
     PUBLIC_SCENARIOS,
@@ -18,7 +18,11 @@ from xlsliberator.interactive_game_showcase import (
     bundle_gui_replays,
     run_gui_scenario,
 )
-from xlsliberator.interactive_game_uno import SOURCE_SHA256, _control_logical_name
+from xlsliberator.interactive_game_uno import (
+    SOURCE_SHA256,
+    InteractiveGameController,
+    _control_logical_name,
+)
 
 
 class _FakeRuntime:
@@ -178,3 +182,27 @@ def test_native_control_logical_name_prefers_tag_and_supports_legacy_name() -> N
     assert _control_logical_name(tagged) == "GameStart"
     assert _control_logical_name(legacy) == "GameStart"
     assert _control_logical_name(native) == "GameStart"
+
+
+def test_external_timer_pump_emits_due_source_cadence_without_uno_timer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("xlsliberator.interactive_game_uno.time.monotonic", lambda: 10.7)
+    controller = object.__new__(InteractiveGameController)
+    controller.enable_timer = True
+    controller.disposed = False
+    controller.state = start_game(new_game_state(seed=17))
+    controller._timer_last_poll = 10.0
+    controller._timer_budget_ms = 0.0
+    ticks: list[int] = []
+
+    def tick_once() -> None:
+        ticks.append(len(ticks) + 1)
+
+    monkeypatch.setattr(controller, "timer_tick", tick_once)
+
+    emitted = controller.pump_timer()
+
+    assert emitted == 4
+    assert ticks == [1, 2, 3, 4]
+    assert controller._timer_budget_ms == pytest.approx(60.0)

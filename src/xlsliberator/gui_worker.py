@@ -184,6 +184,8 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                         }
 
                     _drain_ui(session)
+                    if game_controller is not None:
+                        game_controller.pump_timer()
                     after = _document_state_hash(document, raw_action)
                     records.append(
                         {

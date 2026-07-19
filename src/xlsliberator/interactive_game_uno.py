@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Final
@@ -360,8 +361,8 @@ class InteractiveGameController:
         self.state = self._load_state()
         self.listeners: list[tuple[Any, Any]] = []
         self.key_listener: Any = None
-        self.timer_listener: Any = None
-        self.timer: Any = None
+        self._timer_last_poll = time.monotonic()
+        self._timer_budget_ms = 0.0
         self.disposed = False
         self.runtime_controls_installed = False
         self.event_log: list[dict[str, Any]] = []
@@ -376,32 +377,21 @@ class InteractiveGameController:
         self.runtime_controls_installed = True
         if hasattr(controller, "setFormDesignMode"):
             controller.setFormDesignMode(False)
-        _action_type, key_type, timer_type = _listener_types()
+        _action_type, key_type = _listener_types()
         self._attach_action_listeners()
         self.key_listener = key_type(self)
         controller.addKeyHandler(self.key_listener)
 
-        if self.enable_timer:
-            context = self.session["component_context"]
-            manager = context.getServiceManager()
-            self.timer = manager.createInstanceWithContext("com.sun.star.awt.Timer", context)
-            self.timer_listener = timer_type(self)
-            self.timer.addTimerListener(self.timer_listener)
-            self._sync_timer()
         self._record("document-open")
         self._increment_open_count()
         self.persist_and_render()
+        self._reset_timer_clock()
 
     def dispose(self) -> None:
         if self.disposed:
             return
         self.disposed = True
-        if self.timer is not None:
-            with suppress(Exception):
-                self.timer.stop()
-            if self.timer_listener is not None:
-                with suppress(Exception):
-                    self.timer.removeTimerListener(self.timer_listener)
+        self._timer_budget_ms = 0.0
         controller = None
         with suppress(Exception):
             controller = self.document.getCurrentController()
@@ -436,7 +426,7 @@ class InteractiveGameController:
     def _attach_action_listeners(self) -> None:
         if self.listeners:
             raise RuntimeError("runtime control listeners are already attached")
-        action_type, _key_type, _timer_type = _listener_types()
+        action_type, _key_type = _listener_types()
         for name in CONTROL_NAMES:
             model = _find_control_model(self.document, name)
             listener = action_type(self)
@@ -451,6 +441,7 @@ class InteractiveGameController:
 
     def action(self, control_name: str) -> None:
         before = self.state
+        previous_phase = before.phase
         if control_name == "GameStart":
             self.state = start_game(self.state)
         elif control_name == "GamePause":
@@ -470,12 +461,15 @@ class InteractiveGameController:
             )
         else:
             raise ValueError(f"unknown game control: {control_name}")
+        if self.state.phase is not previous_phase:
+            self._reset_timer_clock()
         self._record("control", control_name=control_name, changed=self.state != before)
         self.persist_and_render()
 
     def key(self, key_code: int, modifiers: int) -> bool:
         keys = _key_constants()
         before = self.state
+        previous_phase = before.phase
         if key_code == keys["LEFT"]:
             self.state = move_left(self.state)
         elif key_code == keys["RIGHT"]:
@@ -496,6 +490,8 @@ class InteractiveGameController:
             )
         else:
             return False
+        if self.state.phase is not previous_phase:
+            self._reset_timer_clock()
         self._record(
             "keyboard",
             key_code=key_code,
@@ -511,8 +507,41 @@ class InteractiveGameController:
         self._record("timer", changed=self.state != before)
         self.persist_and_render()
 
+    def pump_timer(self) -> int:
+        """Advance due ticks from the bounded Docker worker's monotonic clock.
+
+        LibreOffice's published AWT UNO API has no timer service or timer
+        listener interface.  The external PyUNO controller therefore owns the
+        source-derived cadence and invokes state transitions on its single
+        action thread after real X11/UNO events have drained.
+        """
+        now = time.monotonic()
+        elapsed_ms = max(0.0, (now - self._timer_last_poll) * 1_000)
+        self._timer_last_poll = now
+        if (
+            not self.enable_timer
+            or self.disposed
+            or self.state.phase is not GamePhase.RUNNING
+        ):
+            self._timer_budget_ms = 0.0
+            return 0
+
+        # GUI actions are limited to five seconds.  The cap prevents a paused
+        # or externally stalled worker from replaying an unbounded tick burst.
+        self._timer_budget_ms += min(elapsed_ms, 10_000.0)
+        emitted = 0
+        while emitted < 256 and self.state.phase is GamePhase.RUNNING:
+            interval_ms = tick_interval_ms(self.state)
+            if self._timer_budget_ms < interval_ms:
+                break
+            self._timer_budget_ms -= interval_ms
+            self.timer_tick()
+            emitted += 1
+        return emitted
+
     def load_fixture(self, payload: str) -> None:
         self.state = state_from_json(payload)
+        self._reset_timer_clock()
         self._record("public-fixture")
         self.persist_and_render()
 
@@ -520,7 +549,6 @@ class InteractiveGameController:
         state_sheet = self.document.getSheets().getByName(STATE_SHEET)
         state_sheet.getCellRangeByName(STATE_CELL).setString(state_to_json(self.state))
         self.render()
-        self._sync_timer()
 
     def render(self) -> None:
         sheets = self.document.getSheets()
@@ -568,7 +596,8 @@ class InteractiveGameController:
             "events": list(self.event_log),
             "control_bindings": len(self.listeners),
             "key_handler_installed": self.key_listener is not None,
-            "timer_installed": self.timer_listener is not None,
+            "timer_installed": self.enable_timer,
+            "timer_surface": "docker-worker-monotonic-pump",
         }
 
     def _load_state(self) -> GameState:
@@ -583,14 +612,9 @@ class InteractiveGameController:
         value = int(str(cell.getString()) or "0") + 1
         cell.setString(str(value))
 
-    def _sync_timer(self) -> None:
-        if self.timer is None:
-            return
-        with suppress(Exception):
-            self.timer.stop()
-        if self.state.phase is GamePhase.RUNNING:
-            self.timer.setTimeout(tick_interval_ms(self.state))
-            self.timer.start()
+    def _reset_timer_clock(self) -> None:
+        self._timer_last_poll = time.monotonic()
+        self._timer_budget_ms = 0.0
 
     def _record(self, kind: str, **details: Any) -> None:
         self.event_log.append(
@@ -624,9 +648,9 @@ def _control_logical_name(model: Any) -> str:
     return _LOGICAL_CONTROL_NAMES.get(native_name, native_name)
 
 
-def _listener_types() -> tuple[type[Any], type[Any], type[Any]]:
+def _listener_types() -> tuple[type[Any], type[Any]]:
     import unohelper
-    from com.sun.star.awt import XActionListener, XKeyHandler, XTimerListener
+    from com.sun.star.awt import XActionListener, XKeyHandler
 
     class ActionListener(unohelper.Base, XActionListener):
         def __init__(self, adapter: InteractiveGameController) -> None:
@@ -653,17 +677,7 @@ def _listener_types() -> tuple[type[Any], type[Any], type[Any]]:
         def disposing(self, _event: Any) -> None:
             return None
 
-    class TimerListener(unohelper.Base, XTimerListener):
-        def __init__(self, adapter: InteractiveGameController) -> None:
-            self.adapter = adapter
-
-        def timeout(self, _event: Any) -> None:
-            self.adapter.timer_tick()
-
-        def disposing(self, _event: Any) -> None:
-            return None
-
-    return ActionListener, KeyListener, TimerListener
+    return ActionListener, KeyListener
 
 
 def _key_constants() -> dict[str, int]:
