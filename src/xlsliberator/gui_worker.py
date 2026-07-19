@@ -12,7 +12,7 @@ import subprocess
 import time
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Never
 from zipfile import ZIP_DEFLATED, ZipFile
 
 _ALLOWED_KEYS = frozenset({"Left", "Right", "Down", "Up", "ctrl", "Escape", "space"})
@@ -84,15 +84,16 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     screenshots: list[str] = []
     controller_evidence: list[dict[str, Any]] = []
+    office_runtime = _office_session(
+        {
+            **request,
+            "session_display": display,
+        },
+        use_gui=True,
+    )
 
     try:
-        with _office_session(
-            {
-                **request,
-                "session_display": display,
-            },
-            use_gui=True,
-        ) as session:
+        with office_runtime as session:
             document = _open_document(session, working_copy)
             game_controller = _install_game_controller(session, document, request)
             window_id = _wait_for_calc_window()
@@ -192,6 +193,8 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                     controller_evidence.append(game_controller.evidence())
                     game_controller.dispose()
                 _close_document(document, save=False)
+    except Exception as exc:
+        _raise_with_office_diagnostics(exc, office_runtime.data)
     finally:
         _stop_recording(video)
 
@@ -767,6 +770,16 @@ def _document_state_hash(document: Any, action: dict[str, Any]) -> str:
 def _drain_ui(session: dict[str, Any]) -> None:
     del session
     time.sleep(0.15)
+
+
+def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> Never:
+    """Preserve bounded office-process evidence when the UNO bridge disappears."""
+    exit_code = session.get("office_exit_code")
+    office_log = str(session.get("office_log") or "").strip()
+    detail = office_log[-4_000:] if office_log else "<empty>"
+    raise RuntimeError(
+        f"{exc}; office_exit_code={exit_code!r}; office_log={detail}"
+    ) from exc
 
 
 def _xdotool(*arguments: str) -> None:

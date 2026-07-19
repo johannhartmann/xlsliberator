@@ -13,6 +13,7 @@ from xlsliberator.interactive_game_engine import state_from_json
 from xlsliberator.interactive_game_showcase import (
     GUI_IMAGE,
     PUBLIC_SCENARIOS,
+    _require_success,
     build_target,
     bundle_gui_replays,
     run_gui_scenario,
@@ -89,6 +90,24 @@ def test_gui_scenario_selects_dedicated_image_and_forwards_timer_policy(
     assert runtime.payload["adapter"] == "interactive-game"
     assert runtime.payload["timer_enabled"] is False
     assert runtime.payload["actions"] == actions
+
+
+def test_failed_gui_scenario_preserves_worker_and_container_diagnostics() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match=r"(?s)bridge disposed.*office_exit_code=134.*container stderr:.*outer stderr",
+    ):
+        _require_success(
+            {
+                "success": False,
+                "data": {"container_stderr": "outer stderr"},
+                "error": {
+                    "message": "bridge disposed",
+                    "traceback": "office_exit_code=134",
+                },
+            },
+            "interactive-game GUI scenario",
+        )
 
 
 def test_replay_bundle_selects_gui_image_and_requires_all_public_scenarios(

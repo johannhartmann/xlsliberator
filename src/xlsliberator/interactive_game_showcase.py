@@ -122,7 +122,17 @@ def _require_success(response: dict[str, Any], operation: str) -> dict[str, Any]
     error = response.get("error") or {}
     message = str(error.get("message") or f"{operation} failed")
     traceback_text = str(error.get("traceback") or "").strip()
-    detail = f"\n{traceback_text[-4_000:]}" if traceback_text else ""
+    container_stderr = str((response.get("data") or {}).get("container_stderr") or "").strip()
+    details = [
+        text
+        for text in (
+            traceback_text[-4_000:],
+            f"container stderr:\n{container_stderr[-4_000:]}" if container_stderr else "",
+        )
+        if text
+    ]
+    detail_text = "\n".join(details)
+    detail = f"\n{detail_text}" if detail_text else ""
     raise DockerRuntimeUnavailable(f"{message}{detail}")
 
 
