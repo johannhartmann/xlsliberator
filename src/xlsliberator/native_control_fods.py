@@ -15,8 +15,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from xml.etree import ElementTree
+
+# Used only for element construction, namespace registration, and serialization.
+# ODS input is parsed exclusively with defusedxml below.
+import xml.etree.ElementTree as ElementTree  # nosec B405
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
+
+from defusedxml.ElementTree import fromstring as safe_fromstring
+from defusedxml.ElementTree import iterparse as safe_iterparse
 
 _MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
 _NAMESPACES = {
@@ -25,6 +31,7 @@ _NAMESPACES = {
     "office": "urn:oasis:names:tc:opendocument:xmlns:office:1.0",
     "svg": "urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0",
     "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "xlink": "http://www.w3.org/1999/xlink",
     "xml": "http://www.w3.org/XML/1998/namespace",
 }
 
@@ -143,7 +150,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
         raise ValueError("ODS package has no content.xml")
 
     _register_document_namespaces(content)
-    root = ElementTree.fromstring(content)
+    root = safe_fromstring(content)
     table_name = _qname("table", "name")
     tables = {
         str(table.attrib.get(table_name, "")): table
@@ -175,13 +182,18 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
             _qname("form", "form"),
             {
                 _qname("form", "name"): f"XLSLiberatorForm{next_control}",
+                _qname("form", "apply-filter"): "true",
+                _qname("form", "command-type"): "table",
                 _qname("form", "control-implementation"): ("ooo:com.sun.star.form.component.Form"),
+                _qname("office", "target-frame"): "",
+                _qname("xlink", "href"): "",
+                _qname("xlink", "type"): "simple",
             },
         )
-        shapes = table.find("./table:shapes", _NAMESPACES)
-        if shapes is None:
-            shapes = ElementTree.Element(_qname("table", "shapes"))
-            table.append(shapes)
+        anchor_cell = table.find(".//table:table-cell", _NAMESPACES)
+        if anchor_cell is None:
+            row = ElementTree.SubElement(table, _qname("table", "table-row"))
+            anchor_cell = ElementTree.SubElement(row, _qname("table", "table-cell"))
 
         for z_index, button in enumerate(native_sheet.buttons):
             while f"control{next_control}" in existing_ids:
@@ -200,9 +212,25 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                         "ooo:com.sun.star.form.component.CommandButton"
                     ),
                     _qname("form", "label"): button.label,
+                    _qname("office", "target-frame"): "",
+                    _qname("xlink", "href"): "",
+                    _qname("form", "image-data"): "",
+                    _qname("form", "delay-for-repeat"): "PT0.050000000S",
+                    _qname("form", "image-position"): "center",
                 },
             )
             properties = ElementTree.SubElement(model, _qname("form", "properties"))
+            ElementTree.SubElement(
+                properties,
+                _qname("form", "property"),
+                {
+                    _qname("form", "property-name"): "DefaultControl",
+                    _qname("office", "value-type"): "string",
+                    _qname("office", "string-value"): (
+                        "com.sun.star.form.control.CommandButton"
+                    ),
+                },
+            )
             ElementTree.SubElement(
                 properties,
                 _qname("form", "property"),
@@ -213,7 +241,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
                 },
             )
             ElementTree.SubElement(
-                shapes,
+                anchor_cell,
                 _qname("draw", "control"),
                 {
                     _qname("draw", "control"): control_id,
@@ -244,7 +272,7 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
 
 
 def _register_document_namespaces(content: bytes) -> None:
-    for _event, namespace in ElementTree.iterparse(BytesIO(content), events=("start-ns",)):
+    for _event, namespace in safe_iterparse(BytesIO(content), events=("start-ns",)):
         prefix, uri = namespace
         if not prefix.startswith("ns"):
             ElementTree.register_namespace(prefix, uri)
@@ -263,15 +291,14 @@ def _sheet_xml(
     visibility = ' table:visibility="collapse"' if sheet.hidden else ""
     forms = _forms_xml(controls) if controls else ""
     shapes = "".join(_shape_xml(button, control_id) for button, control_id in controls)
-    shapes_xml = f"    <table:shapes>{shapes}    </table:shapes>\n" if shapes else ""
     return f"""   <table:table table:name="{_xml_attr(sheet.name)}"{visibility}>
 {forms}    <table:table-column table:number-columns-repeated="32"/>
     <table:table-row>
      <table:table-cell>
       <text:p/>
+{shapes}\
      </table:table-cell>
     </table:table-row>
-{shapes_xml}\
    </table:table>
 """
 
@@ -281,7 +308,12 @@ def _forms_xml(controls: list[tuple[NativeButton, str]]) -> str:
     return f"""    <office:forms form:automatic-focus="false" form:apply-design-mode="false">
      <form:form
       form:name="CertificationForm"
-      form:control-implementation="ooo:com.sun.star.form.component.Form">
+      form:apply-filter="true"
+      form:command-type="table"
+      form:control-implementation="ooo:com.sun.star.form.component.Form"
+      office:target-frame=""
+      xlink:href=""
+      xlink:type="simple">
 {buttons}     </form:form>
     </office:forms>
 """
@@ -295,7 +327,19 @@ def _button_xml(button: NativeButton, control_id: str) -> str:
        form:control-implementation="ooo:com.sun.star.form.component.CommandButton"
        xml:id="{control_id}"
        form:id="{control_id}"
-       form:label="{label}"/>
+       form:label="{label}"
+       office:target-frame=""
+       xlink:href=""
+       form:image-data=""
+       form:delay-for-repeat="PT0.050000000S"
+       form:image-position="center">
+       <form:properties>
+        <form:property
+         form:property-name="DefaultControl"
+         office:value-type="string"
+         office:string-value="com.sun.star.form.control.CommandButton"/>
+       </form:properties>
+      </form:button>
 """
 
 

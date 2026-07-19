@@ -14,7 +14,7 @@ from xlsliberator.native_control_fods import (
 )
 
 
-def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Path) -> None:
+def test_seed_uses_native_sheet_forms_and_cell_anchored_controls(tmp_path: Path) -> None:
     seed = tmp_path / "controls.ods"
 
     write_native_button_seed(
@@ -66,9 +66,11 @@ def test_seed_uses_sheet_local_forms_and_stable_control_references(tmp_path: Pat
     assert "Start &amp; play &lt;now&gt;" in serialized
     assert 'table:name="game &quot;certification&quot;"' in serialized
     assert 'form:name="Certification &quot;Button&quot;"' in serialized
-    assert 'form:command-type="table"' not in serialized
-    assert "form:apply-filter" not in serialized
-    assert "<table:shapes>" in serialized
+    assert 'form:command-type="table"' in serialized
+    assert 'form:apply-filter="true"' in serialized
+    assert "com.sun.star.form.control.CommandButton" in serialized
+    assert "<table:shapes>" not in serialized
+    assert root.find(".//table:table-cell/draw:control", namespaces) is not None
 
 
 def test_seed_rejects_an_unusable_sheet_set(tmp_path: Path) -> None:
@@ -120,9 +122,17 @@ def test_injection_preserves_package_and_adds_tagged_native_model(tmp_path: Path
         ".//form:property[@form:property-name='Tag']",
         namespaces,
     )
+    default_control = root.find(
+        ".//form:property[@form:property-name='DefaultControl']",
+        namespaces,
+    )
     assert button is not None
     assert shape is not None
     assert tag is not None
+    assert default_control is not None
+    assert default_control.attrib[
+        "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"
+    ] == "com.sun.star.form.control.CommandButton"
     assert tag.attrib["{urn:oasis:names:tc:opendocument:xmlns:office:1.0}string-value"] == (
         "GameStart"
     )
