@@ -31,10 +31,7 @@ def _candidate_directory(tmp_path: Path, source_sha256: str) -> Path:
             "def controller(session, document, config):\n"
             "    return (session, document, config)\n"
         ),
-        "candidate_fixture_contract/result.py": (
-            "def value():\n"
-            "    return 'loaded-lazily'\n"
-        ),
+        "candidate_fixture_contract/result.py": ("def value():\n    return 'loaded-lazily'\n"),
     }
     digests: dict[str, str] = {}
     for name, payload in files.items():

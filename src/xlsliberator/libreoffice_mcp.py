@@ -206,8 +206,7 @@ async def bundle_application_replays(
     def operation() -> dict[str, Any]:
         workspace = WorkspacePathPolicy()
         evidence = {
-            scenario_id: workspace.input_file(path)
-            for scenario_id, path in evidence_paths.items()
+            scenario_id: workspace.input_file(path) for scenario_id, path in evidence_paths.items()
         }
         output = _migration_output(workspace, output_path, ".zip")
         return _migration_payload(bundle_replays(evidence, output, replay_id=replay_id))

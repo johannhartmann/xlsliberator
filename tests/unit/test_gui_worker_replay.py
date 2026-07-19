@@ -149,9 +149,7 @@ def test_gui_document_uses_native_startup_component_before_remote_reopen(
     )
     monkeypatch.setattr(
         "xlsliberator.gui_worker._install_application_controller",
-        lambda _session, _document, _factory, _request: (
-            calls.append("controls") or "controller"
-        ),
+        lambda _session, _document, _factory, _request: calls.append("controls") or "controller",
     )
 
     result = _open_ready_document(session, tmp_path / "target.ods", object(), {})

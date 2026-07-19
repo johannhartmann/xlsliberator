@@ -125,9 +125,7 @@ def run_campaign(repository_root: Path, output_dir: Path) -> dict[str, object]:
             f"tests/{validator.name}",
         ]
         environment = dict(os.environ)
-        environment["XLSLIBERATOR_INTERACTIVE_CANDIDATE_ROOT"] = str(
-            case_root / "candidate"
-        )
+        environment["XLSLIBERATOR_INTERACTIVE_CANDIDATE_ROOT"] = str(case_root / "candidate")
         completed = subprocess.run(
             command,
             cwd=case_root,

@@ -202,12 +202,7 @@ def _extract_and_validate(bundle: Path, root: Path) -> CandidateManifest:
             for info in infos:
                 name = _safe_member_name(info.filename)
                 mode = info.external_attr >> 16
-                if (
-                    info.is_dir()
-                    or stat.S_ISLNK(mode)
-                    or info.flag_bits & 0x1
-                    or name in names
-                ):
+                if info.is_dir() or stat.S_ISLNK(mode) or info.flag_bits & 0x1 or name in names:
                     raise CandidateBundleError("candidate bundle contains an unsafe member")
                 if info.file_size > _MAX_FILE_BYTES:
                     raise CandidateBundleError(f"candidate member is oversized: {name}")
@@ -260,10 +255,7 @@ def _manifest_from_payload(raw: object) -> CandidateManifest:
     candidate_id = raw["candidate_id"]
     source_sha256 = raw["source_sha256"]
     target_build = raw["target_build"]
-    if not all(
-        isinstance(value, str)
-        for value in (candidate_id, source_sha256, target_build)
-    ):
+    if not all(isinstance(value, str) for value in (candidate_id, source_sha256, target_build)):
         raise CandidateBundleError("candidate identity fields must be strings")
     if _CANDIDATE_ID.fullmatch(candidate_id) is None:
         raise CandidateBundleError("candidate_id is malformed")
@@ -347,9 +339,7 @@ def _import_entrypoint(root: Path, entrypoint: str) -> tuple[Callable[..., Any],
         raise CandidateBundleError("candidate entrypoint module or package is missing")
 
     preexisting = {
-        name
-        for name in sys.modules
-        if name == package_name or name.startswith(f"{package_name}.")
+        name for name in sys.modules if name == package_name or name.startswith(f"{package_name}.")
     }
     if preexisting:
         raise CandidateBundleError("candidate package name collides with an imported module")

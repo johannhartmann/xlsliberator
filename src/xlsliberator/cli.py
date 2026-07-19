@@ -253,8 +253,7 @@ def application_bundle_cmd(
         ):
             raise ValueError("replay manifest must declare replay_id and evidence_paths")
         evidence = {
-            scenario_id: Path(path)
-            for scenario_id, path in payload["evidence_paths"].items()
+            scenario_id: Path(path) for scenario_id, path in payload["evidence_paths"].items()
         }
         result = bundle_application_replays(
             evidence,
