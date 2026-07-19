@@ -71,6 +71,14 @@ def test_container_command_is_immutable_disposable_and_sandboxed(tmp_path: Path)
     assert command[command.index("--pids-limit") + 1] == "256"
     assert command[command.index("--memory") + 1] == "2g"
     assert command[command.index("--user") + 1] == "10001:10001"
+    tmpfs_mounts = [
+        command[index + 1] for index, value in enumerate(command) if value == "--tmpfs"
+    ]
+    assert tmpfs_mounts == [
+        "/tmp:rw,noexec,nosuid,nodev,size=1024m,mode=1777",
+        "/tmp/.X11-unix:rw,noexec,nosuid,nodev,size=1m,mode=1777,uid=0,gid=0",
+        "/home/sandbox:rw,noexec,nosuid,nodev,size=16m,mode=700,uid=10001,gid=10001",
+    ]
     assert "sha256:fixed" in command
     assert "soffice" not in command
     assert "/var/run/docker.sock" not in " ".join(command)

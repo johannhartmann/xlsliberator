@@ -302,6 +302,10 @@ def docker_sandbox_arguments(policy: SandboxPolicy) -> list[str]:
         # This is a private tmpfs inside the disposable container, not a host temp directory.
         f"/tmp:rw,noexec,nosuid,nodev,size={writable_mebibytes}m,mode=1777",  # nosec B108
         "--tmpfs",
+        # Xorg requires this socket directory to be root-owned and sticky. Mount it
+        # beneath the private /tmp before dropping to the disposable runtime user.
+        "/tmp/.X11-unix:rw,noexec,nosuid,nodev,size=1m,mode=1777,uid=0,gid=0",
+        "--tmpfs",
         "/home/sandbox:rw,noexec,nosuid,nodev,size=16m,mode=700,uid=10001,gid=10001",
         "--env",
         "HOME=/home/sandbox",
