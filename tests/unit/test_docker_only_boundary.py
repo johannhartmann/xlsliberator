@@ -170,6 +170,18 @@ def test_only_mcp_is_a_trusted_docker_orchestrator() -> None:
     assert "/var/run/docker.sock" not in runtime_service
 
 
+def test_office_image_registers_its_non_root_runtime_identity() -> None:
+    root = Path(__file__).parents[2]
+    dockerfile = (root / "docker/office/libreoffice/Dockerfile").read_text(encoding="utf-8")
+
+    assert "groupadd --gid 10001 xlsliberator" in dockerfile
+    assert "--uid 10001" in dockerfile
+    assert "--gid 10001" in dockerfile
+    assert "--home-dir /tmp/home" in dockerfile
+    assert "--shell /usr/sbin/nologin" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+
+
 def test_dependency_audit_has_network_without_office_or_docker_socket_access() -> None:
     root = Path(__file__).parents[2]
     compose = (root / "docker-compose.yml").read_text(encoding="utf-8")

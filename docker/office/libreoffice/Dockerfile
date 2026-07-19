@@ -31,7 +31,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates curl fonts-dejavu-core tar \
        libxinerama1 libxrender1 libxrandr2 libxext6 libx11-xcb1 libsm6 libice6 libcairo2 libcups2 \
-       libglib2.0-0 libnss3 \
+       libglib2.0-0 libnss3 passwd \
     && rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
@@ -53,7 +53,15 @@ RUN set -eux; \
 COPY src /opt/xlsliberator/src
 COPY docker/office/runtime-entrypoint /usr/local/bin/runtime-entrypoint
 
-RUN chmod 0555 /usr/local/bin/runtime-entrypoint \
+RUN groupadd --gid 10001 xlsliberator \
+    && useradd \
+       --uid 10001 \
+       --gid 10001 \
+       --home-dir /tmp/home \
+       --shell /usr/sbin/nologin \
+       --no-create-home \
+       xlsliberator \
+    && chmod 0555 /usr/local/bin/runtime-entrypoint \
     && mkdir -p /job /tmp/home \
     && chown -R 10001:10001 /job /tmp/home \
     && test "$(/opt/libreoffice26.2/program/soffice --version | awk '{print $2}')" = "$LIBREOFFICE_BUILD" \
