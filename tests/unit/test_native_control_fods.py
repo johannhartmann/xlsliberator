@@ -6,6 +6,7 @@ from zipfile import ZIP_STORED, ZipFile
 
 import pytest
 
+import xlsliberator.native_control_fods as native_control_fods
 from xlsliberator.native_control_fods import (
     NativeButton,
     NativeSheet,
@@ -155,4 +156,61 @@ def test_injection_rejects_missing_sheet_and_duplicate_forms(tmp_path: Path) -> 
 
     inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))
     with pytest.raises(ValueError, match="already contains forms"):
+        inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    (
+        b'<!DOCTYPE office:document-content SYSTEM "https://invalid.example/ods.dtd">',
+        b'<!ENTITY payload SYSTEM "file:///etc/passwd">',
+    ),
+)
+def test_injection_rejects_unsafe_xml_declarations(
+    tmp_path: Path,
+    declaration: bytes,
+) -> None:
+    seed = tmp_path / "unsafe.ods"
+    write_native_button_seed(seed, (NativeSheet(name="Sheet1"),))
+    with ZipFile(seed) as source:
+        infos = source.infolist()
+        members = {info.filename: source.read(info.filename) for info in infos}
+    members["content.xml"] = members["content.xml"].replace(
+        b"<office:document-content",
+        declaration + b"\n<office:document-content",
+        1,
+    )
+    with ZipFile(seed, "w") as destination:
+        for info in infos:
+            destination.writestr(info, members[info.filename])
+
+    button = NativeButton(
+        name="Button",
+        label="Run",
+        tag="Run",
+        x=0,
+        y=0,
+        width=1_000,
+    )
+    with pytest.raises(ValueError, match="DTD or entity declarations"):
+        inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))
+
+
+def test_injection_rejects_oversized_content_xml(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed = tmp_path / "oversized.ods"
+    write_native_button_seed(seed, (NativeSheet(name="Sheet1"),))
+    monkeypatch.setattr(native_control_fods, "_MAX_CONTENT_XML_BYTES", 64)
+    button = NativeButton(
+        name="Button",
+        label="Run",
+        tag="Run",
+        x=0,
+        y=0,
+        width=1_000,
+    )
+
+    with pytest.raises(ValueError, match="safety limit"):
         inject_native_buttons(seed, (NativeSheet(name="Sheet1", buttons=(button,)),))

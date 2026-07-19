@@ -12,18 +12,16 @@ and persisted by LibreOffice before it is accepted.
 
 from __future__ import annotations
 
-# Used only for element construction, namespace registration, and serialization.
-# ODS input is parsed exclusively with defusedxml below.
+# This module runs in LibreOffice's bundled, standard-library-only Python.
+# XML declarations which make ElementTree unsafe are rejected before parsing.
 import xml.etree.ElementTree as ElementTree  # nosec B405
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
-from defusedxml.ElementTree import fromstring as safe_fromstring
-from defusedxml.ElementTree import iterparse as safe_iterparse
-
 _MIMETYPE = "application/vnd.oasis.opendocument.spreadsheet"
+_MAX_CONTENT_XML_BYTES = 32 * 1024 * 1024
 _NAMESPACES = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
     "form": "urn:oasis:names:tc:opendocument:xmlns:form:1.0",
@@ -148,8 +146,10 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
     if content is None:
         raise ValueError("ODS package has no content.xml")
 
+    _validate_content_xml(content)
     _register_document_namespaces(content)
-    root = safe_fromstring(content)
+    # Safe because size, DTD, and entity declarations were rejected above.
+    root = ElementTree.fromstring(content)  # nosec B314
     table_name = _qname("table", "name")
     tables = {
         str(table.attrib.get(table_name, "")): table
@@ -269,12 +269,28 @@ def inject_native_buttons(path: Path, sheets: tuple[NativeSheet, ...]) -> None:
 
 
 def _register_document_namespaces(content: bytes) -> None:
-    for _event, namespace in safe_iterparse(BytesIO(content), events=("start-ns",)):
+    # Safe because inject_native_buttons validates content before calling this helper.
+    for _event, namespace in ElementTree.iterparse(  # nosec B314
+        BytesIO(content),
+        events=("start-ns",),
+    ):
         prefix, uri = namespace
         if not prefix.startswith("ns"):
             ElementTree.register_namespace(prefix, uri)
     for prefix, uri in _NAMESPACES.items():
         ElementTree.register_namespace(prefix, uri)
+
+
+def _validate_content_xml(content: bytes) -> None:
+    if len(content) > _MAX_CONTENT_XML_BYTES:
+        raise ValueError(
+            f"ODS content.xml exceeds the {_MAX_CONTENT_XML_BYTES}-byte safety limit"
+        )
+    if b"\x00" in content:
+        raise ValueError("ODS content.xml must use an ASCII-compatible XML encoding")
+    normalized = content.upper()
+    if b"<!DOCTYPE" in normalized or b"<!ENTITY" in normalized:
+        raise ValueError("ODS content.xml must not contain DTD or entity declarations")
 
 
 def _qname(prefix: str, local_name: str) -> str:
