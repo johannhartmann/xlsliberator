@@ -7,7 +7,7 @@ RUN apt-get update \
     && apt-get \
        -o Dpkg::Options::=--force-confold \
        install -y --no-install-recommends \
-       dbus-x11 ffmpeg libgtk-3-0 openbox scrot x11-utils xdotool xvfb \
+       at-spi2-core dbus-x11 ffmpeg libgtk-3-0 openbox scrot x11-utils xdotool xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 COPY docker/office/gui/runtime-entrypoint /usr/local/bin/gui-runtime-entrypoint

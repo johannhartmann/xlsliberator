@@ -45,6 +45,7 @@ class SandboxBackendKind(StrEnum):
 class SandboxLimits(StrictModel):
     cpu_count: float = Field(default=2.0, gt=0)
     memory_bytes: int = Field(default=2 * 1024**3, ge=64 * 1024**2)
+    shared_memory_bytes: int = Field(default=256 * 1024**2, ge=64 * 1024**2)
     process_count: int = Field(default=256, ge=1)
     file_size_bytes: int = Field(default=1024**3, ge=1024)
     wall_seconds: float = Field(default=120.0, gt=0)
@@ -277,6 +278,7 @@ def docker_sandbox_arguments(policy: SandboxPolicy) -> list[str]:
     )
     file_blocks = max(1, limits.file_size_bytes // 1024)
     writable_mebibytes = max(1, limits.writable_bytes // 1024**2)
+    shared_memory_mebibytes = max(64, limits.shared_memory_bytes // 1024**2)
     return [
         "--network",
         "none",
@@ -296,7 +298,7 @@ def docker_sandbox_arguments(policy: SandboxPolicy) -> list[str]:
         "--ipc",
         "private",
         "--shm-size",
-        "64m",
+        f"{shared_memory_mebibytes}m",
         "--init",
         "--stop-timeout",
         "5",
