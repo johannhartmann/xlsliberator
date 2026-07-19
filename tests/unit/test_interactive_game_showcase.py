@@ -286,9 +286,7 @@ def test_action_listeners_bind_to_native_control_views(
 
     controller._attach_action_listeners()
 
-    assert [control for _name, control, _listener in controller.listeners] == list(
-        views.values()
-    )
+    assert [control for _name, control, _listener in controller.listeners] == list(views.values())
     assert all(len(view.listeners) == 1 for view in views.values())
     assert all(not view.design_mode for view in views.values())
     assert active_sheets[-2:] == [score_sheet, game_sheet]

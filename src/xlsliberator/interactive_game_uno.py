@@ -656,9 +656,7 @@ class InteractiveGameController:
 
 def _install_live_runtime_controls(document: Any, uno: Any, controller: Any) -> None:
     """Materialize transient form controls in the current Calc view."""
-    if not hasattr(controller, "setFormDesignMode") or not hasattr(
-        controller, "isFormDesignMode"
-    ):
+    if not hasattr(controller, "setFormDesignMode") or not hasattr(controller, "isFormDesignMode"):
         raise RuntimeError("Calc controller does not expose the native form-layer lifecycle")
     controller.setFormDesignMode(True)
     try:
