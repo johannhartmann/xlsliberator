@@ -1872,7 +1872,8 @@ class _OfficeSession:
         self.tmpdir = tempfile.TemporaryDirectory(prefix="xlsliberator-lo-worker-")
         profile_dir = Path(self.tmpdir.name) / profile_identifier
         profile_dir.mkdir(parents=True, exist_ok=True)
-        _initialize_secure_office_profile(profile_dir)
+        if self.use_gui:
+            _initialize_secure_office_profile(profile_dir)
         self.log_path = Path(self.tmpdir.name) / "office.log"
         self.log_handle = self.log_path.open("wb")
 
