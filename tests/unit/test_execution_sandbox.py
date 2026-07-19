@@ -40,7 +40,8 @@ def test_default_docker_policy_has_every_required_isolation_control() -> None:
     assert "--memory" in arguments
     assert "--cpus" in arguments
     assert "fsize=" in rendered
-    assert arguments[arguments.index("--ipc") + 1] == "none"
+    assert arguments[arguments.index("--ipc") + 1] == "private"
+    assert arguments[arguments.index("--shm-size") + 1] == "64m"
     assert "--init" in arguments
     assert "HOME=/home/sandbox" in arguments
     assert "--user" in arguments
