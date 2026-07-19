@@ -10,6 +10,7 @@ from xlsliberator.gui_worker import (
     _confined_path,
     _open_ready_document,
     _raise_with_office_diagnostics,
+    _start_recording,
     _wait_for_startup_document,
     _write_replay_html,
 )
@@ -166,13 +167,36 @@ def test_gui_failure_preserves_bounded_desktop_diagnostics(
         "xlsliberator.gui_worker.subprocess.run",
         lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "display-ready", ""),
     )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._cgroup_memory_diagnostics",
+        lambda: "cgroup_memory=memory.current=123, memory.max=456",
+    )
 
     with pytest.raises(
         RuntimeError,
-        match=r"(?s)bridge disposed.*xvfb_log=x+.*openbox_log=openbox-ready"
+        match=r"(?s)bridge disposed.*cgroup_memory=memory.current=123, memory.max=456"
+        r".*xvfb_log=x+.*openbox_log=openbox-ready"
         r".*x11_probe_exit_code=0.*display-ready",
     ):
         _raise_with_office_diagnostics(
             RuntimeError("bridge disposed"),
             {"office_exit_code": 255, "office_log": "office-abort"},
         )
+
+
+def test_gui_recorder_uses_one_encoder_thread(tmp_path: Path, monkeypatch: Any) -> None:
+    captured: list[list[str]] = []
+
+    class Process:
+        pass
+
+    def popen(command: list[str], **_kwargs: Any) -> Process:
+        captured.append(command)
+        return Process()
+
+    monkeypatch.setattr("xlsliberator.gui_worker.subprocess.Popen", popen)
+
+    process = _start_recording(":99", tmp_path / "recording.webm")
+
+    assert isinstance(process, Process)
+    assert captured[0][captured[0].index("-threads") + 1] == "1"

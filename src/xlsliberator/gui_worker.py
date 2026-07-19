@@ -80,7 +80,7 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     working_copy = output_dir / "working-copy.ods"
     working_copy.write_bytes(source.read_bytes())
     recording = output_dir / "recording.webm"
-    video = _start_recording(display, recording)
+    video: subprocess.Popen[bytes] | None = None
     records: list[dict[str, Any]] = []
     screenshots: list[str] = []
     controller_evidence: list[dict[str, Any]] = []
@@ -100,6 +100,9 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
                 working_copy,
                 request,
             )
+            # Keep the encoder out of LibreOffice's GUI startup allocation peak.
+            # The evidence video still covers every declared user interaction.
+            video = _start_recording(display, recording)
             try:
                 for sequence, raw_action in enumerate(actions, start=1):
                     if not isinstance(raw_action, dict):
@@ -201,7 +204,8 @@ def run_gui_scenario(request: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         _raise_with_office_diagnostics(exc, office_runtime.data)
     finally:
-        _stop_recording(video)
+        if video is not None:
+            _stop_recording(video)
 
     if not recording.is_file() or recording.stat().st_size == 0:
         raise RuntimeError("GUI recording was not produced")
@@ -818,6 +822,7 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     details = [
         f"office_exit_code={exit_code!r}",
         f"office_log={office_log[-4_000:] if office_log else '<empty>'}",
+        _cgroup_memory_diagnostics(),
     ]
     for label, variable in (
         ("xvfb_log", "XLSLIBERATOR_XVFB_LOG"),
@@ -844,6 +849,19 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     except (OSError, subprocess.SubprocessError) as probe_error:
         details.append(f"x11_probe_error={probe_error}")
     raise RuntimeError(f"{exc}; {'; '.join(details)}") from exc
+
+
+def _cgroup_memory_diagnostics() -> str:
+    """Return bounded cgroup-v2 memory evidence without requiring extra privileges."""
+    values: list[str] = []
+    for name in ("memory.current", "memory.peak", "memory.max", "memory.events"):
+        path = Path("/sys/fs/cgroup") / name
+        try:
+            value = " ".join(path.read_text(errors="replace").split())
+        except OSError:
+            continue
+        values.append(f"{name}={value[:500]}")
+    return f"cgroup_memory={', '.join(values) if values else '<unavailable>'}"
 
 
 def _xdotool(*arguments: str) -> None:
@@ -877,6 +895,8 @@ def _start_recording(display: str, path: Path) -> subprocess.Popen[bytes]:
             f"{display}.0",
             "-c:v",
             "libvpx-vp9",
+            "-threads",
+            "1",
             "-deadline",
             "realtime",
             "-y",

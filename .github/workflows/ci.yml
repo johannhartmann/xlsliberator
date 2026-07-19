@@ -137,6 +137,7 @@ jobs:
         run: |
           set -o pipefail
           docker compose --profile ci-orchestrator run --rm \
+            --env XLSLIBERATOR_SHOWCASE_ARTIFACT_DIR \
             test-orchestrator pytest -p no:cacheprovider -q \
             tests/it/test_interactive_game_showcase.py \
             --junitxml=artifacts/showcase-ci/pytest.xml \
