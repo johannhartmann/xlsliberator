@@ -71,6 +71,9 @@ __attribute__((constructor)) void install_terminate_backtrace() {
 }  // namespace
 
 extern "C" [[noreturn]] void abort() noexcept {
+    write_text("XLSLIBERATOR_ABORT_EXCEPTION_BEGIN\n");
+    write_current_exception();
+    write_text("XLSLIBERATOR_ABORT_EXCEPTION_END\n");
     write_backtrace(
         "XLSLIBERATOR_ABORT_BACKTRACE_BEGIN\n",
         "XLSLIBERATOR_ABORT_BACKTRACE_END\n"
