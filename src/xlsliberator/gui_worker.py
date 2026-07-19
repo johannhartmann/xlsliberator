@@ -821,6 +821,7 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     office_log = str(session.get("office_log") or "").strip()
     backtrace_markers = (
         "XLSLIBERATOR_ALLOCATION_FAILURE_BEGIN",
+        "XLSLIBERATOR_TERMINATE_EXCEPTION_BEGIN",
         "XLSLIBERATOR_TERMINATE_BACKTRACE_BEGIN",
     )
     marker_offsets = [
