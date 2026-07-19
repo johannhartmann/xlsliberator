@@ -777,9 +777,7 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     exit_code = session.get("office_exit_code")
     office_log = str(session.get("office_log") or "").strip()
     detail = office_log[-4_000:] if office_log else "<empty>"
-    raise RuntimeError(
-        f"{exc}; office_exit_code={exit_code!r}; office_log={detail}"
-    ) from exc
+    raise RuntimeError(f"{exc}; office_exit_code={exit_code!r}; office_log={detail}") from exc
 
 
 def _xdotool(*arguments: str) -> None:
