@@ -293,8 +293,16 @@ def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> 
         def evidence(self) -> dict[str, Any]:
             return {"events": list(events)}
 
+        def ensure_action_listener(self, name: str, view: Any) -> None:
+            assert name == "GameStart"
+            assert view is control_view
+
+    control_view = object()
+    pointer_events: list[tuple[str, ...]] = []
+
     def xdotool(*arguments: str) -> None:
-        if arguments == ("click", "1"):
+        pointer_events.append(arguments)
+        if arguments == ("mouseup", "1"):
             events.append(
                 {
                     "kind": "control",
@@ -306,7 +314,7 @@ def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> 
     monkeypatch.setattr("xlsliberator.gui_worker._find_control_model", lambda *_args: object())
     monkeypatch.setattr(
         "xlsliberator.interactive_game_uno._wait_for_control_view",
-        lambda *_args: object(),
+        lambda *_args: control_view,
     )
     monkeypatch.setattr(
         "xlsliberator.gui_worker._control_screen_rectangle",
@@ -325,6 +333,11 @@ def test_native_pointer_click_requires_matching_uno_action(monkeypatch: Any) -> 
         "event_sequence": 2,
         "screen_rectangle": {"X": 70, "Y": 171, "WIDTH": 198, "HEIGHT": 45},
     }
+    assert pointer_events[-3:] == [
+        ("mousemove", "--sync", "169", "193"),
+        ("mousedown", "1"),
+        ("mouseup", "1"),
+    ]
 
 
 def test_gui_recorder_uses_one_encoder_thread(tmp_path: Path, monkeypatch: Any) -> None:

@@ -221,9 +221,25 @@ def test_action_listeners_bind_to_native_control_views(
     class ControlView:
         def __init__(self) -> None:
             self.listeners: list[Listener] = []
+            self.design_mode = True
 
         def addActionListener(self, listener: Listener) -> None:  # noqa: N802
             self.listeners.append(listener)
+
+        def removeActionListener(self, listener: Listener) -> None:  # noqa: N802
+            self.listeners.remove(listener)
+
+        def setDesignMode(self, enabled: bool) -> None:  # noqa: N802
+            self.design_mode = enabled
+
+        def isDesignMode(self) -> bool:  # noqa: N802
+            return self.design_mode
+
+        def setEnable(self, _enabled: bool) -> None:  # noqa: N802
+            return None
+
+        def setVisible(self, _visible: bool) -> None:  # noqa: N802
+            return None
 
     models = {name: object() for name in CONTROL_NAMES}
     views = {model: ControlView() for model in models.values()}
@@ -270,9 +286,19 @@ def test_action_listeners_bind_to_native_control_views(
 
     controller._attach_action_listeners()
 
-    assert [control for control, _listener in controller.listeners] == list(views.values())
+    assert [control for _name, control, _listener in controller.listeners] == list(
+        views.values()
+    )
     assert all(len(view.listeners) == 1 for view in views.values())
+    assert all(not view.design_mode for view in views.values())
     assert active_sheets[-2:] == [score_sheet, game_sheet]
+
+    replacement = ControlView()
+    controller.ensure_action_listener("GameStart", replacement)
+
+    assert len(controller.listeners) == len(CONTROL_NAMES)
+    assert views[models["GameStart"]].listeners == []
+    assert len(replacement.listeners) == 1
 
 
 def test_game_metrics_use_calc_numeric_cells() -> None:

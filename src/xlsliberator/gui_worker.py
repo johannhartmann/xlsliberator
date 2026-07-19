@@ -760,6 +760,7 @@ def _click_control(
     model = _find_control_model(document, name)
     controller = document.getCurrentController()
     view = _wait_for_control_view(controller, model, name)
+    game_controller.ensure_action_listener(name, view)
     control = _control_screen_rectangle(view, name)
     geometry = _window_geometry(window_id)
     x = control["X"] + max(1, control["WIDTH"] // 2)
@@ -772,7 +773,9 @@ def _click_control(
     _xdotool("windowactivate", "--sync", window_id)
     _xdotool("mousemove", "--sync", str(x), str(y))
     event_count = len(game_controller.evidence()["events"])
-    _xdotool("click", "1")
+    _xdotool("mousedown", "1")
+    time.sleep(0.1)
+    _xdotool("mouseup", "1")
     deadline = time.monotonic() + 1.5
     while time.monotonic() < deadline:
         _drain_ui(session)

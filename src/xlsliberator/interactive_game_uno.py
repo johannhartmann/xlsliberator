@@ -375,7 +375,7 @@ class InteractiveGameController:
         self.document = document
         self.enable_timer = enable_timer
         self.state = self._load_state()
-        self.listeners: list[tuple[Any, Any]] = []
+        self.listeners: list[tuple[str, Any, Any]] = []
         self.key_listener: Any = None
         self._timer_last_poll = time.monotonic()
         self._timer_budget_ms = 0.0
@@ -438,7 +438,6 @@ class InteractiveGameController:
     def _attach_action_listeners(self) -> None:
         if self.listeners:
             raise RuntimeError("runtime control listeners are already attached")
-        action_type, _key_type = _listener_types()
         controller = self.document.getCurrentController()
         sheets = self.document.getSheets()
         original_sheet = controller.getActiveSheet()
@@ -448,14 +447,27 @@ class InteractiveGameController:
                 controller.setActiveSheet(sheets.getByName(sheet_name))
                 model = _find_control_model(self.document, name)
                 control = _wait_for_control_view(controller, model, name)
-                listener = action_type(self)
-                control.addActionListener(listener)
-                self.listeners.append((control, listener))
+                self.ensure_action_listener(name, control)
         finally:
             controller.setActiveSheet(original_sheet)
 
+    def ensure_action_listener(self, name: str, control: Any) -> None:
+        """Bind the adapter to the currently materialized native control view."""
+        retained: list[tuple[str, Any, Any]] = []
+        for bound_name, bound_control, listener in self.listeners:
+            if bound_name == name:
+                with suppress(Exception):
+                    bound_control.removeActionListener(listener)
+            else:
+                retained.append((bound_name, bound_control, listener))
+        action_type, _key_type = _listener_types()
+        listener = action_type(self)
+        control.addActionListener(listener)
+        retained.append((name, control, listener))
+        self.listeners = retained
+
     def _detach_action_listeners(self) -> None:
-        for control, listener in self.listeners:
+        for _name, control, listener in self.listeners:
             with suppress(Exception):
                 control.removeActionListener(listener)
         self.listeners.clear()
@@ -644,14 +656,17 @@ class InteractiveGameController:
 
 def _install_live_runtime_controls(document: Any, uno: Any, controller: Any) -> None:
     """Materialize transient form controls in the current Calc view."""
-    supports_design_mode = hasattr(controller, "setFormDesignMode")
-    if supports_design_mode:
-        controller.setFormDesignMode(True)
+    if not hasattr(controller, "setFormDesignMode") or not hasattr(
+        controller, "isFormDesignMode"
+    ):
+        raise RuntimeError("Calc controller does not expose the native form-layer lifecycle")
+    controller.setFormDesignMode(True)
     try:
         _install_runtime_controls(document, uno)
     finally:
-        if supports_design_mode:
-            controller.setFormDesignMode(False)
+        controller.setFormDesignMode(False)
+    if bool(controller.isFormDesignMode()):
+        raise RuntimeError("Calc form layer remained in design mode")
 
 
 def _wait_for_control_view(controller: Any, model: Any, name: str) -> Any:
@@ -661,7 +676,12 @@ def _wait_for_control_view(controller: Any, model: Any, name: str) -> Any:
         try:
             control = controller.getControl(model)
             if control is not None:
-                return control
+                control.setDesignMode(False)
+                control.setEnable(True)
+                control.setVisible(True)
+                if not bool(control.isDesignMode()):
+                    return control
+                last_error = RuntimeError(f"native control remained in design mode: {name}")
         except Exception as exc:
             last_error = exc
         time.sleep(0.05)
