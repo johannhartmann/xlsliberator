@@ -198,6 +198,7 @@ def test_gui_image_disables_unsafe_desktop_autodiscovery_and_acceleration() -> N
     assert "SAL_DISABLE_CUPS=true" in dockerfile
     assert "SAL_DISABLEGL=1" in dockerfile
     assert "SAL_DISABLE_OPENCL=1" in dockerfile
+    assert "SAL_DISABLESKIA=1" in dockerfile
     assert "SAL_NO_MOUSEGRABS=1" in dockerfile
     assert "SAL_USE_VCLPLUGIN=gen" in dockerfile
 
