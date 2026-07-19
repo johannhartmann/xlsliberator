@@ -75,16 +75,15 @@ button {
 .l-sample {
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease;
 }
 
 .l-sample:hover {
-  border-color: rgba(25, 27, 30, 0.3) !important;
+  box-shadow: 0 2px 5px rgba(20, 49, 94, 0.08), 0 14px 26px -12px rgba(20, 49, 94, 0.3) !important;
 }
 
 .l-sample.selected {
-  border-color: oklch(0.56 0.16 145) !important;
-  box-shadow: inset 0 0 0 1px oklch(0.56 0.16 145);
+  box-shadow: inset 0 0 0 2px oklch(0.56 0.16 145), 0 10px 22px -14px rgba(20, 49, 94, 0.25) !important;
 }
 
 .l-spinner {
