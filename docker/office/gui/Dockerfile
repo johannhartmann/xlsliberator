@@ -38,6 +38,7 @@ ENV DISPLAY=:99 \
     SAL_DISABLESKIA=1 \
     SAL_LOG=+WARN \
     SAL_NO_MOUSEGRABS=1 \
+    SAL_SYNCHRONIZE=1 \
     SAL_USE_VCLPLUGIN=gen \
     XLSLIBERATOR_TERMINATE_BACKTRACE=/usr/local/lib/libxlsliberator-terminate-backtrace.so \
     XLSLIBERATOR_UI_EVENT_CONTAINER=1 \

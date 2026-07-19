@@ -203,6 +203,7 @@ def test_gui_image_uses_generic_x11_without_gtk_or_acceleration() -> None:
     assert "SAL_DISABLE_OPENCL=1" in dockerfile
     assert "SAL_DISABLESKIA=1" in dockerfile
     assert "SAL_NO_MOUSEGRABS=1" in dockerfile
+    assert "SAL_SYNCHRONIZE=1" in dockerfile
     assert "SAL_USE_VCLPLUGIN=gen" in dockerfile
 
 

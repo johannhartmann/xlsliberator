@@ -184,6 +184,32 @@ def test_gui_failure_preserves_bounded_desktop_diagnostics(
         )
 
 
+def test_gui_failure_preserves_x11_error_before_abort_marker(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker.subprocess.run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "display-ready", ""),
+    )
+    monkeypatch.setattr(
+        "xlsliberator.gui_worker._cgroup_memory_diagnostics",
+        lambda: "cgroup_memory=memory.current=123",
+    )
+    preamble = "X-Error: BadAlloc\n\tMajor opcode: 53 (X_CreatePixmap)\n"
+    marker = "XLSLIBERATOR_ABORT_BACKTRACE_BEGIN\nframe\n"
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"(?s)X-Error: BadAlloc.*X_CreatePixmap"
+        r".*XLSLIBERATOR_ABORT_BACKTRACE_BEGIN.*frame",
+    ):
+        _raise_with_office_diagnostics(
+            RuntimeError("bridge disposed"),
+            {"office_exit_code": 134, "office_log": preamble + marker},
+        )
+
+
 def test_gui_recorder_uses_one_encoder_thread(tmp_path: Path, monkeypatch: Any) -> None:
     captured: list[list[str]] = []
 

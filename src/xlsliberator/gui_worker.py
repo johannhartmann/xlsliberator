@@ -827,9 +827,15 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     marker_offsets = [
         offset for marker in backtrace_markers if (offset := office_log.find(marker)) >= 0
     ]
-    office_excerpt = (
-        office_log[min(marker_offsets) :][:12_000] if marker_offsets else office_log[-4_000:]
-    )
+    if marker_offsets:
+        marker_offset = min(marker_offsets)
+        # LibreOffice's X11 backend reports the error code, request opcode, and
+        # resource immediately before calling abort(). Keep that causal
+        # preamble along with the interposed abort backtrace.
+        excerpt_start = max(0, marker_offset - 4_000)
+        office_excerpt = office_log[excerpt_start : excerpt_start + 16_000]
+    else:
+        office_excerpt = office_log[-4_000:]
     details = [
         f"office_exit_code={exit_code!r}",
         f"office_log={office_excerpt if office_excerpt else '<empty>'}",
