@@ -826,7 +826,9 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     marker_offsets = [
         offset for marker in backtrace_markers if (offset := office_log.find(marker)) >= 0
     ]
-    office_excerpt = office_log[min(marker_offsets) :][:12_000] if marker_offsets else office_log[-4_000:]
+    office_excerpt = (
+        office_log[min(marker_offsets) :][:12_000] if marker_offsets else office_log[-4_000:]
+    )
     details = [
         f"office_exit_code={exit_code!r}",
         f"office_log={office_excerpt if office_excerpt else '<empty>'}",
