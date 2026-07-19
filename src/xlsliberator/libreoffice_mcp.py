@@ -6,8 +6,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from xlsliberator.application_showcase import build_candidate
 from xlsliberator.application_showcase import (
-    build_candidate,
     bundle_application_replays as bundle_replays,
     run_application_scenario as run_scenario,
 )
