@@ -1883,6 +1883,9 @@ class _OfficeSession:
                 raise ValueError("GUI office sessions require a private display identifier")
             env["SAL_USE_VCLPLUGIN"] = os.environ.get("SAL_USE_VCLPLUGIN", "gen")
             env["DISPLAY"] = display
+            terminate_backtrace = os.environ.get("XLSLIBERATOR_TERMINATE_BACKTRACE")
+            if terminate_backtrace:
+                env["LD_PRELOAD"] = terminate_backtrace
         else:
             env["SAL_USE_VCLPLUGIN"] = "svp"
         self.process = subprocess.Popen(
