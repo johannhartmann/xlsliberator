@@ -63,6 +63,10 @@ def test_minimal_calc_document_opens_in_real_gui_runtime(tmp_path: Path) -> None
             "timeout_seconds": 180,
         }
     )
+    (_evidence_root(tmp_path) / "minimal-calc-response.json").write_text(
+        json.dumps(response, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     assert response.get("success"), response
     result = response["data"]

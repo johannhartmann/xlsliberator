@@ -819,9 +819,21 @@ def _raise_with_office_diagnostics(exc: Exception, session: dict[str, Any]) -> N
     """Preserve bounded office-process evidence when the UNO bridge disappears."""
     exit_code = session.get("office_exit_code")
     office_log = str(session.get("office_log") or "").strip()
+    backtrace_markers = (
+        "XLSLIBERATOR_ALLOCATION_FAILURE_BEGIN",
+        "XLSLIBERATOR_TERMINATE_BACKTRACE_BEGIN",
+    )
+    marker_offsets = [
+        offset for marker in backtrace_markers if (offset := office_log.find(marker)) >= 0
+    ]
+    office_excerpt = (
+        office_log[min(marker_offsets) :][:12_000]
+        if marker_offsets
+        else office_log[-4_000:]
+    )
     details = [
         f"office_exit_code={exit_code!r}",
-        f"office_log={office_log[-4_000:] if office_log else '<empty>'}",
+        f"office_log={office_excerpt if office_excerpt else '<empty>'}",
         _cgroup_memory_diagnostics(),
     ]
     for label, variable in (
