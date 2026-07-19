@@ -7,7 +7,6 @@ import pytest
 from xlsliberator.interactive_game_engine import (
     BOARD_COLUMNS,
     LANDING_POINTS,
-    LINE_POINTS,
     SOFT_DROP_POINTS,
     ActivePiece,
     GamePhase,
@@ -214,7 +213,7 @@ def test_completed_line_is_removed_and_every_upper_cell_moves_down_once() -> Non
         row=27,
         column=BOARD_COLUMNS - 1,
     )
-    assert collapsed.score == 7 + LANDING_POINTS + LINE_POINTS
+    assert collapsed.score == 7 + LANDING_POINTS + 100
     assert collapsed.completed_lines == 4
     assert SettledCell(row=26, column=0, color=54) in collapsed.settled
     assert not any(cell.row == 27 and cell.color == 3 for cell in collapsed.settled)
@@ -236,7 +235,7 @@ def test_two_completed_lines_shift_an_upper_cell_exactly_two_rows() -> None:
 
     collapsed = tick(state)
 
-    assert collapsed.score == LANDING_POINTS + 2 * LINE_POINTS
+    assert collapsed.score == LANDING_POINTS + 2 * 100
     assert collapsed.completed_lines == 2
     assert collapsed.settled == (SettledCell(row=27, column=0, color=45),)
 
