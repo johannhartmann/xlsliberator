@@ -70,6 +70,8 @@ def test_container_command_is_immutable_disposable_and_sandboxed(tmp_path: Path)
     assert command[command.index("--cap-drop") + 1] == "ALL"
     assert command[command.index("--pids-limit") + 1] == "256"
     assert command[command.index("--memory") + 1] == "2g"
+    assert command[command.index("--ipc") + 1] == "private"
+    assert command[command.index("--shm-size") + 1] == "64m"
     assert command[command.index("--user") + 1] == "10001:10001"
     tmpfs_mounts = [command[index + 1] for index, value in enumerate(command) if value == "--tmpfs"]
     assert tmpfs_mounts == [
