@@ -217,6 +217,7 @@ def test_successful_libreoffice_scenario_trace_is_a_certification_gate(tmp_path:
         ValidationPlan(
             input_path=tmp_path / "book.xlsx",
             output_path=output,
+            scenario=Scenario(id="smoke", steps=[]),
             target_trace=trace,
             enabled_gates=["target_scenario"],
             evidence_dir=tmp_path / "evidence",
@@ -250,7 +251,12 @@ def test_target_scenario_gate_rejects_trace_for_different_output(tmp_path: Path)
     )
 
     gate = ValidationRunner(
-        ValidationPlan(input_path=tmp_path / "book.xlsx", output_path=output, target_trace=trace)
+        ValidationPlan(
+            input_path=tmp_path / "book.xlsx",
+            output_path=output,
+            scenario=Scenario(id="smoke", steps=[]),
+            target_trace=trace,
+        )
     ).run_target_scenario_gate()
 
     assert gate.status is GateExecutionStatus.FAILED
@@ -410,11 +416,13 @@ def _formula_repair_scenario() -> Scenario:
                         id="formula-result",
                         kind=ObservationKind.CELL,
                         selector={"sheet": "Sheet1", "address": "A1"},
+                        expected=ObservationValue(kind=ValueKind.NUMBER, value=2),
                     ),
                     ObservationRequest(
                         id="stable-result",
                         kind=ObservationKind.CELL,
                         selector={"sheet": "Sheet1", "address": "B1"},
+                        expected=ObservationValue(kind=ValueKind.NUMBER, value=7),
                     ),
                 ],
             )
@@ -435,7 +443,7 @@ def _formula_repair_trace(
         scenario_id="formula-repair",
         runtime_role=role,  # type: ignore[arg-type]
         runtime_identity=RuntimeIdentity(
-            runtime_kind="microsoft_excel" if role == "source" else "libreoffice_docker",
+            runtime_kind="diagnostic_source" if role == "source" else "libreoffice_docker",
             runtime_version="test",
             image_digest="sha256:fixed" if role == "target" else None,
         ),
@@ -618,7 +626,9 @@ def test_formula_repair_rejects_regression_and_preserves_original(
     gate = runner.run_repair_gate()
 
     assert gate.status is GateExecutionStatus.FAILED
-    assert gate.details["transaction"]["regressions"] == ["recalculate:stable-result"]
+    assert gate.details["transaction"]["regressions"] == [
+        "observation stable-result numeric values exceed declared tolerance"
+    ]
     assert runner.plan.output_path is not None
     assert runner.plan.output_path.read_bytes() == original
     assert not list(tmp_path.glob(".book-formula-repair-*.ods"))

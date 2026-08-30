@@ -1,4 +1,4 @@
-"""Fail-closed formula certification from parser and differential runtime evidence."""
+"""Fail-closed formula certification from target-native runtime evidence."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from xlsliberator.scenarios.diff import diff_traces
+from xlsliberator.scenarios.diff import compare_values
 from xlsliberator.scenarios.models import (
     EnvironmentManifest,
+    ObservationRequest,
     ObservationValue,
     RuntimeTrace,
     Scenario,
@@ -91,7 +92,7 @@ def certify_formulas(
     scenario: Scenario | None,
     runtime: FormulaParserRuntime,
 ) -> FormulaCertificationResult:
-    """Require target parsing plus exact source/target execution evidence per formula."""
+    """Require target parsing plus source-aware LibreOffice scenario evidence."""
     formulas = list(inventory.formulas)
     if not formulas:
         return FormulaCertificationResult(
@@ -99,9 +100,7 @@ def certify_formulas(
             formula_count=0,
         )
     preflight_errors = _trace_preflight_errors(
-        inventory,
         target_path,
-        source_trace,
         target_trace,
         scenario,
     )
@@ -113,21 +112,17 @@ def certify_formulas(
             formula_count=len(formulas),
             errors=preflight_errors,
         )
-    assert source_trace is not None
     assert target_trace is not None
     assert scenario is not None
-    trace_diff = diff_traces(source_trace, target_trace, scenario)
     observation_requests = _cell_observation_requests(scenario)
-    source_observations = _trace_observations(source_trace)
     target_observations = _trace_observations(target_trace)
-    differences = {(item.step_id, item.observation_id): item for item in trace_diff.differences}
     try:
         identity = runtime.resolve_identity(probe=True)
         image_id = str(identity.image_id)
     except Exception as exc:
         return FormulaCertificationResult(
             status=GateExecutionStatus.FAILED,
-            source_trace_id=source_trace.trace_id,
+            source_trace_id=source_trace.trace_id if source_trace else None,
             target_trace_id=target_trace.trace_id,
             formula_count=len(formulas),
             errors=[f"Docker FormulaParser runtime unavailable: {exc}"],
@@ -138,10 +133,8 @@ def certify_formulas(
             formula,
             target_path,
             observation_requests,
-            source_observations,
             target_observations,
-            differences,
-            source_trace.environment,
+            target_trace.environment,
             runtime,
             image_id,
         )
@@ -150,7 +143,7 @@ def certify_formulas(
     failed = [record for record in records if record.status is not GateExecutionStatus.PASSED]
     return FormulaCertificationResult(
         status=GateExecutionStatus.FAILED if failed else GateExecutionStatus.PASSED,
-        source_trace_id=source_trace.trace_id,
+        source_trace_id=source_trace.trace_id if source_trace else None,
         target_trace_id=target_trace.trace_id,
         runtime_image_id=image_id,
         formula_count=len(formulas),
@@ -162,10 +155,8 @@ def certify_formulas(
 def _certify_one_formula(
     formula: FormulaIR,
     target_path: Path,
-    observation_requests: dict[tuple[str, str], tuple[str, str]],
-    source_observations: dict[tuple[str, str], ObservationValue],
+    observation_requests: dict[tuple[str, str], tuple[str, str, ObservationRequest]],
     target_observations: dict[tuple[str, str], ObservationValue],
-    differences: dict[tuple[str, str], Any],
     environment: EnvironmentManifest,
     runtime: FormulaParserRuntime,
     image_id: str,
@@ -181,22 +172,28 @@ def _certify_one_formula(
     if not sheet or not address:
         errors.append("formula has no sheet/cell context and cannot receive execution evidence")
         return _record(formula, errors=errors)
-    request_key = observation_requests.get((sheet, address))
-    if request_key is None:
+    request = observation_requests.get((sheet, address))
+    if request is None:
         errors.append(f"scenario does not observe formula cell {sheet}!{address}")
         return _record(formula, errors=errors)
-    source_observation = source_observations.get(request_key)
+    step_id, observation_id, observation_request = request
+    request_key = (step_id, observation_id)
     target_observation = target_observations.get(request_key)
-    difference = differences.get(request_key)
     target_formula = target_observation.formula if target_observation else None
-    if source_observation is None:
-        errors.append("source trace omitted the formula observation")
-    elif not source_observation.formula:
-        errors.append("source trace observation omitted the executed source formula")
     if target_observation is None:
         errors.append("target trace omitted the formula observation")
     elif not target_formula:
         errors.append("target trace observation omitted the executed target formula")
+    if observation_request.expected is None:
+        errors.append("scenario formula observation has no authored expected value")
+    elif target_observation is not None:
+        matched, reason = compare_values(
+            observation_request.expected,
+            target_observation,
+            observation_request.comparison,
+        )
+        if not matched:
+            errors.append(f"LibreOffice scenario expectation failed: {reason or 'value differs'}")
     parser_result: dict[str, Any] = {}
     if target_formula:
         try:
@@ -223,10 +220,6 @@ def _certify_one_formula(
                 errors.append("target FormulaParser round-trip changed the token stream")
             if parser_result.get("success") and not data.get("tokens"):
                 errors.append("target FormulaParser returned no tokens")
-    if difference is None:
-        errors.append("source/target trace diff omitted the formula observation")
-    elif not bool(difference.matched):
-        errors.append(f"runtime value/error differs: {difference.reason or 'unspecified'}")
     target_ref = TargetRef(
         target_file=str(target_path),
         sheet=sheet,
@@ -242,10 +235,8 @@ def _certify_one_formula(
         source_formula=formula.original_formula_text or formula.formula_text,
         target_formula=target_formula,
         target_parser_result=parser_result,
-        source_observation=source_observation,
         target_observation=target_observation,
         observation_id=request_key[1],
-        trace_difference=(difference.model_dump(mode="json") if difference else None),
         dependencies=formula.dependencies,
         spill_context=formula.array_metadata,
         calculation_settings=formula.calculation_settings,
@@ -275,23 +266,13 @@ def _record(formula: FormulaIR, *, errors: list[str]) -> FormulaEvidenceRecord:
 
 
 def _trace_preflight_errors(
-    inventory: WorkbookArtifactIR,
     target_path: Path,
-    source: RuntimeTrace | None,
     target: RuntimeTrace | None,
     scenario: Scenario | None,
 ) -> list[str]:
     errors: list[str] = []
     if scenario is None:
         errors.append("formula certification requires the exact scenario definition")
-    if source is None:
-        errors.append("formula certification requires a Microsoft Excel source trace")
-    elif source.runtime_identity.runtime_kind != "microsoft_excel":
-        errors.append("source trace is not evidence from Microsoft Excel")
-    elif source.runtime_role != "source":
-        errors.append("source trace runtime role is not source")
-    elif source.status is not GateExecutionStatus.PASSED:
-        errors.append(f"source trace status is {source.status.value}")
     if target is None:
         errors.append("formula certification requires a Docker LibreOffice target trace")
     elif target.runtime_identity.runtime_kind != "libreoffice_docker":
@@ -302,18 +283,8 @@ def _trace_preflight_errors(
         errors.append("target trace omits the immutable Docker image digest")
     elif target.status is not GateExecutionStatus.PASSED:
         errors.append(f"target trace status is {target.status.value}")
-    if scenario and source and source.scenario_id != scenario.id:
-        errors.append("source trace scenario does not match the supplied scenario")
     if scenario and target and target.scenario_id != scenario.id:
         errors.append("target trace scenario does not match the supplied scenario")
-    if source and target and source.environment != target.environment:
-        errors.append("source and target traces use different environment manifests")
-    if (
-        source
-        and inventory.source_sha256
-        and source.workbook_hash_before != inventory.source_sha256
-    ):
-        errors.append("source trace workbook hash does not match the source inventory")
     if target:
         if not target_path.is_file():
             errors.append("target workbook is missing")
@@ -366,8 +337,10 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _cell_observation_requests(scenario: Scenario) -> dict[tuple[str, str], tuple[str, str]]:
-    observation_requests: dict[tuple[str, str], tuple[str, str]] = {}
+def _cell_observation_requests(
+    scenario: Scenario,
+) -> dict[tuple[str, str], tuple[str, str, ObservationRequest]]:
+    observation_requests: dict[tuple[str, str], tuple[str, str, ObservationRequest]] = {}
     for step in scenario.steps:
         for request in (*step.observations_before, *step.observations_after):
             if request.kind.value != "cell":
@@ -377,7 +350,7 @@ def _cell_observation_requests(scenario: Scenario) -> dict[tuple[str, str], tupl
                 request.selector.get("address") or request.selector.get("cell_address") or ""
             )
             if sheet and address:
-                observation_requests[(sheet, address)] = (step.id, request.id)
+                observation_requests[(sheet, address)] = (step.id, request.id, request)
     return observation_requests
 
 

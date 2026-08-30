@@ -81,6 +81,7 @@ def _scenario() -> Scenario:
                         id="result",
                         kind=ObservationKind.CELL,
                         selector={"sheet": "Data", "address": "C3"},
+                        expected=ObservationValue(kind=ValueKind.NUMBER, value=3),
                     )
                 ],
             )
@@ -145,16 +146,11 @@ def _target_file(tmp_path: Path) -> tuple[Path, str]:
     return output, hashlib.sha256(output.read_bytes()).hexdigest()
 
 
-def test_formula_certification_requires_parser_and_matching_runtime_values(
+def test_formula_certification_requires_parser_and_libreoffice_scenario_evidence(
     tmp_path: Path,
 ) -> None:
     runtime = FakeParserRuntime()
     output, target_hash = _target_file(tmp_path)
-    source = _trace(
-        "source",
-        "microsoft_excel",
-        ObservationValue(kind=ValueKind.NUMBER, value=3, formula="=A1+A2"),
-    )
     target = _trace(
         "target",
         "libreoffice_docker",
@@ -162,16 +158,16 @@ def test_formula_certification_requires_parser_and_matching_runtime_values(
         workbook_hash=target_hash,
     )
 
-    result = certify_formulas(_inventory(), output, source, target, _scenario(), runtime)
+    result = certify_formulas(_inventory(), output, None, target, _scenario(), runtime)
 
     assert result.status is GateExecutionStatus.PASSED
     assert result.records[0].target_parser_result["data"]["roundtrip_equivalent"] is True
-    assert result.records[0].source_observation.value == 3
+    assert result.records[0].source_observation is None
     assert result.records[0].target_observation.value == 3
     assert runtime.calls[0]["image_id"] == "sha256:formula-runtime"
 
 
-def test_balanced_parentheses_cannot_pass_without_real_traces(tmp_path: Path) -> None:
+def test_balanced_parentheses_cannot_pass_without_libreoffice_trace(tmp_path: Path) -> None:
     runtime = FakeParserRuntime()
 
     result = certify_formulas(
@@ -184,7 +180,6 @@ def test_balanced_parentheses_cannot_pass_without_real_traces(tmp_path: Path) ->
     )
 
     assert result.status is GateExecutionStatus.FAILED
-    assert "Microsoft Excel source trace" in " ".join(result.errors)
     assert "Docker LibreOffice target trace" in " ".join(result.errors)
     assert runtime.calls == []
 
@@ -203,11 +198,6 @@ def test_formula_certification_rejects_parser_roundtrip_change(tmp_path: Path) -
         }
     )
     output, target_hash = _target_file(tmp_path)
-    source = _trace(
-        "source",
-        "microsoft_excel",
-        ObservationValue(kind=ValueKind.NUMBER, value=3, formula="=A1+A2"),
-    )
     target = _trace(
         "target",
         "libreoffice_docker",
@@ -215,31 +205,33 @@ def test_formula_certification_rejects_parser_roundtrip_change(tmp_path: Path) -
         workbook_hash=target_hash,
     )
 
-    result = certify_formulas(_inventory(), output, source, target, _scenario(), runtime)
+    result = certify_formulas(_inventory(), output, None, target, _scenario(), runtime)
 
     assert result.status is GateExecutionStatus.FAILED
     assert "round-trip changed" in result.records[0].errors[0]
 
 
-def test_formula_certification_preserves_boolean_number_distinction(tmp_path: Path) -> None:
+def test_formula_certification_does_not_treat_a_source_trace_as_an_oracle(
+    tmp_path: Path,
+) -> None:
     runtime = FakeParserRuntime()
     output, target_hash = _target_file(tmp_path)
     source = _trace(
         "source",
-        "microsoft_excel",
+        "diagnostic_source",
         ObservationValue(kind=ValueKind.BOOLEAN, value=True, formula="=A1+A2"),
     )
     target = _trace(
         "target",
         "libreoffice_docker",
-        ObservationValue(kind=ValueKind.NUMBER, value=1, formula="=A1+A2"),
+        ObservationValue(kind=ValueKind.NUMBER, value=3, formula="=A1+A2"),
         workbook_hash=target_hash,
     )
 
     result = certify_formulas(_inventory(), output, source, target, _scenario(), runtime)
 
-    assert result.status is GateExecutionStatus.FAILED
-    assert any("type differs" in error for error in result.records[0].errors)
+    assert result.status is GateExecutionStatus.PASSED
+    assert result.records[0].source_observation is None
 
 
 def test_formula_certification_rejects_trace_for_different_target(tmp_path: Path) -> None:
@@ -248,7 +240,7 @@ def test_formula_certification_rejects_trace_for_different_target(tmp_path: Path
     result = certify_formulas(
         _inventory(),
         output,
-        _trace("source", "microsoft_excel", observation),
+        None,
         _trace("target", "libreoffice_docker", observation, workbook_hash="b" * 64),
         _scenario(),
         FakeParserRuntime(),
@@ -258,13 +250,13 @@ def test_formula_certification_rejects_trace_for_different_target(tmp_path: Path
     assert "does not match the target ODS" in " ".join(result.errors)
 
 
-def test_formula_certification_rejects_environment_drift(tmp_path: Path) -> None:
+def test_formula_certification_uses_the_target_environment(tmp_path: Path) -> None:
     output, target_hash = _target_file(tmp_path)
     observation = ObservationValue(kind=ValueKind.NUMBER, value=3, formula="=A1+A2")
     result = certify_formulas(
         _inventory(),
         output,
-        _trace("source", "microsoft_excel", observation),
+        None,
         _trace(
             "target",
             "libreoffice_docker",
@@ -276,8 +268,7 @@ def test_formula_certification_rejects_environment_drift(tmp_path: Path) -> None
         FakeParserRuntime(),
     )
 
-    assert result.status is GateExecutionStatus.FAILED
-    assert "different environment manifests" in " ".join(result.errors)
+    assert result.status is GateExecutionStatus.PASSED
 
 
 def test_formula_certification_rejects_unsupported_formula(tmp_path: Path) -> None:
@@ -288,7 +279,7 @@ def test_formula_certification_rejects_unsupported_formula(tmp_path: Path) -> No
     result = certify_formulas(
         inventory,
         output,
-        _trace("source", "microsoft_excel", observation),
+        None,
         _trace("target", "libreoffice_docker", observation, workbook_hash=target_hash),
         _scenario(),
         FakeParserRuntime(),

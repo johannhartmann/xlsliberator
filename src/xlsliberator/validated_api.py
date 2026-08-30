@@ -7,8 +7,13 @@ from pathlib import Path
 from xlsliberator.api import convert
 from xlsliberator.certification_report import CertificationReport
 from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
-from xlsliberator.scenarios.models import RuntimeTrace, Scenario
-from xlsliberator.validation_runner import ValidationPlan, ValidationRunner, parse_target_kind
+from xlsliberator.scenarios.models import EnvironmentManifest, RuntimeTrace, Scenario
+from xlsliberator.validation_runner import (
+    ValidationPlan,
+    ValidationRunner,
+    parse_target_kind,
+    required_validation_gates,
+)
 
 
 class ValidatedTransformationError(Exception):
@@ -47,10 +52,10 @@ def transform_validated(
     for target in targets or ["libreoffice"]:
         target_kinds.extend(parse_target_kind(target))
 
-    if target_trace is None and scenario is not None and source_trace is not None:
+    if target_trace is None and scenario is not None:
         target_trace = LibreOfficeScenarioRunner().run(
             output_file,
-            source_trace.environment,
+            source_trace.environment if source_trace is not None else EnvironmentManifest(),
             scenario,
         )
 
@@ -66,22 +71,10 @@ def transform_validated(
             scenario=scenario,
             source_trace=source_trace,
             target_trace=target_trace,
-            enabled_gates=[
-                "conversion",
-                "inventory",
-                "formula",
-                "macro",
-                "control",
-                "runtime_identity",
-                "backend",
-                "target_open",
-                "target_recalculate",
-                "target_save",
-                "target_close",
-                "target_reopen",
-                "target_package",
-                *(["target_scenario"] if target_trace is not None else []),
-            ],
+            enabled_gates=required_validation_gates(
+                include_conversion=True,
+                include_target_scenario=target_trace is not None,
+            ),
         )
     ).run_all()
     report.certification.metadata["conversion_report"] = json.loads(conversion_report.to_json())

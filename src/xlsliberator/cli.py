@@ -10,7 +10,7 @@ import click
 
 from xlsliberator.api import convert
 from xlsliberator.container_boundary import ContainerBoundaryError, require_application_container
-from xlsliberator.scenarios.models import RuntimeTrace, Scenario
+from xlsliberator.scenarios.models import EnvironmentManifest, RuntimeTrace, Scenario
 
 
 @click.group()
@@ -32,12 +32,14 @@ def _load_formula_evidence(
     supplied = (scenario_file, source_trace_file, target_trace_file)
     if not any(supplied):
         return None, None, None
-    if scenario_file is None or source_trace_file is None:
-        raise click.ClickException(
-            "--scenario-file and --source-trace-file must be supplied together"
-        )
+    if scenario_file is None:
+        raise click.ClickException("--scenario-file is required when trace evidence is supplied")
     scenario = Scenario.model_validate_json(scenario_file.read_text(encoding="utf-8"))
-    source_trace = RuntimeTrace.model_validate_json(source_trace_file.read_text(encoding="utf-8"))
+    source_trace = (
+        RuntimeTrace.model_validate_json(source_trace_file.read_text(encoding="utf-8"))
+        if source_trace_file is not None
+        else None
+    )
     target_trace = (
         RuntimeTrace.model_validate_json(target_trace_file.read_text(encoding="utf-8"))
         if target_trace_file is not None
@@ -422,12 +424,12 @@ def scenario_run_target_cmd(
 @click.option(
     "--scenario-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Exact scenario used for source and target execution",
+    help="Source-aware acceptance scenario executed in LibreOffice",
 )
 @click.option(
     "--source-trace-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Microsoft Excel source-oracle trace",
+    help="Optional non-authoritative source diagnostic trace",
 )
 @click.option(
     "--target-trace-file",
@@ -457,7 +459,7 @@ def validate_cmd(
             source_trace_file,
             target_trace_file,
         )
-        if target_trace is None and scenario is not None and source_trace is not None:
+        if target_trace is None and scenario is not None:
             if output_ods is None:
                 raise click.ClickException(
                     "an output ODS is required to execute the target scenario"
@@ -468,7 +470,7 @@ def validate_cmd(
 
             target_trace = LibreOfficeSessionScenarioRunner().run(
                 output_ods,
-                source_trace.environment,
+                source_trace.environment if source_trace is not None else EnvironmentManifest(),
                 scenario,
             )
         report = ValidationRunner(
@@ -517,12 +519,12 @@ def validate_cmd(
 @click.option(
     "--scenario-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Exact externally supplied acceptance scenario",
+    help="Source-aware acceptance scenario executed in LibreOffice",
 )
 @click.option(
     "--source-trace-file",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Declared source-evidence trace from an independent test authority",
+    help="Optional non-authoritative source diagnostic trace",
 )
 @click.option(
     "--target-trace-file",

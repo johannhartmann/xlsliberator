@@ -13,8 +13,12 @@ import pytest
 from xlsliberator.candidate_runtime import (
     CandidateBundleError,
     build_application_target,
+    create_candidate_workspace,
+    inspect_candidate_package,
     load_candidate_entrypoint,
     package_candidate_directory,
+    package_candidate_workspace,
+    validate_candidate_workspace,
 )
 
 
@@ -55,6 +59,38 @@ def _candidate_directory(tmp_path: Path, source_sha256: str) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def test_agent_workspace_tools_calculate_source_and_file_bindings(tmp_path: Path) -> None:
+    source = tmp_path / "source.xlsm"
+    source.write_bytes(b"source-workbook")
+    workspace = tmp_path / "authored"
+
+    scaffold = create_candidate_workspace(source, workspace, candidate_id="payroll-migration")
+    module_path = workspace / "candidate_payroll_migration/main.py"
+    module_path.write_text(
+        "def build(request):\n    return {'request': request}\n",
+        encoding="utf-8",
+    )
+    manifest_path = workspace / "manifest.json"
+    draft = json.loads(manifest_path.read_text(encoding="utf-8"))
+    draft["source_sha256"] = "0" * 64
+    draft["files"] = {"invented.py": "0" * 64}
+    manifest_path.write_text(json.dumps(draft), encoding="utf-8")
+
+    validated = validate_candidate_workspace(source, workspace)
+    bundle = tmp_path / "candidate.zip"
+    packaged = package_candidate_workspace(source, workspace, bundle)
+    inspected = inspect_candidate_package(bundle)
+
+    source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+    module_sha256 = hashlib.sha256(module_path.read_bytes()).hexdigest()
+    assert scaffold["source_sha256"] == source_sha256
+    assert validated["source_sha256"] == source_sha256
+    assert validated["candidate_files"]["candidate_payroll_migration/main.py"] == module_sha256
+    assert packaged["source_sha256"] == source_sha256
+    assert inspected["candidate_bundle_sha256"] == packaged["candidate_bundle_sha256"]
+    assert "invented.py" not in inspected["candidate_files"]
 
 
 def test_candidate_package_is_deterministic_and_keeps_lazy_imports_confined(

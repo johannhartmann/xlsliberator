@@ -23,7 +23,7 @@ from xlsliberator.formula_repair_loop import FormulaRepairLoop
 from xlsliberator.inspect_workbook import inspect_workbook
 from xlsliberator.libreoffice_scenario_runner import LibreOfficeScenarioRunner
 from xlsliberator.report import ConversionReport
-from xlsliberator.scenarios.diff import diff_traces
+from xlsliberator.scenarios.assertions import evaluate_scenario_trace
 from xlsliberator.scenarios.models import RuntimeTrace, Scenario
 from xlsliberator.validation_models import (
     CertificationTier,
@@ -35,6 +35,36 @@ from xlsliberator.validation_models import (
     ValidationSeverity,
     WorkbookArtifactIR,
 )
+
+DEFAULT_REQUIRED_GATES: tuple[str, ...] = (
+    "inventory",
+    "coverage",
+    "formula",
+    "macro",
+    "control",
+    "runtime_identity",
+    "backend",
+    "target_open",
+    "target_recalculate",
+    "target_save",
+    "target_close",
+    "target_reopen",
+    "target_package",
+)
+
+
+def required_validation_gates(
+    *,
+    include_conversion: bool = False,
+    include_target_scenario: bool = False,
+) -> list[str]:
+    """Return the authoritative required-gate policy for every entrypoint."""
+    gates = list(DEFAULT_REQUIRED_GATES)
+    if include_conversion:
+        gates.insert(0, "conversion")
+    if include_target_scenario:
+        gates.append("target_scenario")
+    return gates
 
 
 @dataclass
@@ -52,23 +82,7 @@ class ValidationPlan:
     scenario: Scenario | None = None
     source_trace: RuntimeTrace | None = None
     target_trace: RuntimeTrace | None = None
-    enabled_gates: list[str] = field(
-        default_factory=lambda: [
-            "inventory",
-            "coverage",
-            "formula",
-            "macro",
-            "control",
-            "runtime_identity",
-            "backend",
-            "target_open",
-            "target_recalculate",
-            "target_save",
-            "target_close",
-            "target_reopen",
-            "target_package",
-        ]
-    )
+    enabled_gates: list[str] = field(default_factory=required_validation_gates)
 
 
 class ValidationRunner:
@@ -121,7 +135,7 @@ class ValidationRunner:
         )
 
     def run_formula_gate(self) -> ValidationGateResult:
-        """Require target parser round-trips and source/target runtime equivalence."""
+        """Require target parser round-trips and LibreOffice scenario evidence."""
         inventory = self._get_inventory()
         output = self.plan.output_path
         if output is None or not output.is_file():
@@ -151,7 +165,7 @@ class ValidationRunner:
             status=GateExecutionStatus.PASSED if passed else GateExecutionStatus.FAILED,
             severity=ValidationSeverity.INFO if passed else ValidationSeverity.ERROR,
             message=(
-                f"All {self._formula_result.formula_count} formulas passed target parsing and runtime comparison"
+                f"All {self._formula_result.formula_count} formulas passed target parsing and LibreOffice scenarios"
                 if passed
                 else f"Formula certification failed with {len(self._formula_result.errors)} error(s)"
             ),
@@ -378,6 +392,7 @@ class ValidationRunner:
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
         evidence_path.write_text(trace.model_dump_json(indent=2) + "\n", encoding="utf-8")
         failures: list[str] = []
+        assertions: list[Any] = []
         if trace.runtime_role != "target":
             failures.append("trace runtime role is not target")
         if trace.runtime_identity.runtime_kind != "libreoffice_docker":
@@ -388,6 +403,19 @@ class ValidationRunner:
             failures.append(f"trace status is {trace.status.value}")
         if trace.workbook_hash_after != trace.workbook_hash_before:
             failures.append("trace reports workbook mutation")
+        if self.plan.scenario is None:
+            failures.append("target trace has no source-aware scenario definition")
+        else:
+            try:
+                _statuses, assertions, scenario_failures = evaluate_scenario_trace(
+                    self.plan.scenario,
+                    trace,
+                )
+            except ValueError as exc:
+                failures.append(str(exc))
+                assertions = []
+            else:
+                failures.extend(scenario_failures)
         output = self.plan.output_path
         if output is None or not output.is_file():
             failures.append("certification output is missing")
@@ -404,6 +432,7 @@ class ValidationRunner:
                 "trace_id": trace.trace_id,
                 "scenario_id": trace.scenario_id,
                 "runtime_identity": trace.runtime_identity.model_dump(mode="json"),
+                "assertions": [item.model_dump(mode="json") for item in assertions],
             },
             evidence_references=[str(evidence_path)],
         )
@@ -517,8 +546,6 @@ class ValidationRunner:
             errors.append("target ODS is missing")
         if self.plan.scenario is None:
             errors.append("the exact failing scenario is missing")
-        if self.plan.source_trace is None:
-            errors.append("the source trace is missing")
         if self.plan.target_trace is None:
             errors.append("the pre-repair target trace is missing")
         return errors
@@ -531,10 +558,9 @@ class ValidationRunner:
     ) -> None:
         output = self.plan.output_path
         scenario = self.plan.scenario
-        source_trace = self.plan.source_trace
         target_trace = self.plan.target_trace
         assert output is not None and scenario is not None
-        assert source_trace is not None and target_trace is not None
+        assert target_trace is not None
         original_hash = _hash_file(output)
         candidate_input = output
         pending_repairs = repairs
@@ -577,28 +603,21 @@ class ValidationRunner:
                     return
                 candidate_trace = LibreOfficeScenarioRunner(runtime=self.runtime).run(
                     candidate,
-                    source_trace.environment,
+                    target_trace.environment,
                     scenario,
                 )
                 candidate_result = certify_formulas(
                     self._get_inventory(),
                     candidate,
-                    source_trace,
+                    None,
                     candidate_trace,
                     scenario,
                     self.runtime,
                 )
-                before_diff = diff_traces(source_trace, target_trace, scenario)
-                after_diff = diff_traces(source_trace, candidate_trace, scenario)
-                before = {
-                    (item.step_id, item.observation_id): item.matched
-                    for item in before_diff.differences
-                }
-                regressions = [
-                    f"{item.step_id}:{item.observation_id}"
-                    for item in after_diff.differences
-                    if before.get((item.step_id, item.observation_id), False) and not item.matched
-                ]
+                _statuses, _assertions, regressions = evaluate_scenario_trace(
+                    scenario,
+                    candidate_trace,
+                )
                 iteration["candidate_trace"] = candidate_trace.model_dump(mode="json")
                 iteration["candidate_formula_certification"] = candidate_result.model_dump(
                     mode="json"
@@ -608,7 +627,6 @@ class ValidationRunner:
                 accepted = (
                     candidate_trace.status is GateExecutionStatus.PASSED
                     and candidate_result.status is GateExecutionStatus.PASSED
-                    and after_diff.status is GateExecutionStatus.PASSED
                     and not regressions
                 )
                 if accepted:
@@ -735,23 +753,10 @@ class ValidationRunner:
             and gate.status is GateExecutionStatus.PASSED
             for gate in gate_results
         )
-        source_differential_validated = bool(
-            self.plan.source_trace
-            and self.plan.target_trace
-            and self._formula_result
-            and self._formula_result.formula_count > 0
-            and self._formula_result.status is GateExecutionStatus.PASSED
-            and any(
-                gate.gate_name == "formula" and gate.status is GateExecutionStatus.PASSED
-                for gate in gate_results
-            )
-        )
         certification = ValidationCertification(
             certified=certified,
             tier=(
-                CertificationTier.SOURCE_DIFFERENTIAL_VALIDATED
-                if certified and source_differential_validated
-                else CertificationTier.LIBREOFFICE_RUNTIME_VALIDATED
+                CertificationTier.LIBREOFFICE_RUNTIME_VALIDATED
                 if certified and libreoffice_runtime_validated
                 else CertificationTier.STRUCTURAL
             ),

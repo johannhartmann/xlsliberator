@@ -31,6 +31,8 @@ from xlsliberator.libreoffice_mcp import (
     recalculate,
     reopen,
     run_application_scenario,
+    run_declared_acceptance,
+    run_declared_mutation_suite,
     save,
     send_keyboard_event,
     write_cells,
@@ -69,6 +71,8 @@ for tool in (
     build_application_candidate,
     run_application_scenario,
     bundle_application_replays,
+    run_declared_acceptance,
+    run_declared_mutation_suite,
 ):
     mcp.tool(tool)
 

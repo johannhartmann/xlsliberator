@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -9,7 +10,10 @@ from xlsliberator.libreoffice_mcp import (
     build_application_candidate,
     bundle_application_replays,
     run_application_scenario,
+    run_declared_acceptance,
+    run_declared_mutation_suite,
 )
+from xlsliberator.validation_models import GateExecutionStatus
 
 
 @pytest.mark.asyncio
@@ -108,3 +112,81 @@ async def test_replay_tool_forwards_declared_set(
     assert result["operation_status"] == "passed"
     assert observed["args"][0] == {"boundary": scenario}
     assert observed["kwargs"]["replay_id"] == "migration-42"
+
+
+@pytest.mark.asyncio
+async def test_declared_acceptance_runs_at_trusted_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target.ods"
+    acceptance = tmp_path / "acceptance.yaml"
+    target.write_bytes(b"ods")
+    acceptance.write_text("acceptance", encoding="utf-8")
+    observed: dict[str, Any] = {}
+
+    def fake_load(path: Path) -> object:
+        observed["acceptance_path"] = path
+        return object()
+
+    def fake_run(**kwargs: Any) -> Any:
+        observed.update(kwargs)
+        return SimpleNamespace(
+            status=GateExecutionStatus.PASSED,
+            model_dump=lambda **_kwargs: {"evidence_id": "evidence-1"},
+        )
+
+    monkeypatch.setenv("XLSLIBERATOR_WORKSPACE_ROOTS", str(tmp_path))
+    monkeypatch.setattr("xlsliberator.libreoffice_mcp.load_acceptance", fake_load)
+    monkeypatch.setattr("xlsliberator.libreoffice_mcp.run_acceptance", fake_run)
+    monkeypatch.setattr(
+        "xlsliberator.libreoffice_mcp.LibreOfficeSessionScenarioRunner",
+        lambda **_kwargs: object(),
+    )
+
+    result = await run_declared_acceptance(
+        str(target),
+        str(acceptance),
+        str(tmp_path / "public-evidence"),
+    )
+
+    assert result["operation_status"] == "passed"
+    assert result["evidence_id"] == "evidence-1"
+    assert observed["acceptance_path"] == acceptance
+    assert observed["workbook"] == target
+    assert observed["evidence_dir"] == tmp_path / "public-evidence"
+
+
+@pytest.mark.asyncio
+async def test_declared_mutation_suite_preserves_failed_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "target.ods"
+    acceptance = tmp_path / "acceptance.yaml"
+    target.write_bytes(b"ods")
+    acceptance.write_text("acceptance", encoding="utf-8")
+
+    monkeypatch.setenv("XLSLIBERATOR_WORKSPACE_ROOTS", str(tmp_path))
+    monkeypatch.setattr("xlsliberator.libreoffice_mcp.load_acceptance", lambda _path: object())
+    monkeypatch.setattr(
+        "xlsliberator.libreoffice_mcp.LibreOfficeSessionScenarioRunner",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "xlsliberator.libreoffice_mcp.run_mutation_campaign",
+        lambda **_kwargs: SimpleNamespace(
+            status=GateExecutionStatus.FAILED,
+            model_dump=lambda **_kwargs: {"cases": [{"outcome": "survived"}]},
+        ),
+    )
+
+    result = await run_declared_mutation_suite(
+        str(target),
+        str(acceptance),
+        str(tmp_path / "mutations"),
+    )
+
+    assert result["success"] is False
+    assert result["operation_status"] == "failed"
+    assert result["cases"] == [{"outcome": "survived"}]

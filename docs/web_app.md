@@ -25,6 +25,8 @@ Configure the embedded Open-SWE service:
 cp .env.example .env
 # Select one supported model and set only its matching provider key.
 # Example: XLSLIBERATOR_OPEN_SWE_MODEL=openai:gpt-5.5
+# Select a different supported model for the read-only reviewer graph.
+# Example: XLSLIBERATOR_REVIEWER_MODEL=anthropic:claude-sonnet-4-6
 docker compose up -d --build xlsliberator-web
 ```
 
@@ -57,7 +59,8 @@ executable.
 - `XLSLIBERATOR_WEB_WORKERS`: bounded Open-SWE client concurrency, default `1`
 - `XLSLIBERATOR_JOB_RETENTION_HOURS`: local delivery retention, default `24`
 - `XLSLIBERATOR_OPEN_SWE_SERVICE_TOKEN`: shared web-to-agent bearer secret
-- `XLSLIBERATOR_OPEN_SWE_MODEL`: required explicit model ID; blank starts no run
+- `XLSLIBERATOR_OPEN_SWE_MODEL`: required explicit migration model ID
+- `XLSLIBERATOR_REVIEWER_MODEL`: required distinct model ID for independent review
 - `XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT`: provider-supported effort
 - `XLSLIBERATOR_OPEN_SWE_MAX_OUTPUT_TOKENS`: bounded model output
 - `XLSLIBERATOR_OPEN_SWE_OWNER_ID`: stable tenant/user identity

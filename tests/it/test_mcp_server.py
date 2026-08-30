@@ -44,6 +44,8 @@ def test_mcp_server_has_tools() -> None:
         recalculate,
         reopen,
         run_application_scenario,
+        run_declared_acceptance,
+        run_declared_mutation_suite,
         save,
         send_keyboard_event,
         write_cells,
@@ -82,6 +84,8 @@ def test_mcp_server_has_tools() -> None:
             build_application_candidate,
             run_application_scenario,
             bundle_application_replays,
+            run_declared_acceptance,
+            run_declared_mutation_suite,
         )
     }
     registered = {tool.name for tool in asyncio.run(mcp.list_tools())}

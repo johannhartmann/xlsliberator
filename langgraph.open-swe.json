@@ -2,7 +2,8 @@
   "$schema": "https://langgra.ph/schema.json",
   "python_version": "3.11",
   "graphs": {
-    "xlsliberator": "xlsliberator.open_swe_agent.graph:traced_agent"
+    "xlsliberator": "xlsliberator.open_swe_agent.graph:traced_agent",
+    "xlsliberator_reviewer": "xlsliberator.open_swe_agent.reviewer_graph:traced_reviewer"
   },
   "dependencies": [
     "."

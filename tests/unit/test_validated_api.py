@@ -108,23 +108,24 @@ def test_transform_validated_non_strict_returns_failed_report(
     assert not report.certification.certified
 
 
-def test_transform_validated_runs_docker_target_scenario_from_source_evidence(
+def test_transform_validated_runs_docker_target_scenario_without_source_runtime(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
-    """A supplied source trace should drive the exact target scenario after conversion."""
+    """A source-aware scenario runs in LibreOffice without an Excel source oracle."""
     import xlsliberator.validated_api as validated_module
 
     now = datetime.now(UTC)
     scenario = Scenario(id="formula", steps=[])
-    environment = EnvironmentManifest(locale="de-DE")
-    source_trace = RuntimeTrace(
-        trace_id="source",
+    environment = EnvironmentManifest()
+    target_trace = RuntimeTrace(
+        trace_id="target",
         scenario_id=scenario.id,
-        runtime_role="source",
+        runtime_role="target",
         runtime_identity=RuntimeIdentity(
-            runtime_kind="microsoft_excel",
-            runtime_version="test",
+            runtime_kind="libreoffice_docker",
+            runtime_version="26.2.4.2",
+            image_digest="sha256:fixed",
         ),
         environment=environment,
         status=GateExecutionStatus.PASSED,
@@ -132,17 +133,6 @@ def test_transform_validated_runs_docker_target_scenario_from_source_evidence(
         ended_at=now,
         workbook_hash_before="a" * 64,
         workbook_hash_after="a" * 64,
-    )
-    target_trace = source_trace.model_copy(
-        update={
-            "trace_id": "target",
-            "runtime_role": "target",
-            "runtime_identity": RuntimeIdentity(
-                runtime_kind="libreoffice_docker",
-                runtime_version="26.2.4.2",
-                image_digest="sha256:fixed",
-            ),
-        }
     )
     captured: dict[str, Any] = {}
 
@@ -173,7 +163,6 @@ def test_transform_validated_runs_docker_target_scenario_from_source_evidence(
         tmp_path / "in.xlsx",
         output,
         scenario=scenario,
-        source_trace=source_trace,
     )
 
     assert captured["scenario_call"] == (output, environment, scenario)

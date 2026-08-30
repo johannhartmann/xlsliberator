@@ -162,6 +162,7 @@ print(json.dumps(json.load(urllib.request.urlopen("http://xlsliberator-open-swe:
         )
         assert open_swe_health["runtime"] == "open-swe"
         assert open_swe_health["model_configured"] is False
+        assert open_swe_health["reviewer_configured"] is False
         assert open_swe_health["github_models_enabled"] is False
 
         graph = json.loads(
@@ -170,24 +171,94 @@ print(json.dumps(json.load(urllib.request.urlopen("http://xlsliberator-open-swe:
                 "xlsliberator-open-swe",
                 """
 import asyncio
+import hashlib
 import json
+import os
 import shutil
 import uuid
-from xlsliberator.open_swe_agent.graph import get_agent
-from xlsliberator.open_swe_agent.state import thread_root, write_state
+import zipfile
+from xlsliberator.open_swe_agent.api import _gui_evidence_complete
+from xlsliberator.open_swe_agent.graph import MigrationFilesystemBackend, get_agent
+from xlsliberator.open_swe_agent.reviewer_graph import get_reviewer
+from xlsliberator.open_swe_agent.state import thread_root, workspace_root, write_state
 
 thread_id = str(uuid.uuid4())
 write_state(thread_id, {"thread_id": thread_id, "events": []})
+review_id = str(uuid.uuid4())
+review_root = workspace_root() / ".reviews" / review_id
+review_root.mkdir(parents=True)
+(review_root / "review-context.json").write_text(json.dumps({
+    "source_path": "source.xlsx",
+    "target_path": "target.ods",
+    "test_set_identity": "test-set",
+}))
 try:
     graph = asyncio.run(get_agent({"configurable": {"thread_id": thread_id}}))
-    print(json.dumps({"type": type(graph).__name__, "nodes": sorted(graph.get_graph().nodes)}))
+    backend = MigrationFilesystemBackend(root_dir=str(thread_root(thread_id)), virtual_mode=True)
+    source_write = backend.write("/source/forged.xlsm", "forged")
+    evidence_write = backend.write("/evidence/certification.json", "forged")
+    candidate_write = backend.write("/candidate/main.py", "print(1)")
+    root = thread_root(thread_id)
+    target = root / "deliverables" / "target.ods"
+    target.parent.mkdir()
+    target.write_bytes(b"target")
+    evidence = root / "evidence"
+    (evidence / "gui").mkdir(parents=True)
+    candidate_sha256 = hashlib.sha256(b"candidate").hexdigest()
+    (evidence / "candidate-package.json").write_text(json.dumps({
+        "candidate_bundle_sha256": candidate_sha256,
+    }))
+    (evidence / "gui-control.json").write_text(json.dumps({
+        "operation_status": "passed",
+        "data": {"scenario_id": "control"},
+    }))
+    with zipfile.ZipFile(evidence / "gui" / "control.zip", "w") as archive:
+        archive.writestr("shot.png", b"png")
+        archive.writestr("result.json", json.dumps({
+            "status": "passed",
+            "scenario_id": "control",
+            "target_sha256": hashlib.sha256(b"target").hexdigest(),
+            "candidate_bundle_sha256": candidate_sha256,
+            "screenshots": ["shot.png"],
+            "operations": [
+                {"kind": "click_control", "status": "passed"},
+                {"kind": "screenshot", "status": "passed"},
+            ],
+        }))
+    gui_evidence_complete = _gui_evidence_complete(root, target)
+    target.write_bytes(b"changed-target")
+    gui_evidence_rejects_target_change = not _gui_evidence_complete(root, target)
+    os.environ["XLSLIBERATOR_OPEN_SWE_MODEL"] = "migration-placeholder"
+    os.environ["XLSLIBERATOR_REVIEWER_MODEL"] = "reviewer-placeholder"
+    reviewer = asyncio.run(get_reviewer({
+        "configurable": {"thread_id": thread_id, "review_id": review_id}
+    }))
+    print(json.dumps({
+        "type": type(graph).__name__,
+        "nodes": sorted(graph.get_graph().nodes),
+        "reviewer_type": type(reviewer).__name__,
+        "reviewer_nodes": sorted(reviewer.get_graph().nodes),
+        "source_write_blocked": bool(source_write.error),
+        "evidence_write_blocked": bool(evidence_write.error),
+        "candidate_write_allowed": not candidate_write.error,
+        "gui_evidence_complete": gui_evidence_complete,
+        "gui_evidence_rejects_target_change": gui_evidence_rejects_target_change,
+    }))
 finally:
     shutil.rmtree(thread_root(thread_id))
+    shutil.rmtree(review_root)
 """,
             )
         )
         assert graph["type"] == "CompiledStateGraph"
         assert {"model", "tools"}.issubset(graph["nodes"])
+        assert graph["reviewer_type"] == "CompiledStateGraph"
+        assert {"model", "tools"}.issubset(graph["reviewer_nodes"])
+        assert graph["source_write_blocked"] is True
+        assert graph["evidence_write_blocked"] is True
+        assert graph["candidate_write_allowed"] is True
+        assert graph["gui_evidence_complete"] is True
+        assert graph["gui_evidence_rejects_target_change"] is True
 
         tool_smoke = json.loads(
             _exec_python(
@@ -215,12 +286,13 @@ async def main():
     write_state(thread_id, {"thread_id": thread_id, "events": []})
     try:
         tools = {tool.name: tool for tool in workbook_tools(thread_id)}
-        result = await tools["inspect_source_workbook"].ainvoke(
+        result = await tools["create_source_dossier"].ainvoke(
             {"source_path": "/workspace/source/tool-smoke.xlsx"}
         )
         print(json.dumps({
             "operation_status": result.get("operation_status"),
-            "evidence_written": (root / "evidence" / "source-inventory.json").is_file(),
+            "evidence_written": (root / "evidence" / "source-dossier.json").is_file(),
+            "dossier_written": (root / "dossier" / "dossier.md").is_file(),
         }))
     finally:
         shutil.rmtree(root, ignore_errors=True)
@@ -232,6 +304,7 @@ asyncio.run(main())
         assert tool_smoke == {
             "operation_status": "passed",
             "evidence_written": True,
+            "dossier_written": True,
         }
 
         web_container = _compose(project, "ps", "--quiet", "xlsliberator-web").stdout.strip()

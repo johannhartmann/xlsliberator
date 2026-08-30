@@ -72,6 +72,16 @@ migration start before a LangGraph run is created. GitHub Models additionally
 requires `XLSLIBERATOR_GITHUB_MODELS_ENABLED=1` and a separate
 `GITHUB_MODELS_TOKEN`.
 
+Completion also requires `XLSLIBERATOR_REVIEWER_MODEL`. It must differ from the
+migration model. The server starts that model in a separate reviewer graph with a
+fresh context and a read-only snapshot, then binds the server-written decision to
+the reviewer run ID and source, candidate, and test-set hashes.
+
+For workbooks with behavior, completion requires content-bound public acceptance
+evidence. Formula and VBA migrations also require a passing mutation campaign.
+Control migrations additionally require a passed real-X11 scenario containing a
+control click and screenshot; headless scenario execution is not UI evidence.
+
 ## Fail-closed invariants
 
 - Missing explicit model configuration means the web job fails before a run.

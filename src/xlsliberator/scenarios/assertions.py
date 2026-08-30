@@ -10,6 +10,7 @@ from xlsliberator.scenarios.models import (
     ObservationRequest,
     ObservationValue,
     RuntimeTrace,
+    Scenario,
 )
 from xlsliberator.validation_models import GateExecutionStatus
 
@@ -23,32 +24,7 @@ def evaluate_trace(
     if trace.scenario_id != scenario.id:
         raise ValueError("trace scenario ID does not match the acceptance definition")
 
-    trace_steps = {step.step_id: step for step in trace.steps}
-    action_statuses: dict[str, GateExecutionStatus] = {}
-    assertions: list[AssertionResult] = []
-    required_failures: list[str] = []
-
-    for step in scenario.steps:
-        result = trace_steps.get(step.id)
-        status = result.status if result is not None else GateExecutionStatus.NOT_RUN
-        action_statuses[step.id] = status
-        if step.action.required and status is not GateExecutionStatus.PASSED:
-            required_failures.append(f"action {step.id} was {status.value}")
-
-        before = result.observations_before if result is not None else {}
-        after = result.observations_after if result is not None else {}
-        assertions.extend(
-            _evaluate_observations(step.id, "before", step.observations_before, before)
-        )
-        assertions.extend(_evaluate_observations(step.id, "after", step.observations_after, after))
-
-    required_failures.extend(
-        f"observation {item.observation_id} {item.reason or 'failed'}"
-        for item in assertions
-        if item.required and item.status is not GateExecutionStatus.PASSED
-    )
-    if trace.status is not GateExecutionStatus.PASSED:
-        required_failures.append(f"runtime trace was {trace.status.value}")
+    action_statuses, assertions, required_failures = evaluate_scenario_trace(scenario, trace)
 
     return AcceptanceEvaluation(
         migration_id=acceptance.migration.id,
@@ -61,6 +37,39 @@ def evaluate_trace(
         assertions=assertions,
         required_failures=required_failures,
     )
+
+
+def evaluate_scenario_trace(
+    scenario: Scenario,
+    trace: RuntimeTrace,
+) -> tuple[dict[str, GateExecutionStatus], list[AssertionResult], list[str]]:
+    """Evaluate authored scenario expectations against one target trace."""
+    if trace.scenario_id != scenario.id:
+        raise ValueError("trace scenario ID does not match the scenario")
+    trace_steps = {step.step_id: step for step in trace.steps}
+    action_statuses: dict[str, GateExecutionStatus] = {}
+    assertions: list[AssertionResult] = []
+    required_failures: list[str] = []
+    for step in scenario.steps:
+        result = trace_steps.get(step.id)
+        status = result.status if result is not None else GateExecutionStatus.NOT_RUN
+        action_statuses[step.id] = status
+        if step.action.required and status is not GateExecutionStatus.PASSED:
+            required_failures.append(f"action {step.id} was {status.value}")
+        before = result.observations_before if result is not None else {}
+        after = result.observations_after if result is not None else {}
+        assertions.extend(
+            _evaluate_observations(step.id, "before", step.observations_before, before)
+        )
+        assertions.extend(_evaluate_observations(step.id, "after", step.observations_after, after))
+    required_failures.extend(
+        f"observation {item.observation_id} {item.reason or 'failed'}"
+        for item in assertions
+        if item.required and item.status is not GateExecutionStatus.PASSED
+    )
+    if trace.status is not GateExecutionStatus.PASSED:
+        required_failures.append(f"runtime trace was {trace.status.value}")
+    return action_statuses, assertions, required_failures
 
 
 def _evaluate_observations(

@@ -43,8 +43,8 @@ cd xlsliberator
 cp .env.example .env
 ```
 
-Set `XLSLIBERATOR_OPEN_SWE_MODEL` and only the matching provider credential in
-`.env`, then start the stack:
+Set `XLSLIBERATOR_OPEN_SWE_MODEL`, a distinct `XLSLIBERATOR_REVIEWER_MODEL`, and
+only their matching provider credentials in `.env`, then start the stack:
 
 ```bash
 mkdir -p artifacts/runtime-tmp artifacts/open-swe-workspaces
@@ -153,6 +153,8 @@ validation, and stateful LibreOffice session operations. See
 Important Open-SWE variables are documented in `.env.example`:
 
 - `XLSLIBERATOR_OPEN_SWE_MODEL`
+- `XLSLIBERATOR_REVIEWER_MODEL` (required for completion and distinct from the
+  migration model)
 - the selected provider credential
 - `XLSLIBERATOR_OPEN_SWE_REASONING_EFFORT`
 - `XLSLIBERATOR_OPEN_SWE_MAX_OUTPUT_TOKENS`

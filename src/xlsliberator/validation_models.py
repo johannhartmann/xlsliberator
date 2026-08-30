@@ -40,7 +40,6 @@ class CertificationTier(StrEnum):
 
     STRUCTURAL = "structural"
     TARGET_RUNTIME_VALIDATED = "target_runtime_validated"
-    SOURCE_DIFFERENTIAL_VALIDATED = "source_differential_validated"
     LIBREOFFICE_RUNTIME_VALIDATED = "libreoffice_runtime_validated"
 
 

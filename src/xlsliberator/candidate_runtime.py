@@ -156,6 +156,165 @@ def package_candidate_directory(source_directory: Path, output_path: Path) -> di
     }
 
 
+def create_candidate_workspace(
+    source_path: Path,
+    workspace_path: Path,
+    *,
+    candidate_id: str,
+) -> dict[str, Any]:
+    """Create a source-bound target-native candidate scaffold for model-authored code."""
+    source = source_path.resolve()
+    workspace = workspace_path.resolve()
+    if not source.is_file():
+        raise CandidateBundleError("candidate source workbook is missing")
+    if workspace.exists():
+        raise CandidateBundleError("candidate workspace already exists")
+    if _CANDIDATE_ID.fullmatch(candidate_id) is None:
+        raise CandidateBundleError("candidate_id is malformed")
+    package_name = f"candidate_{candidate_id.replace('-', '_').replace('.', '_')}"
+    if re.fullmatch(r"candidate_[a-zA-Z0-9_]+", package_name) is None:
+        raise CandidateBundleError("candidate_id cannot form a safe Python package name")
+    build_entrypoint = f"{package_name}.main:build"
+    package = workspace / package_name
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "main.py").write_text(
+        '"""Target-native LibreOffice candidate authored for one source workbook."""\n\n'
+        "from typing import Any\n\n\n"
+        "def build(request: dict[str, Any]) -> dict[str, Any]:\n"
+        '    raise NotImplementedError("author the target-native candidate builder")\n',
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": _SCHEMA_VERSION,
+        "candidate_id": candidate_id,
+        "source_sha256": _sha256_file(source),
+        "target_build": LIBREOFFICE_VERSION,
+        "entrypoints": {"build": build_entrypoint, "controller": None},
+        "files": {},
+        "capabilities": [],
+    }
+    (workspace / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "status": "passed",
+        "workspace_path": str(workspace),
+        "manifest_path": str(workspace / "manifest.json"),
+        "source_sha256": manifest["source_sha256"],
+        "target_build": LIBREOFFICE_VERSION,
+        "build_entrypoint": build_entrypoint,
+    }
+
+
+def validate_candidate_workspace(source_path: Path, workspace_path: Path) -> dict[str, Any]:
+    """Validate authored files against a freshly calculated source-bound manifest."""
+    payload = _calculated_workspace_manifest(source_path.resolve(), workspace_path.resolve())
+    manifest = _manifest_from_payload(payload)
+    return {
+        "status": "passed",
+        "candidate_id": manifest.candidate_id,
+        "source_sha256": manifest.source_sha256,
+        "target_build": manifest.target_build,
+        "build_entrypoint": manifest.build_entrypoint,
+        "controller_entrypoint": manifest.controller_entrypoint,
+        "capabilities": list(manifest.capabilities),
+        "candidate_files": dict(sorted(manifest.files.items())),
+    }
+
+
+def package_candidate_workspace(
+    source_path: Path,
+    workspace_path: Path,
+    output_path: Path,
+) -> dict[str, Any]:
+    """Bind an authored workspace to its source and create a deterministic ZIP."""
+    source = source_path.resolve()
+    workspace = workspace_path.resolve()
+    output = output_path.resolve()
+    try:
+        output.relative_to(workspace)
+    except ValueError:
+        pass
+    else:
+        raise CandidateBundleError("candidate bundle output must be outside its workspace")
+    payload = _calculated_workspace_manifest(source, workspace)
+    manifest_path = workspace / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return package_candidate_directory(workspace, output)
+
+
+def inspect_candidate_package(bundle_path: Path) -> dict[str, Any]:
+    """Inspect a candidate ZIP without importing or executing generated code."""
+    bundle = bundle_path.resolve()
+    with tempfile.TemporaryDirectory(prefix="xlsliberator-candidate-inspect-") as temporary:
+        manifest = _extract_and_validate(bundle, Path(temporary))
+    return {
+        "status": "passed",
+        "candidate_id": manifest.candidate_id,
+        "source_sha256": manifest.source_sha256,
+        "target_build": manifest.target_build,
+        "build_entrypoint": manifest.build_entrypoint,
+        "controller_entrypoint": manifest.controller_entrypoint,
+        "capabilities": list(manifest.capabilities),
+        "candidate_files": dict(sorted(manifest.files.items())),
+        "candidate_bundle_sha256": _sha256_file(bundle),
+    }
+
+
+def _calculated_workspace_manifest(source: Path, workspace: Path) -> dict[str, Any]:
+    if not source.is_file():
+        raise CandidateBundleError("candidate source workbook is missing")
+    manifest_path = workspace / "manifest.json"
+    if not workspace.is_dir() or not manifest_path.is_file():
+        raise CandidateBundleError("candidate workspace must contain manifest.json")
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CandidateBundleError("candidate manifest is not valid JSON") from exc
+    if not isinstance(raw, dict):
+        raise CandidateBundleError("candidate manifest must be an object")
+    allowed_author_fields = {"candidate_id", "entrypoints", "capabilities"}
+    missing = allowed_author_fields - set(raw)
+    if missing:
+        raise CandidateBundleError("candidate manifest omits author-controlled fields")
+
+    files: dict[str, str] = {}
+    total = 0
+    for path in sorted(workspace.rglob("*")):
+        if path == manifest_path:
+            continue
+        if path.is_symlink():
+            raise CandidateBundleError("candidate workspace contains a symlink")
+        if not path.is_file():
+            continue
+        name = _safe_member_name(path.relative_to(workspace).as_posix())
+        size = path.stat().st_size
+        if size > _MAX_FILE_BYTES:
+            raise CandidateBundleError(f"candidate member is oversized: {name}")
+        total += size
+        if total > _MAX_TOTAL_BYTES:
+            raise CandidateBundleError("candidate workspace exceeds its expanded size limit")
+        files[name] = _sha256_file(path)
+    if len(files) + 1 > _MAX_FILES:
+        raise CandidateBundleError("candidate workspace has too many files")
+    payload = {
+        "schema_version": _SCHEMA_VERSION,
+        "candidate_id": raw["candidate_id"],
+        "source_sha256": _sha256_file(source),
+        "target_build": LIBREOFFICE_VERSION,
+        "entrypoints": raw["entrypoints"],
+        "files": files,
+        "capabilities": raw["capabilities"],
+    }
+    _manifest_from_payload(payload)
+    return payload
+
+
 @contextmanager
 def load_candidate_entrypoint(
     bundle_path: Path,
@@ -395,6 +554,10 @@ __all__ = [
     "CandidateManifest",
     "LoadedEntrypoint",
     "build_application_target",
+    "create_candidate_workspace",
+    "inspect_candidate_package",
     "load_candidate_entrypoint",
     "package_candidate_directory",
+    "package_candidate_workspace",
+    "validate_candidate_workspace",
 ]

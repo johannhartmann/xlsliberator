@@ -13,6 +13,11 @@ from xlsliberator.boundary_models import BoundaryError, BoundaryResponse
 from xlsliberator.container_boundary import require_application_container
 from xlsliberator.execution_sandbox import WorkspacePathPolicy
 from xlsliberator.libreoffice_session import LibreOfficeSessionManager, SessionOperation
+from xlsliberator.libreoffice_session_scenario_runner import (
+    LibreOfficeSessionScenarioRunner,
+)
+from xlsliberator.migration_check import load_acceptance, run_acceptance
+from xlsliberator.scenarios.mutation import run_mutation_campaign
 from xlsliberator.validation_models import GateExecutionStatus
 
 _manager: LibreOfficeSessionManager | None = None
@@ -165,6 +170,56 @@ async def build_application_candidate(
     return _call(operation)
 
 
+async def run_declared_acceptance(
+    target_path: str,
+    acceptance_path: str,
+    evidence_path: str,
+    timeout_seconds: int = 120,
+) -> dict[str, Any]:
+    """Run an authored acceptance scenario and persist content-bound evidence."""
+
+    def operation() -> dict[str, Any]:
+        workspace = WorkspacePathPolicy()
+        target = workspace.input_file(target_path)
+        acceptance_file = workspace.input_file(acceptance_path)
+        evidence = _migration_output_directory(workspace, evidence_path)
+        acceptance = load_acceptance(acceptance_file)
+        manifest = run_acceptance(
+            acceptance=acceptance,
+            workbook=target,
+            evidence_dir=evidence,
+            runner=LibreOfficeSessionScenarioRunner(timeout_seconds=timeout_seconds),
+        )
+        return _status_payload(manifest.status, manifest.model_dump(mode="json"))
+
+    return _call(operation)
+
+
+async def run_declared_mutation_suite(
+    target_path: str,
+    acceptance_path: str,
+    evidence_path: str,
+    timeout_seconds: int = 120,
+) -> dict[str, Any]:
+    """Mutate target-native formulas/code and run the authored acceptance suite."""
+
+    def operation() -> dict[str, Any]:
+        workspace = WorkspacePathPolicy()
+        target = workspace.input_file(target_path)
+        acceptance_file = workspace.input_file(acceptance_path)
+        evidence = _migration_output_directory(workspace, evidence_path)
+        acceptance = load_acceptance(acceptance_file)
+        campaign = run_mutation_campaign(
+            source_workbook=target,
+            acceptance=acceptance,
+            directory=evidence,
+            runner=LibreOfficeSessionScenarioRunner(timeout_seconds=timeout_seconds),
+        )
+        return _status_payload(campaign.status, campaign.model_dump(mode="json"))
+
+    return _call(operation)
+
+
 async def run_application_scenario(
     target_path: str,
     candidate_path: str,
@@ -223,12 +278,29 @@ def _migration_output(
     return output
 
 
+def _migration_output_directory(workspace: WorkspacePathPolicy, output_path: str) -> Path:
+    output = workspace.output_file(output_path)
+    if output.exists():
+        raise FileExistsError(f"migration evidence destination already exists: {output}")
+    return output
+
+
 def _migration_payload(result: dict[str, Any]) -> dict[str, Any]:
     return BoundaryResponse(
         transport_success=True,
         operation_status=GateExecutionStatus.PASSED,
         implemented=True,
         capability_available=True,
+        data=result,
+    ).to_payload()
+
+
+def _status_payload(status: GateExecutionStatus, result: dict[str, Any]) -> dict[str, Any]:
+    return BoundaryResponse(
+        transport_success=True,
+        operation_status=status,
+        implemented=True,
+        capability_available=status is not GateExecutionStatus.UNAVAILABLE,
         data=result,
     ).to_payload()
 

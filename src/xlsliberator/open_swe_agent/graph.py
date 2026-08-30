@@ -10,6 +10,7 @@ from agent.utils.model import make_model, provider_model_kwargs
 from agent.utils.tracing import traced_graph_factory
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
+from deepagents.backends.protocol import DeleteResult, EditResult, WriteResult
 from deepagents.middleware.subagents import SubAgent
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph.state import RunnableConfig
@@ -26,22 +27,67 @@ Excel object-model facade, compatibility VM, or deterministic migration
 orchestrator. Generated behavior must be target-native Python/UNO, ODF, controls,
 extensions, or open services.
 
-Use the source-forensics tool before changing anything. Delegate focused analysis
-to the forensics, VBA-liberation, and review subagents. Create a deterministic
-baseline, repair it when source behavior requires generated code, then run
-certification and save/close/reopen verification. Treat every failed, skipped,
-unavailable, or not-run required operation as blocking.
+Create the complete source dossier before changing anything, then read the exact
+VBA, formula, control, dependency, and package evidence needed for the migration.
+Delegate focused analysis to the forensics and VBA-liberation subagents. Create a
+deterministic baseline. When source behavior requires generated code, scaffold a
+candidate workspace, author target-native files, validate and package the workspace,
+inspect the content-bound ZIP, and build the candidate. Then run certification and
+save/close/reopen verification. Author a public source-aware acceptance scenario with
+explicit expected observations, validate it, run it in pinned LibreOffice, and run the
+mutation suite. Treat every failed, skipped, unavailable, or not-run required operation
+as blocking. A mutation suite with no supported mutants is unavailable, not passed.
+When the source contains controls or a UserForm, also use run_gui_scenario with real
+click_control and screenshot actions; headless scenario execution is not UI evidence.
 
 Write deliverables below /workspace/deliverables. Completion requires:
 - /workspace/deliverables/target.ods
 - /workspace/deliverables/report.json and report.md
-- /workspace/evidence/reviewer.json with decision APPROVE
-- passed deterministic certification and save/reopen evidence
+- /workspace/acceptance.yaml with authored expected observations
+- passed deterministic certification, acceptance, mutation, and save/reopen evidence
+
+Do not write reviewer evidence or approve your own migration. A separate server-run
+reviewer graph owns the final decision after your run completes.
 
 Never invent evidence, weaken validation, expose hidden reasoning, or claim that
 an unavailable UI/runtime operation passed. Do not call GitHub, create commits,
 push branches, or open pull requests for a workbook migration.
 """
+
+_PROTECTED_WORKSPACE_PATHS = frozenset(
+    {"source", "dependencies", "dossier", "evidence", "migration.json"}
+)
+
+
+class MigrationFilesystemBackend(FilesystemBackend):
+    """Allow candidate authoring while protecting server-owned migration inputs and evidence."""
+
+    @staticmethod
+    def _protected(file_path: str) -> bool:
+        relative = file_path.removeprefix("/")
+        first = relative.split("/", 1)[0]
+        return first in _PROTECTED_WORKSPACE_PATHS
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        if self._protected(file_path):
+            return WriteResult(error="server-owned workspace path is read-only", path=file_path)
+        return super().write(file_path, content)
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        if self._protected(file_path):
+            return EditResult(error="server-owned workspace path is read-only", path=file_path)
+        return super().edit(file_path, old_string, new_string, replace_all)
+
+    def delete(self, file_path: str) -> DeleteResult:
+        if self._protected(file_path):
+            return DeleteResult(error="server-owned workspace path is read-only", path=file_path)
+        return super().delete(file_path)
 
 
 def _specialist(name: str, description: str, system_prompt: str, model: BaseChatModel) -> SubAgent:
@@ -53,14 +99,15 @@ def _specialist(name: str, description: str, system_prompt: str, model: BaseChat
     }
 
 
-def _configured_model() -> BaseChatModel:
-    model_id = os.environ.get("XLSLIBERATOR_OPEN_SWE_MODEL", "").strip()
+def _configured_model(*, model_env: str = "XLSLIBERATOR_OPEN_SWE_MODEL") -> BaseChatModel:
+    model_id = os.environ.get(model_env, "").strip()
     if not model_id:
-        return make_deferred_error_model(
-            ValueError(
-                "XLSLIBERATOR_OPEN_SWE_MODEL is required; no model is selected automatically"
-            )
+        message = (
+            "XLSLIBERATOR_OPEN_SWE_MODEL is required; no model is selected automatically"
+            if model_env == "XLSLIBERATOR_OPEN_SWE_MODEL"
+            else f"{model_env} is required; no model is selected automatically"
         )
+        return make_deferred_error_model(ValueError(message))
     if model_id.startswith("github_models:"):
         if os.environ.get("XLSLIBERATOR_GITHUB_MODELS_ENABLED") != "1":
             return make_deferred_error_model(
@@ -128,7 +175,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
     backend = CompositeBackend(
         default=StateBackend(),
         routes={
-            "/workspace/": FilesystemBackend(
+            "/workspace/": MigrationFilesystemBackend(
                 root_dir=str(root),
                 virtual_mode=True,
             )
@@ -138,7 +185,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         _specialist(
             "workbook-forensics",
             "Analyzes source-derived workbook inventories and identifies behavioral risks.",
-            "Read the inventory and source-derived evidence. Report formulas, VBA, events, "
+            "Read the dossier and exact source-derived evidence. Report formulas, VBA, events, "
             "controls, dependencies, unknowns, and acceptance scenarios. Do not edit files.",
             model,
         ),
@@ -147,14 +194,6 @@ async def get_agent(config: RunnableConfig) -> Pregel:
             "Designs direct target-native replacements for VBA and proprietary dependencies.",
             "Design Python/UNO, ODF, control, extension, or open-service replacements. "
             "Never propose a VBA runtime, Excel facade, or Windows/Office dependency.",
-            model,
-        ),
-        _specialist(
-            "independent-review",
-            "Reviews the completed migration evidence and returns APPROVE, REVISE, or BLOCK.",
-            "Independently inspect source inventory, target artifacts, certification, and "
-            "save/reopen evidence. Write /workspace/evidence/reviewer.json. APPROVE only "
-            "when required behavior and dependency-liberation evidence genuinely pass.",
             model,
         ),
     ]

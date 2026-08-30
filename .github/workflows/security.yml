@@ -17,12 +17,17 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: mkdir -p artifacts && chmod 0777 artifacts
       - run: docker compose build test
-      - run: >-
+      - name: Audit Python dependencies
+        run: |
+          set -o pipefail
+          docker compose --profile ci-runner run --rm security-audit \
+            pip-audit --desc 2>&1 | tee artifacts/pip-audit.txt
+      - if: always()
+        name: Run Bandit
+        run: >-
           docker compose --profile ci-runner run --rm security-audit
-          pip-audit --desc
-      - run: >-
-          docker compose --profile ci-runner run --rm security-audit
-          bandit -r src/ -c pyproject.toml -f json -o artifacts/bandit.json
+          bandit -r /workspace/src/ -c /workspace/pyproject.toml -f json
+          -o /workspace/artifacts/bandit.json
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
